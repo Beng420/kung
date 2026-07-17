@@ -1,0 +1,15 @@
+.gradle/
+build/
+out/
+run/
+runs/
+*.log
+*.class
+*.jar
+*.zip
+
+.idea/
+*.iml
+.vscode/
+
+!.github/

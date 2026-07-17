@@ -1,0 +1,48 @@
+plugins {
+  id "net.fabricmc.fabric-loom-remap"
+}
+
+base {
+  archivesName = "${mod_id}-${minecraft_version_1_21_11}"
+}
+
+sourceSets {
+  main {
+    java.srcDir(rootProject.file("src/shared/java"))
+  }
+}
+
+java {
+  sourceCompatibility = JavaVersion.VERSION_21
+  targetCompatibility = JavaVersion.VERSION_21
+}
+
+tasks.withType(JavaCompile).configureEach {
+  options.release = java_release_1_21_11.toInteger()
+}
+
+dependencies {
+  minecraft "com.mojang:minecraft:${minecraft_version_1_21_11}"
+  mappings loom.officialMojangMappings()
+  modImplementation "net.fabricmc:fabric-loader:${fabric_loader_version}"
+  modImplementation "net.fabricmc.fabric-api:fabric-api:${fabric_api_version_1_21_11}"
+}
+
+processResources {
+  inputs.property "version", project.version
+  inputs.property "minecraft_version", minecraft_version_1_21_11
+  inputs.property "loader_version", fabric_loader_version
+
+  filesMatching("fabric.mod.json") {
+    expand(
+      version: project.version,
+      minecraft_version: minecraft_version_1_21_11,
+      loader_version: fabric_loader_version,
+      mod_id: mod_id,
+      mod_name: mod_name,
+      mod_description: mod_description,
+      mod_author: mod_author,
+      mod_license: mod_license
+    )
+  }
+}

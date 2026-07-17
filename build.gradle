@@ -1,0 +1,21 @@
+plugins {
+  id "net.fabricmc.fabric-loom-remap" version "${loom_version}" apply false
+  id "net.fabricmc.fabric-loom" version "${loom_version}" apply false
+}
+
+allprojects {
+  group = maven_group
+  version = mod_version
+}
+
+subprojects {
+  apply plugin: "java"
+
+  tasks.withType(JavaCompile).configureEach {
+    options.encoding = "UTF-8"
+  }
+
+  java {
+    withSourcesJar()
+  }
+}

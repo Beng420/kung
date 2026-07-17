@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "id": "${mod_id}",
+  "version": "${version}",
+  "name": "${mod_name}",
+  "description": "${mod_description}",
+  "authors": [
+    "${mod_author}"
+  ],
+  "contact": {
+    "homepage": "https://github.com/Beng420",
+    "sources": "https://github.com/Beng420/kung"
+  },
+  "license": "${mod_license}",
+  "environment": "client",
+  "entrypoints": {
+    "main": [
+      "com.github.beng420.kung.KungMod"
+    ],
+    "client": [
+      "com.github.beng420.kung.KungClient"
+    ]
+  },
+  "depends": {
+    "fabricloader": ">=${loader_version}",
+    "minecraft": "${minecraft_version}",
+    "java": ">=21",
+    "fabric-api": "*"
+  }
+}
