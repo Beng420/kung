@@ -126,24 +126,24 @@ public enum KungUpdater {
 
     public String buttonLabel() {
         return switch (state.get().status()) {
-            case CHECKING -> "Updates: pruefe...";
-            case UP_TO_DATE -> "Updates: aktuell";
-            case UPDATE_AVAILABLE -> "Updates: verfuegbar";
-            case DOWNLOADING -> "Updates: lade...";
-            case INSTALL_READY -> "Updates: Neustart";
-            case UNSUPPORTED -> "Updates: dev build";
-            case FAILED -> "Updates: Fehler";
+            case CHECKING -> "Updates: Checking...";
+            case UP_TO_DATE -> "Updates: Up to date";
+            case UPDATE_AVAILABLE -> "Updates: Available";
+            case DOWNLOADING -> "Updates: Downloading...";
+            case INSTALL_READY -> "Updates: Restart needed";
+            case UNSUPPORTED -> "Updates: Dev build";
+            case FAILED -> "Updates: Failed";
         };
     }
 
     public String statusMessage() {
         State snapshot = state.get();
         return switch (snapshot.status()) {
-            case CHECKING -> "GitHub wird geprueft";
+            case CHECKING -> "Checking GitHub";
             case UP_TO_DATE -> "Version " + snapshot.currentVersion();
-            case UPDATE_AVAILABLE -> "Installiert " + snapshot.latestVersion();
-            case DOWNLOADING -> "Download laeuft";
-            case INSTALL_READY -> "Minecraft neu starten";
+            case UPDATE_AVAILABLE -> "Installs " + snapshot.latestVersion();
+            case DOWNLOADING -> "Downloading...";
+            case INSTALL_READY -> "Restart Minecraft";
             case UNSUPPORTED -> snapshot.message();
             case FAILED -> snapshot.message();
         };
@@ -341,18 +341,11 @@ public enum KungUpdater {
     }
 
     private void installDownloadedJar(Path source, Path target) throws IOException {
-        Path backup = target.resolveSibling(target.getFileName() + ".old");
-        Files.deleteIfExists(backup);
-        try {
-            Files.move(target, backup, StandardCopyOption.REPLACE_EXISTING);
-            Files.move(source, target, StandardCopyOption.REPLACE_EXISTING);
-            Files.deleteIfExists(backup);
-        } catch (IOException exception) {
-            if (Files.isRegularFile(backup) && !Files.isRegularFile(target)) {
-                Files.move(backup, target, StandardCopyOption.REPLACE_EXISTING);
-            }
-            throw exception;
+        Path finalDestination = target.resolveSibling(source.getFileName());
+        if (!finalDestination.equals(target)) {
+            Files.deleteIfExists(target);
         }
+        Files.move(source, finalDestination, StandardCopyOption.REPLACE_EXISTING);
     }
 
     private Optional<UpdateAsset> findCompatibleJar(JsonObject release, String minecraftVersion) {
