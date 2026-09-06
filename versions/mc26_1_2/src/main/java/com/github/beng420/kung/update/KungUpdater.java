@@ -286,6 +286,7 @@ public enum KungUpdater {
     }
 
     private String windowsInstallerScript(long pid, Path source, Path target, Path marker) {
+        Path targetDir = target.getParent(); // <-- Diese Zeile hat gefehlt
         return String.join("\r\n",
             "@echo off",
             "setlocal",
@@ -300,11 +301,8 @@ public enum KungUpdater {
             "  timeout /T 1 /NOBREAK >NUL",
             "  goto wait",
             ")",
-            // Kurz warten, bis Windows alle File-Handles freigegeben hat
             "timeout /T 1 /NOBREAK >NUL",
-            // Alte Datei entfernen
             "if exist \"%TARGET%\" del /F /Q \"%TARGET%\" >NUL 2>NUL",
-            // Neue Datei mit ihrem eigenen Namen in den mods-Ordner verschieben
             "move /Y \"%SOURCE%\" \"%TARGET_DIR%\\\" >NUL",
             "if errorlevel 1 goto fallback_copy",
             "del /F /Q \"%MARKER%\" >NUL 2>NUL",
