@@ -5,7 +5,7 @@ plugins {
 
 allprojects {
   group = maven_group
-  version = mod_version
+  version = findProperty("mod_version_${name}") ?: mod_version
 }
 
 subprojects {

@@ -9,6 +9,7 @@ base {
 sourceSets {
   main {
     java.srcDir(rootProject.file("src/shared/java"))
+    resources.srcDir(layout.buildDirectory.dir("generated/kung-defaults"))
   }
 }
 
@@ -25,9 +26,142 @@ dependencies {
   minecraft "com.mojang:minecraft:${minecraft_version_26_1_2}"
   implementation "net.fabricmc:fabric-loader:${fabric_loader_version}"
   implementation "net.fabricmc.fabric-api:fabric-api:${fabric_api_version_26_1_2}"
+  include implementation("com.googlecode.soundlibs:mp3spi:1.9.5.4")
+  include implementation("com.googlecode.soundlibs:tritonus-share:0.3.7.4")
+  include implementation("javazoom:jlayer:1.0.1")
+}
+
+def kungProfileDir = providers.gradleProperty("kungProfileDir")
+  .orElse(providers.environmentVariable("KUNG_PROFILE_DIR"))
+  .orElse(providers.environmentVariable("APPDATA").map { appData ->
+    "${appData}\\ModrinthApp\\profiles\\Dungeons 26.1.2"
+  })
+def bundledDungeonScanDir = layout.projectDirectory.dir("src/main/resources/kung-dungeon-scans")
+def kungPrivateRoomSyncDefaults = providers.gradleProperty("kungPrivateRoomSyncDefaults")
+  .orElse(providers.environmentVariable("KUNG_PRIVATE_ROOM_SYNC_DEFAULTS"))
+  .orElse("false")
+def kungRoomSyncProfileDefault = { String key ->
+  providers.provider {
+    if (!kungPrivateRoomSyncDefaults.get().toBoolean()) {
+      return null
+    }
+    File configFile = file("${kungProfileDir.get()}\\config\\kung.json")
+    if (!configFile.exists()) {
+      return null
+    }
+    try {
+      def parsed = new groovy.json.JsonSlurper().parse(configFile)
+      def value = parsed?.dungeonMap?.get(key)
+      String text = value == null ? "" : value.toString().trim()
+      return text.isEmpty() ? null : text
+    } catch (Exception exception) {
+      logger.info("Could not read Kung room sync default ${key} from ${configFile}: ${exception.message}")
+      return null
+    }
+  }
+}
+def kungRoomSyncDefaultServerUrl = providers.gradleProperty("kungRoomSyncServerUrl")
+  .orElse(providers.environmentVariable("KUNG_DEFAULT_ROOM_SYNC_SERVER_URL"))
+  .orElse(kungRoomSyncProfileDefault("roomSyncServerUrl"))
+  .orElse("")
+def kungRoomSyncDefaultToken = providers.gradleProperty("kungRoomSyncToken")
+  .orElse(providers.environmentVariable("KUNG_DEFAULT_ROOM_SYNC_TOKEN"))
+  .orElse(kungRoomSyncProfileDefault("roomSyncToken"))
+  .orElse("")
+def kungRoomSyncDefaultEnabled = providers.gradleProperty("kungRoomSyncEnabled")
+  .orElse(providers.environmentVariable("KUNG_DEFAULT_ROOM_SYNC_ENABLED"))
+  .orElse("false")
+def kungRoomSyncDefaultUpload = providers.gradleProperty("kungRoomSyncUpload")
+  .orElse(providers.environmentVariable("KUNG_DEFAULT_ROOM_SYNC_UPLOAD"))
+  .orElse("false")
+
+tasks.register("generateKungDefaults") {
+  group = "kung"
+  description = "Generates optional bundled Kung runtime defaults for private jars."
+
+  def outputFile = layout.buildDirectory.file("generated/kung-defaults/kung-defaults.properties")
+  inputs.property("roomSyncServerUrl", kungRoomSyncDefaultServerUrl)
+  inputs.property("roomSyncToken", kungRoomSyncDefaultToken)
+  inputs.property("roomSyncEnabled", kungRoomSyncDefaultEnabled)
+  inputs.property("roomSyncUpload", kungRoomSyncDefaultUpload)
+  outputs.file(outputFile)
+
+  doLast {
+    Properties properties = new Properties()
+    properties.setProperty("roomSync.serverUrl", kungRoomSyncDefaultServerUrl.get())
+    properties.setProperty("roomSync.token", kungRoomSyncDefaultToken.get())
+    properties.setProperty("roomSync.enabled", kungRoomSyncDefaultEnabled.get())
+    properties.setProperty("roomSync.upload", kungRoomSyncDefaultUpload.get())
+
+    File target = outputFile.get().asFile
+    target.parentFile.mkdirs()
+    target.withOutputStream { stream ->
+      properties.store(stream, "Kung bundled runtime defaults")
+    }
+  }
+}
+
+tasks.register("syncLocalDungeonRoomData") {
+  group = "kung"
+  description = "Copies locally learned dungeon room data from the active Modrinth profile into bundled jar resources."
+
+  inputs.files(kungProfileDir.map { profileDir ->
+    files(
+      "${profileDir}/kung-dungeon-scans/known-rooms.json",
+      "${profileDir}/kung-dungeon-scans/known-rooms.jsonl",
+      "${profileDir}/kung-dungeon-scans/known-room-preloads.jsonl",
+      "${profileDir}/kung-dungeon-scans/known-room-types.properties"
+    )
+  }).withPropertyName("localDungeonRoomData").optional()
+  outputs.dir(bundledDungeonScanDir)
+
+  doLast {
+    File profileScanDir = file("${kungProfileDir.get()}/kung-dungeon-scans")
+    File resourceScanDir = bundledDungeonScanDir.asFile
+    if (!profileScanDir.exists()) {
+      logger.lifecycle("No local dungeon room data found at ${profileScanDir}.")
+      return
+    }
+
+    resourceScanDir.mkdirs()
+    ["known-rooms.json", "known-rooms.jsonl", "known-room-preloads.jsonl", "known-room-types.properties"].each { name ->
+      File target = new File(resourceScanDir, name)
+      if (target.exists() && !target.delete()) {
+        throw new GradleException("Failed to remove stale bundled dungeon room data file: ${target}")
+      }
+    }
+
+    int copied = 0
+    ["known-rooms.json", "known-room-preloads.jsonl", "known-room-types.properties"].each { name ->
+      File source = new File(profileScanDir, name)
+      if (source.exists()) {
+        copy {
+          from source
+          into resourceScanDir
+        }
+        copied++
+      }
+    }
+
+    File canonicalJson = new File(profileScanDir, "known-rooms.json")
+    File legacyJsonl = new File(profileScanDir, "known-rooms.jsonl")
+    if (!canonicalJson.exists() && legacyJsonl.exists()) {
+      copy {
+        from legacyJsonl
+        into resourceScanDir
+      }
+      copied++
+      logger.lifecycle("Copied legacy local known-rooms.jsonl. Prefer running /kung room learn once on the current build so known-rooms.json exists.")
+    }
+
+    logger.lifecycle("Synced ${copied} local dungeon room data file(s) from ${profileScanDir}.")
+  }
 }
 
 processResources {
+  dependsOn tasks.named("syncLocalDungeonRoomData")
+  dependsOn tasks.named("generateKungDefaults")
+
   inputs.property "version", project.version
   inputs.property "minecraft_version", minecraft_version_26_1_2
   inputs.property "loader_version", fabric_loader_version
@@ -44,4 +178,9 @@ processResources {
       mod_license: mod_license
     )
   }
+}
+
+tasks.named("sourcesJar") {
+  dependsOn tasks.named("syncLocalDungeonRoomData")
+  dependsOn tasks.named("generateKungDefaults")
 }

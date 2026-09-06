@@ -21,11 +21,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "kung"
 
-include("versions:mc1_21_11")
-
-def include26Port = providers.gradleProperty("include26_1_2").orNull == "true" ||
-  JavaVersion.current().isCompatibleWith(JavaVersion.VERSION_25)
-
-if (include26Port) {
-  include("versions:mc26_1_2")
-}
+include("versions:mc26_1_2")

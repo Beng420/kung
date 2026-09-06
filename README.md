@@ -6,32 +6,30 @@ Owner: [github.com/Beng420](https://github.com/Beng420)
 
 ## Ziel
 
-Dieses Projekt ist fuer Minecraft `1.21.11` vorbereitet und enthaelt bereits ein separates Modul fuer den schnellen Port auf `26.1.2`.
+Dieses Projekt wird aktuell fuer Minecraft `26.1.2` entwickelt. Der alte `1.21.11`-Stand bleibt nur noch als eingefrorene Referenz im Repository; `26.2` ist geparkt und soll nur angefasst werden, wenn es explizit verlangt wird.
 
 Der Aufbau ist absichtlich versionsfreundlich:
 
-- `src/shared/java` enthaelt Code, der fuer beide Minecraft-Versionen gleich bleiben soll.
-- `versions/mc1_21_11` ist das aktuelle Startmodul.
-- `versions/mc26_1_2` ist der vorbereitete Port, weil Fabric ab Minecraft `26.1` ein anderes Loom-Setup nutzt.
+- `versions/mc26_1_2` ist das aktive Modul fuer Minecraft `26.1.2`.
+- `versions/mc26_2` ist nur Referenz/parked.
+- `versions/mc1_21_11` wird nicht mehr als Entwicklungsziel eingebunden.
 
 ## Entwickeln
+
+Neue Maintainer und neue AI-Chats sollten zuerst diese Datei lesen:
+
+- [`docs/AI_HANDOFF.md`](docs/AI_HANDOFF.md)
 
 Empfohlen:
 
 1. Projekt in IntelliJ IDEA als Gradle-Projekt oeffnen.
-2. Fuer `1.21.11` bauen:
+2. Fuer `26.1.2` bauen:
 
 ```powershell
-./gradlew.bat :versions:mc1_21_11:build
+./gradlew.bat :versions:mc26_1_2:build
 ```
 
-3. Spaeter mit Java 25 fuer `26.1.2` bauen:
-
-```powershell
-./gradlew.bat -Pinclude26_1_2=true :versions:mc26_1_2:build
-```
-
-Hinweis: Auf dieser Maschine ist aktuell Java 24 installiert. Fuer den `26.1.2`-Port brauchst du Java 25.
+Hinweis: Die 26er Module brauchen Java 25.
 
 ## Projektregeln fuer Hypixel
 

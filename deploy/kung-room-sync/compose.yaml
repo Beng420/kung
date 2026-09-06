@@ -1,0 +1,15 @@
+services:
+  kung-room-sync:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: kung-room-sync
+    restart: unless-stopped
+    ports:
+      - "${KUNG_ROOM_SYNC_PORT:-8765}:8765"
+    environment:
+      KUNG_ROOM_SYNC_TOKEN: "${KUNG_ROOM_SYNC_TOKEN:?Set KUNG_ROOM_SYNC_TOKEN in .env}"
+      KUNG_ROOM_DATA_PATH: "/data/known-rooms.json"
+      KUNG_LIVE_ROOM_SYNC_TTL_MS: "${KUNG_LIVE_ROOM_SYNC_TTL_MS:-180000}"
+    volumes:
+      - ./data:/data
