@@ -1,6 +1,7 @@
 package com.github.beng420.kung.util;
 
-import com.github.beng420.kung.feature.dungeon.DungeonMapOverlayConfig;
+import com.github.beng420.kung.config.KungConfig;
+
 import com.github.beng420.kung.util.CatacombsAverageCalculator.DungeonClass;
 import com.github.beng420.kung.util.CatacombsAverageCalculator.PlayerData;
 import com.github.beng420.kung.util.CatacombsAverageCalculator.ProfileData;
@@ -35,9 +36,9 @@ public final class HypixelSkyBlockProfileClient {
     }
 
     public CompletableFuture<ProfileResult> loadPlayer(String username) {
-        String key = DungeonMapOverlayConfig.INSTANCE.hypixelApiKey();
+        String key = KungConfig.get().misc.hypixelApiKey();
         String normalized = username == null ? "" : username.trim();
-        if (!DungeonMapOverlayConfig.INSTANCE.hypixelApiEnabled()) {
+        if (!KungConfig.get().misc.hypixelApiEnabled()) {
             return CompletableFuture.completedFuture(ProfileResult.error("Hypixel API is disabled"));
         }
         if (key.isBlank()) {
@@ -51,9 +52,9 @@ public final class HypixelSkyBlockProfileClient {
     }
 
     public CompletableFuture<SecretResult> loadTotalSecrets(String username) {
-        String key = DungeonMapOverlayConfig.INSTANCE.hypixelApiKey();
+        String key = KungConfig.get().misc.hypixelApiKey();
         String normalized = username == null ? "" : username.trim();
-        if (!DungeonMapOverlayConfig.INSTANCE.hypixelApiEnabled()) {
+        if (!KungConfig.get().misc.hypixelApiEnabled()) {
             return CompletableFuture.completedFuture(SecretResult.error("Hypixel API is disabled"));
         }
         if (key.isBlank()) {
@@ -243,13 +244,13 @@ public final class HypixelSkyBlockProfileClient {
     }
 
     public String statusMessage() {
-        DungeonMapOverlayConfig config = DungeonMapOverlayConfig.INSTANCE;
-        if (!config.hypixelApiEnabled()) {
-            return config.hypixelApiKey().isBlank()
+        KungConfig config = KungConfig.get();
+        if (!config.misc.hypixelApiEnabled()) {
+            return config.misc.hypixelApiKey().isBlank()
                 ? "Direct Hypixel: off, no key"
                 : "Direct Hypixel: off, key set";
         }
-        return config.hypixelApiKey().isBlank()
+        return config.misc.hypixelApiKey().isBlank()
             ? "Direct Hypixel: no key"
             : "Direct Hypixel: key set";
     }

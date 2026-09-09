@@ -14,7 +14,13 @@ public final class DungeonRunDetector {
 
     public boolean isDungeonInstanceCandidate(Minecraft client) {
         HypixelInstanceTracker tracker = HypixelInstanceTracker.INSTANCE;
+        if (isKnownNonDungeonInstance()) {
+            return false;
+        }
         if (tracker.catacombs()) {
+            return true;
+        }
+        if (tracker.pendingCatacombs()) {
             return true;
         }
         if (hasCatacombsSidebar(client)) {
@@ -25,7 +31,8 @@ public final class DungeonRunDetector {
         }
         return tracker.tracking()
             && !tracker.dungeonHub()
-            && tracker.dungeonRunContext();
+            && tracker.dungeonRunContext()
+            && hasCatacombsContext(client);
     }
 
     public boolean isActiveCatacombsInstance(Minecraft client) {
@@ -33,7 +40,8 @@ public final class DungeonRunDetector {
     }
 
     public boolean hasCatacombsContext(Minecraft client) {
-        return HypixelInstanceTracker.INSTANCE.catacombs() || hasCatacombsSidebar(client);
+        HypixelInstanceTracker tracker = HypixelInstanceTracker.INSTANCE;
+        return tracker.catacombs() || tracker.pendingCatacombs() || hasCatacombsSidebar(client);
     }
 
     public boolean hasClientWorld(Minecraft client) {
@@ -68,13 +76,24 @@ public final class DungeonRunDetector {
         if (!tracker.tracking()) {
             return false;
         }
-
-        String instance = tracker.instanceLine().toLowerCase(java.util.Locale.ROOT);
-        if (instance.isBlank() || tracker.catacombs()) {
+        if (tracker.catacombs()) {
             return false;
         }
 
-        return instance.contains("dungeon hub")
+        String instance = tracker.instanceLine().toLowerCase(java.util.Locale.ROOT);
+        if (instance.isBlank()) {
+            return tracker.visibleLines().stream()
+                .map(DungeonRunDetector::cleanLower)
+                .anyMatch(DungeonRunDetector::isKnownNonDungeonInstanceLine);
+        }
+
+        return isKnownNonDungeonInstanceLine(instance);
+    }
+
+    static boolean isKnownNonDungeonInstanceLine(String line) {
+        String instance = cleanLower(line);
+        return instance.contains("kuudra")
+            || instance.contains("dungeon hub")
             || instance.contains("private island")
             || instance.contains("your island")
             || instance.contains("hub")
@@ -104,5 +123,11 @@ public final class DungeonRunDetector {
             }
         }
         return false;
+    }
+
+    private static String cleanLower(String line) {
+        return line == null
+            ? ""
+            : line.replaceAll("\u00a7.", "").toLowerCase(java.util.Locale.ROOT);
     }
 }

@@ -1,7 +1,10 @@
 package com.github.beng420.kung.feature.misc;
 
 import com.github.beng420.kung.KungMod;
-import com.github.beng420.kung.feature.dungeon.DungeonMapOverlayConfig;
+import com.github.beng420.kung.config.KungConfig;
+import com.github.beng420.kung.config.category.MiscConfig;
+import com.github.beng420.kung.feature.ConfigurableFeature;
+import com.github.beng420.kung.feature.Feature;
 import com.github.beng420.kung.util.KungDebugRecorder;
 import java.io.IOException;
 import java.io.InputStream;
@@ -36,7 +39,8 @@ import net.minecraft.sounds.SoundEvent;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.item.ItemStack;
 
-public final class CustomSoundsFeature {
+public final class CustomSoundsFeature extends ConfigurableFeature<MiscConfig> implements Feature {
+    public static final CustomSoundsFeature INSTANCE = new CustomSoundsFeature();
     private static final String SOUND_DIRECTORY_NAME = "custom-sounds";
     private static final String SOUND_DIRECTORY_LABEL = "config/kung/custom-sounds";
     private static final String BUNDLED_SOUND_RESOURCE_PREFIX = "/assets/kung/sounds/custom/";
@@ -59,9 +63,11 @@ public final class CustomSoundsFeature {
     private static long witherShieldExpiresAt = Long.MIN_VALUE;
 
     private CustomSoundsFeature() {
+        super(config -> config.misc);
     }
 
-    public static void initializeClient() {
+    @Override
+    protected void onInitialize() {
         installBundledSounds();
         refreshSoundIndex();
         ClientTickEvents.END_CLIENT_TICK.register(CustomSoundsFeature::tick);
@@ -74,6 +80,11 @@ public final class CustomSoundsFeature {
             }
             return InteractionResult.PASS;
         });
+    }
+
+    @Override
+    public boolean isEnabled() {
+        return config().customSoundsEnabled();
     }
 
     public static void observeSoundEvent(SoundEvent sound) {
@@ -141,7 +152,7 @@ public final class CustomSoundsFeature {
     }
 
     public static void playArrowHit() {
-        playConfigured(DungeonMapOverlayConfig.INSTANCE.customArrowHitSounds(), CustomSoundEvent.ARROW_HIT);
+        playConfigured(INSTANCE.config().customArrowHitSounds(), CustomSoundEvent.ARROW_HIT);
     }
 
     public static void playArrowHitSound(String soundName) {
@@ -149,7 +160,7 @@ public final class CustomSoundsFeature {
     }
 
     public static void playWitherShieldExpire() {
-        playConfigured(DungeonMapOverlayConfig.INSTANCE.customWitherShieldExpireSounds(), CustomSoundEvent.WITHER_SHIELD_EXPIRE);
+        playConfigured(INSTANCE.config().customWitherShieldExpireSounds(), CustomSoundEvent.WITHER_SHIELD_EXPIRE);
     }
 
     public static void playWitherShieldExpireSound(String soundName) {
@@ -223,7 +234,7 @@ public final class CustomSoundsFeature {
         if (normalized.isBlank()) {
             return;
         }
-        DungeonMapOverlayConfig config = DungeonMapOverlayConfig.INSTANCE;
+        MiscConfig config = INSTANCE.config();
         int volumeTenths = event == CustomSoundEvent.ARROW_HIT
             ? config.customArrowHitSoundVolumeTenths(normalized)
             : config.customWitherShieldExpireSoundVolumeTenths(normalized);
@@ -315,11 +326,11 @@ public final class CustomSoundsFeature {
     }
 
     private static Path soundsDirectory() {
-        return DungeonMapOverlayConfig.configDirectory().resolve(SOUND_DIRECTORY_NAME);
+        return KungConfig.configDirectory().resolve(SOUND_DIRECTORY_NAME);
     }
 
     private static boolean enabled() {
-        return DungeonMapOverlayConfig.INSTANCE.customSoundsEnabled();
+        return INSTANCE.isEnabled();
     }
 
     private static boolean isSupportedSoundFile(String name) {

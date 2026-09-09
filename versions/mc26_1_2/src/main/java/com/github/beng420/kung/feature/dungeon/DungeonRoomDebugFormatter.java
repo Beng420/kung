@@ -1,5 +1,7 @@
 package com.github.beng420.kung.feature.dungeon;
 
+import com.github.beng420.kung.config.KungConfig;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -12,7 +14,7 @@ final class DungeonRoomDebugFormatter {
         DungeonKnownRoomCatalog.MatchedRoom match,
         DungeonLiveMapWriter.MatchRenderPlan renderPlan
     ) {
-        if (!DungeonMapOverlayConfig.INSTANCE.debugRoomMatches()) {
+        if (!KungConfig.get().dungeon.debugRoomMatches()) {
             return List.of();
         }
 
@@ -26,7 +28,7 @@ final class DungeonRoomDebugFormatter {
     }
 
     static List<String> hintOverlayLines(DungeonScanPoint point, int roomGridX, int roomGridZ) {
-        if (!DungeonMapOverlayConfig.INSTANCE.debugRoomMatches()) {
+        if (!KungConfig.get().dungeon.debugRoomMatches()) {
             return List.of();
         }
         return List.of(

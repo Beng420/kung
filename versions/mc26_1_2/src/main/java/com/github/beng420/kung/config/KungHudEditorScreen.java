@@ -3,7 +3,6 @@ package com.github.beng420.kung.config;
 import static com.github.beng420.kung.util.GuiDraw.fill;
 
 import com.github.beng420.kung.feature.dungeon.DungeonMapFeature;
-import com.github.beng420.kung.feature.dungeon.DungeonMapOverlayConfig;
 import com.github.beng420.kung.feature.dungeon.DungeonSplitsOverlayFeature;
 import com.github.beng420.kung.feature.dungeon.DungeonStateTracker;
 import com.github.beng420.kung.feature.misc.SuperpairsHelperFeature;
@@ -149,59 +148,59 @@ public final class KungHudEditorScreen extends Screen {
     }
 
     private List<HudEntry> hudEntries() {
-        DungeonMapOverlayConfig config = DungeonMapOverlayConfig.INSTANCE;
+        KungConfig config = KungConfig.get();
         List<HudEntry> entries = new ArrayList<>();
 
-        DungeonMapFeature.OverlayBounds dungeonMapBounds = DungeonMapFeature.overlayBounds(config);
+        DungeonMapFeature.OverlayBounds dungeonMapBounds = DungeonMapFeature.overlayBounds(config.dungeon);
         entries.add(new HudEntry(
             "Dungeon Map",
             dungeonMapBounds.x(),
             dungeonMapBounds.y(),
             dungeonMapBounds.width(),
             dungeonMapBounds.height(),
-            dungeonMapBounds.x() - config.x(),
-            dungeonMapBounds.y() - config.y(),
-            config::x,
-            config::y,
-            config::setX,
-            config::setY,
-            config::scale,
-            config::setScale
+            dungeonMapBounds.x() - config.dungeon.x(),
+            dungeonMapBounds.y() - config.dungeon.y(),
+            config.dungeon::x,
+            config.dungeon::y,
+            config.dungeon::setX,
+            config.dungeon::setY,
+            config.dungeon::scale,
+            config.dungeon::setScale
         ));
 
         DungeonSplitsOverlayFeature.OverlayBounds splitsBounds =
-            DungeonSplitsOverlayFeature.overlayBounds(config, dungeonStateTracker.splitTracker());
+            DungeonSplitsOverlayFeature.overlayBounds(config.splits, dungeonStateTracker.splitTracker());
         entries.add(new HudEntry(
             "Splits Overlay",
             splitsBounds.x(),
             splitsBounds.y(),
             splitsBounds.width(),
             splitsBounds.height(),
-            splitsBounds.x() - config.splitsX(),
-            splitsBounds.y() - config.splitsY(),
-            config::splitsX,
-            config::splitsY,
-            config::setSplitsX,
-            config::setSplitsY,
-            config::splitsScale,
-            config::setSplitsScale
+            splitsBounds.x() - config.splits.x(),
+            splitsBounds.y() - config.splits.y(),
+            config.splits::x,
+            config.splits::y,
+            config.splits::setX,
+            config.splits::setY,
+            config.splits::scale,
+            config.splits::setScale
         ));
 
-        SuperpairsHelperFeature.OverlayBounds superpairsBounds = SuperpairsHelperFeature.overlayBounds(config);
+        SuperpairsHelperFeature.OverlayBounds superpairsBounds = SuperpairsHelperFeature.overlayBounds(config.misc);
         entries.add(new HudEntry(
             "Superpairs Helper",
             superpairsBounds.x(),
             superpairsBounds.y(),
             superpairsBounds.width(),
             superpairsBounds.height(),
-            superpairsBounds.x() - config.superpairsHelperX(),
-            superpairsBounds.y() - config.superpairsHelperY(),
-            config::superpairsHelperX,
-            config::superpairsHelperY,
-            config::setSuperpairsHelperX,
-            config::setSuperpairsHelperY,
-            config::superpairsHelperScale,
-            config::setSuperpairsHelperScale
+            superpairsBounds.x() - config.misc.superpairsHelperX(),
+            superpairsBounds.y() - config.misc.superpairsHelperY(),
+            config.misc::superpairsHelperX,
+            config.misc::superpairsHelperY,
+            config.misc::setSuperpairsHelperX,
+            config.misc::setSuperpairsHelperY,
+            config.misc::superpairsHelperScale,
+            config.misc::setSuperpairsHelperScale
         ));
 
         return entries;

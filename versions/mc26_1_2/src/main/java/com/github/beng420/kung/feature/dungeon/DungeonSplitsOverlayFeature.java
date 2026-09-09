@@ -3,7 +3,10 @@ package com.github.beng420.kung.feature.dungeon;
 import static com.github.beng420.kung.util.GuiDraw.fill;
 
 import com.github.beng420.kung.KungMod;
+import com.github.beng420.kung.config.category.SplitsConfig;
+import com.github.beng420.kung.feature.ConfigurableFeature;
 import com.github.beng420.kung.feature.Feature;
+import com.github.beng420.kung.ui.HudTextBlockRenderer;
 import java.util.List;
 import java.util.Locale;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
@@ -12,7 +15,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.resources.Identifier;
 
-public final class DungeonSplitsOverlayFeature {
+public final class DungeonSplitsOverlayFeature extends ConfigurableFeature<SplitsConfig> implements Feature {
     private static final Identifier HUD_ID = Identifier.fromNamespaceAndPath(KungMod.MOD_ID, "dungeon_splits_overlay");
     private static final int WIDTH = 184;
     private static final int HEADER_HEIGHT = 20;
@@ -24,34 +27,35 @@ public final class DungeonSplitsOverlayFeature {
     private static final int MUTED_TEXT = 0xFF99A1AD;
     private static final int ACTIVE_TEXT = 0xFFFFF176;
     private static final int BORDER = 0x00000000;
+    private final DungeonStateTracker dungeonStateTracker;
+    private final HudTextBlockRenderer textBlockRenderer = new HudTextBlockRenderer();
 
-    private DungeonSplitsOverlayFeature() {
+    public DungeonSplitsOverlayFeature(DungeonStateTracker dungeonStateTracker) {
+        super(config -> config.splits);
+        this.dungeonStateTracker = java.util.Objects.requireNonNull(dungeonStateTracker);
     }
 
-    public static Feature definition() {
-        return new Feature(
-            "dungeon-splits-overlay",
-            "Dungeon Splits Overlay",
-            true,
-            "Shows dungeon phase times separately from the map."
-        );
-    }
-
-    public static void initializeClient(DungeonStateTracker dungeonStateTracker) {
+    @Override
+    protected void onInitialize() {
         HudElementRegistry.addLast(
             HUD_ID,
             (graphics, deltaTracker) -> render(graphics, deltaTracker, dungeonStateTracker)
         );
     }
 
-    private static void render(
+    @Override
+    public boolean isEnabled() {
+        return config().enabled();
+    }
+
+    private void render(
         GuiGraphicsExtractor graphics,
         DeltaTracker deltaTracker,
         DungeonStateTracker dungeonStateTracker
     ) {
-        DungeonMapOverlayConfig config = DungeonMapOverlayConfig.INSTANCE;
+        SplitsConfig config = config();
         DungeonSplitTracker tracker = dungeonStateTracker.splitTracker();
-        if (!config.splitsEnabled()
+        if (!config.enabled()
             || (!dungeonStateTracker.isInDungeonArea() && !tracker.running())) {
             return;
         }
@@ -60,10 +64,10 @@ public final class DungeonSplitsOverlayFeature {
         String[] splitNames = tracker.splitNames();
         int visibleRows = splitNames.length + (hasBossEntryRow(splitNames) ? 1 : 0);
         int height = HEADER_HEIGHT + PADDING + visibleRows * ROW_HEIGHT + PADDING;
-        float scale = config.splitsScale() / 100.0F;
+        float scale = config.scale() / 100.0F;
         graphics.pose().pushMatrix();
         try {
-            graphics.pose().translate(config.splitsX(), config.splitsY());
+            graphics.pose().translate(config.x(), config.y());
             graphics.pose().scale(scale, scale);
             int left = 0;
             int top = 0;
@@ -83,7 +87,20 @@ public final class DungeonSplitsOverlayFeature {
 
             int rowY = top + HEADER_HEIGHT + PADDING;
             if (completedSplits.isEmpty() && !tracker.running()) {
-                graphics.text(client.font, "waiting for run", left + PADDING, rowY, MUTED_TEXT, true);
+                textBlockRenderer.render(
+                    graphics,
+                    client.font,
+                    List.of(new HudTextBlockRenderer.Line("waiting for run", MUTED_TEXT, true)),
+                    new HudTextBlockRenderer.Options(
+                        left + PADDING,
+                        rowY,
+                        1.0F,
+                        HudTextBlockRenderer.Alignment.LEFT,
+                        0,
+                        0,
+                        ROW_HEIGHT
+                    )
+                );
                 return;
             }
 
@@ -135,13 +152,13 @@ public final class DungeonSplitsOverlayFeature {
         }
     }
 
-    public static OverlayBounds overlayBounds(DungeonMapOverlayConfig config, DungeonSplitTracker tracker) {
-        float scale = config.splitsScale() / 100.0F;
+    public static OverlayBounds overlayBounds(SplitsConfig config, DungeonSplitTracker tracker) {
+        float scale = config.scale() / 100.0F;
         int visibleRows = tracker.splitNames().length + (hasBossEntryRow(tracker.splitNames()) ? 1 : 0);
         int height = HEADER_HEIGHT + PADDING + visibleRows * ROW_HEIGHT + PADDING;
         return new OverlayBounds(
-            Math.round(config.splitsX() - scale),
-            Math.round(config.splitsY() - scale),
+            Math.round(config.x() - scale),
+            Math.round(config.y() - scale),
             Math.round((WIDTH + 2) * scale),
             Math.round((height + 2) * scale)
         );

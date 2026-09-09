@@ -2,6 +2,8 @@
 
 This file is the first stop for a new AI or human maintainer. It explains what this project is doing right now and which paths are safe to touch.
 
+The active architecture queue and its definition of done live in `docs/FOUNDATION_TODO.md`.
+
 ## Current Direction
 
 Kung is a Fabric client mod for passive Hypixel SkyBlock quality-of-life overlays and diagnostics.
@@ -38,17 +40,22 @@ Additional inspiration can come from Odin, Devonian, NoFrills, and Noamm Addons 
 ## Main Entry Points
 
 - `KungClient`: client initialization. Wires config, trackers, overlays, commands, updater, and feature helpers.
-- `KungCommands`: `/kung` client commands for settings, room learning, dungeon debug, crypt updates, door probing, and splits.
-- `DungeonMapOverlayConfig`: single JSON-backed config object for dungeon, misc, slayer, debug, and HUD positions.
-- `KungConfigScreen`: current in-game settings UI. Keep its column layout stable.
+- `KungCommands`: slim `/kung` root registration. Command trees are split into user, debug, room-sync, and isolated room-learning groups; execution lives in `KungCommandActions`.
+- `KungConfig`: modular JSON-backed config root with typed category objects under `config/category`.
+- `ConfigurableFeature`: feature base class that selects one typed config category.
+- `FeatureRegistry`: initialization registry for configurable user-facing features.
+- `KungConfigScreen`: current in-game settings UI. Keep its column layout stable. Do not put HUD position or HUD scale controls in the normal Mod Menu screen; keep those values saved in config for compatibility, but edit them through `/kung hud`.
 - `KungHudEditorScreen`: drag-position editor for HUD elements.
+- `ChatCommandsFeature`: dispatches separate chat commands for `!c50`, `!ca50`, and `!tps`. Keep their config toggles separate per command and per channel; legacy `cata...`/`ca50...` saved settings are migrated by `KungConfig`.
+- `LoadoutsAutoCloseFeature`: `Close Only On Change` keeps the Loadouts menu open when Hypixel replies that the selected loadout is already equipped. In that mode hotkeys wait for the equip confirmation instead of closing the screen immediately.
+- `ServerTpsTracker`: records lightweight server tick timestamps from the existing ping-packet hook. `!tps` replies as `Current: <current> (max/min/avg) <max>/<min>/<avg>` in party, guild, all chat, or DMs according to its channel toggles.
 - `KungDebugRecorder`: always-on in-memory ringbuffer for diagnosing live Hypixel behavior. It records key packet hooks, incoming non-Kung chat/game messages, context/parser state changes, dungeon lifecycle decisions, door-title readiness, and party whitelist changes. Use `/kung log copy`, `/kung log tail <lines>`, `/kung log save`, and `/kung log clear` after a bad run instead of relying on memory or screenshots only.
 - `HypixelPartyTracker`: global background tracker for Hypixel party membership. It listens to chat/game messages and periodically remembers online player UUIDs. Keep it non-configurable and always active; dungeon rendering should consume this shared party whitelist instead of maintaining its own party-only state.
 - `HypixelInstanceTracker`: global background tracker for SkyBlock/Hypixel context. This modpack is intended for Hypixel, so it does not gate context tracking on the server address. It reads sidebar title/lines plus tab header/footer once per client tick, also consumes tab-list packets, incoming chat/game text, and the client's own sent commands, and exposes `tracking`, `dungeonHub`, `catacombs`, `dungeonRunContext`, `instanceLine`, and `serverId`. Dungeon lifecycle and Lobby Hop must use this shared context instead of separate scoreboard/tab parsing. It emits exactly one visible `[Kung Context]` message per resolved location/server pair: `Entered <instance/island> (<serverId>)`. Do not emit server-only or instance-only context messages. Current scoreboard/sidebar/tab context is preferred for `serverId`; transfer chat like `Sending to server mini...` may only seed a pending transfer id, and that id may become current only after a subsequent Login/Respawn world-change packet or client-level identity change. Hub-to-hub switches should announce again because the server id changes.
 - Pending warp destinations must not be paired with raw pre-transfer chat server ids. If `/is` or a warp message sets `pendingInstanceLine`, wait until the current scoreboard/sidebar/tab context provides a server id, or until a pending transfer id has been promoted by a subsequent Login/Respawn world-change packet or client-level identity change. Pending destinations are short-lived and single-use; clear them after a complete `<instance> (<serverId>)` announcement so they cannot be reused for a later dungeon/lobby transition.
 - Treat server/world changes as the hard "new instance" anchor. `ClientboundLoginPacket`/`ClientboundRespawnPacket` call `HypixelInstanceTracker.observeWorldChangePacket()`, and the tracker also compares `client.level` identity each client tick as a reactive fallback for transfers where the packet hook is missed or too early. This immediately clears old instance flags and cached tab/sidebar context while preserving pending warp destinations. Do not add fixed settling timers here; after the world-change event, the next tick should read only the current world/tab/scoreboard context.
 - Hypixel can send a Login packet followed immediately by multiple Respawn/level-change events for one transfer. If `Sending to server mini...` has been promoted to the current transfer server, do not clear it on duplicate world-change events with no new transfer message; keep it briefly so the first real scoreboard/tab context can announce `Entered <instance> (<serverId>)`.
-- The same world-change packets also call `DungeonStateTracker.observeWorldChangePacket()`, and the dungeon tracker mirrors the same `client.level` identity fallback. During an active dungeon session without a pending run summary, this clears cached render state and restarts the scan recorder so a new Catacombs server/run cannot keep the old map.
+- The same world-change packets also route through `DungeonEventRouter.observeWorldChangePacket()`, and the dungeon tracker mirrors the same `client.level` identity fallback. During an active dungeon session without a pending run summary, this clears cached render state and restarts the scan recorder so a new Catacombs server/run cannot keep the old map.
 - Dungeon detection must let strong in-world evidence override stale context text. If the player has the dungeon map item and is inside the dungeon grid, treat that as a dungeon instance candidate even if `HypixelInstanceTracker` still says `Dungeon Hub`; otherwise entering Catacombs can be missed and `Starting in 1 second.` will not reset the map for a new run.
 - Hypixel server ids can have multiple trailing letters, e.g. `mini24BS` or `mini82CH`; do not restrict server id parsing to a single suffix letter.
 
@@ -58,11 +65,10 @@ The dungeon map is the highest-risk area.
 
 1. `DungeonScanRecorder` scans room, door, and separator points from the world.
 2. `DungeonMapSnapshot` stores observed scan points and visited/cleared/completed state.
-3. `DungeonKnownRoomCatalog` loads bundled and local room data, creates room templates, and matches templates against the snapshot.
-4. `DungeonLiveMapWriter.MatchRenderPlan` turns matches and hints into render ownership, room types, doors, visited state, and external door coloring.
+3. `DungeonRoomRepository` is the runtime boundary around the finished catalog; `KnownDungeonRoomRepository` delegates to `DungeonKnownRoomCatalog` storage and matching.
+4. `DungeonLiveMapWriter.MatchRenderPlan` turns repository matches and hints into render ownership, room types, doors, visited state, and external door coloring. The old unused PNG/HTML diagnostic writer was removed.
 5. `DungeonMapFeature` renders the in-game HUD.
-6. `DungeonLiveMapWriter` writes PNG/HTML diagnostics outside the HUD path.
-7. `DungeonRunStats` reads scoreboard/chat/actionbar state and estimates secrets, score, deaths, mimic/prince, crypts, and clear state.
+6. `DungeonRunStats` aggregates scoreboard/chat/actionbar observations. Score math, player state, API enrichment, and outgoing announcements live in dedicated classes.
 
 Current 26er scanning notes:
 
@@ -74,10 +80,10 @@ Current 26er scanning notes:
 - Player skins should use the last real loaded/tab skin per UUID before falling back to Minecraft's default skin. Nameless map decorations can outlive the loaded player object, so without this cache teammates may temporarily draw as Steve/Alex.
 - Player class colors must resolve by UUID first and by remembered player name second. The map marker UUID and the tab-list/class parse can temporarily land on different player stat rows, so a name fallback is required to avoid known dungeon players getting the white unknown-class border. Tab class parsing must tolerate player lines that do not start with a `[level]` prefix.
 - Trace category `map-change` is the authoritative map snapshot mutation journal. It logs resets, point additions/replacements, first observed room points, player-grid movement, start room, traversed doors, map-player/map-visible rooms, clear/completed state changes, and opened Wither/Blood door transitions. Use this before changing render code when a door/exit appears late or a room state flips unexpectedly.
-- The run-start `x doors` title is scheduled from the `Starting in 1 second.` lifecycle chat signal and counts the `MatchRenderPlan` Blood Rush path from START to BLOOD, not every observed Wither/Blood door in the dungeon. The title uses `bloodRushTotalSpecialDoorCount()` for the initial count and `bloodRushLockedSpecialDoorCount()` for remaining counts. Doors touching the START room are excluded so the entrance/start door cannot inflate the title. Trace diagnostics log `rawDoors`, `totalDoors`, `planDoors`, `bloodRushTotal`, `bloodRushLocked`, and both full/filtered door summaries.
-- After the initial door title is shown, Kung watches the render-plan remaining locked special-door count. When it drops after a door opens, show a short remaining title: `<n> doors left`, `Last door`, or `Blood next` when the only remaining special door is the Blood door.
-- The run-start door title must not use magic fallback counts like `5+ doors`. While the title is pending, the scanner temporarily uses a fast interval. If `MatchRenderPlan.readyForDoorTitle(...)` is true, show the exact observed `<n> doors`. If it is not ready yet but some non-start Wither/Blood doors are already visible in the render plan, show the conservative lower bound as `<n>+ doors` at run start. The `+` means more doors may still appear because Blood/Rush recognition or visible map rooms are incomplete. Do not include doors touching START in either count.
-- Door-title readiness must consider the map item, not only physically scanned rooms. `DungeonMapSnapshot.mapVisibleRooms()` records rooms visible on the dungeon map item; `MatchRenderPlan.readyForDoorTitle(...)` must require those map-visible rooms to have recognized room types. A previous bug showed `2 doors` immediately because no unknown scanned rooms existed yet, even though later map/scan data revealed more locked Blood Rush doors.
+- The run-start `x doors` title is scheduled from the `Starting in 1 second.` lifecycle chat signal. The count is the best known Blood Rush door total: the conservative lower bound comes from every observed non-start Wither/Blood door, including doors already recorded as opened; an exact count is allowed only when all map-visible rooms are recognized or when the visible map data contains an uninterrupted START-to-BLOOD path. Doors touching START are excluded so the entrance/start door cannot inflate the title.
+- After the initial door title is shown, Kung treats scanned Wither/Blood door transitions as the authoritative progress trigger. If a previously locked special door becomes `OPEN` or stops being a locked special door because its coal/red blocks disappeared, `DungeonMapSnapshot.openedLockedDoors()` records it and Blood Rush shows the remaining title from the latest estimate. Do not require the rendered path count to drop before showing a door-fell title.
+- The run-start door title must not use magic fallback counts like `5+ doors`. While the title is pending, the scanner temporarily uses a fast interval. If the exact conditions above are not met yet but some non-start Wither/Blood doors are visible or already opened, show the conservative lower bound as `<n>+ doors`. The `+` means more doors may still appear because Blood/Rush recognition or visible map rooms are incomplete.
+- Door-title readiness must consider the map item, not only physically scanned rooms. `DungeonMapSnapshot.mapVisibleRooms()` records rooms visible on the dungeon map item; map-visible `UNKNOWN` placeholders may be replaced by later known local or remote room identity. A previous bug showed exact counts too early because no unknown scanned rooms existed yet; another bug kept exact counts unavailable because known remote room data could not replace earlier map-visible `UNKNOWN` entries.
 - Singleplayer title debugging exists: `/kung test title <doors>` shows the title immediately, while `/kung test dungeonstart <doors>` schedules the same delayed title path used by the run-start signal with a forced door count.
 - Dungeon lifecycle detection is deliberately not chat-only. Starting/active run context uses `HypixelInstanceTracker.INSTANCE.catacombs()` plus conservative dungeon fallbacks (`dungeonRunContext`, or dungeon map item while inside the dungeon grid), so the scoreboard/tab instance text remains the preferred source of truth but a temporarily missing Catacombs line does not collapse the map. The map overlay must remain visible for the active sticky dungeon instance even before the map item is received; `hasDungeonMap` is a data source, not a render gate. Ongoing chat/stat/death processing additionally requires an active run. Generic instance end must not send run stats unless a real finish signal already scheduled the summary; this prevents false starts and lobby chat deaths from producing summaries. `/kung instance` prints the current shared Hypixel context for debugging. Visible `[Kung Dungeon]` messages announce `Run started`, `Run ended`, and `Left dungeons`.
 - `HypixelInstanceTracker` must not parse arbitrary chat as the current instance. Friends lists (`name is in SkyBlock - ... Catacombs`) and party-finder messages (`name entered The Catacombs...`) are about other players and must not become `instanceLine`. Chat may provide safe warp destinations like "your SkyBlock island"; own sent commands such as `/is`, `/hub`, `/dh`, and `/warp dungeon_hub` may seed a pending destination. Chat must not provide the current `serverId`.
@@ -99,7 +105,7 @@ Current 26er scanning notes:
 - Room core reuse requires a non-zero stable hash now. Core-only matches are rescanned so the mod can learn stable 26 hashes.
 - Room matching is core-first after strict template matches: every known cell hash can produce a visible room label, then adjacent cells with the same room metadata are grouped only when no visible door separates them.
 - Soft template matching is conservative. A non-exact component must still have a known hint for the same room; unknown neighboring cores are not absorbed into a room shape.
-- `DungeonStateTracker.renderPlan()` triggers `DungeonKnownRoomCatalog.autoLearnStableHashes(...)` for matched rooms and refreshes the plan once after a successful learn.
+- `DungeonStateTracker.renderPlan()` triggers stable-hash auto-learning through `DungeonRoomRepository` and refreshes the plan once after a successful learn.
 
 Useful room diagnostics:
 
@@ -118,24 +124,24 @@ Bundled data lives under:
 
 Important files:
 
-- `known-rooms.json`: canonical bundled room database.
+- `known-rooms.json`: canonical bundled room database, including room metadata such as `secrets`, `crypts`, and `prince`.
 - `known-room-types.properties`: core-hash to room-type hints.
 - `known-room-preloads.jsonl`: observed transitions from preload/empty-ish room hashes to known room hashes.
 
 Active 26er modules should not bundle `known-rooms.jsonl`. The code can still import old JSONL files when migrating archived/profile data, but normal 26er learning and undo are JSON-based.
 
-As of the last merge, the 26er canonical JSON has no cross-room hash conflicts and no room names with conflicting type/secrets metadata. Blaze is a canonical puzzle room with `secrets=1`; wiki-listed puzzle rooms without secrets, including Ice Path, use `secrets=0`.
+As of the last merge, the 26er canonical JSON has no cross-room hash conflicts and no room names with conflicting type/secrets metadata. Blaze is a canonical puzzle room with `secrets=1`; wiki-listed puzzle rooms without secrets, including Ice Path, use `secrets=0`. Prince room classification lives in `known-rooms.json` as a boolean `prince` field; the Java fallback list is only for migrating older room files that do not have that field yet.
 
 - `Blaze|PUZZLE|1`: core/stable pairs `1286919098/759798534` and `-1261755590/994913400`
 
 Rooms still reported as only core/unstable by `tools/analyze-room-data.mjs` need more in-game observations before they are fully reliable.
 
-Local learned room data and local room type/preload hints are always loaded from the active Minecraft profile when present, so `/kung room learn` affects matching immediately after the catalog reloads. The `Local Data` setting now only gates write-heavy development helpers such as auto-learning stable hashes/preload transitions.
+Bundled Jar room data is always loaded. Local learned room data and local room type/preload hints are an opt-in development/override layer behind the `Local Data` setting, so stale profile files cannot silently affect normal player matching.
 
 - `%APPDATA%/ModrinthApp/profiles/<profile>/kung-dungeon-scans`
 
 The current 26.1.2 play profile is `Dungeons 26.1.2`. Older saved traces may still live under `Here We Go Again (2)/kung-debug`; use those only as archived diagnostics.
-The 26.1.2 Gradle build task `syncLocalDungeonRoomData` copies local `known-rooms.json`, `known-room-preloads.jsonl`, and `known-room-types.properties` from that profile into `versions/mc26_1_2/src/main/resources/kung-dungeon-scans` before `processResources`, so locally learned rooms are baked into the next Jar build. The profile can be overridden with `-PkungProfileDir=...` or `KUNG_PROFILE_DIR`.
+The explicit 26.1.2 Gradle task `syncLocalDungeonRoomData` copies local `known-rooms.json`, `known-room-preloads.jsonl`, and `known-room-types.properties` from that profile into `versions/mc26_1_2/src/main/resources/kung-dungeon-scans`. Normal builds do not run this task automatically, so local room data is never baked into a Jar as a cleanup side effect. The profile can be overridden with `-PkungProfileDir=...` or `KUNG_PROFILE_DIR`.
 
 Room learning command notes:
 

@@ -1,12 +1,12 @@
 package com.github.beng420.kung.feature.dungeon;
 
+import com.github.beng420.kung.config.KungConfig;
+
 import com.github.beng420.kung.KungMod;
 import com.github.beng420.kung.feature.dungeon.room.RoomType;
 import com.github.beng420.kung.skyblock.HypixelInstanceTracker;
-import com.github.beng420.kung.util.KungChat;
+import com.github.beng420.kung.message.KungMessages;
 import com.github.beng420.kung.util.KungDebugRecorder;
-import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
-import net.fabricmc.fabric.api.event.player.UseBlockCallback;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -15,21 +15,16 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
-import java.util.regex.Pattern;
-import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.AbstractClientPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
-import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.saveddata.maps.MapDecoration;
 import net.minecraft.world.level.saveddata.maps.MapDecorationTypes;
 import net.minecraft.world.level.saveddata.maps.MapItemSavedData;
 
 public final class DungeonStateTracker {
-    private static DungeonStateTracker activeTracker;
-
     private static final int MAX_MULTI_LEARN_COMPONENTS = 4;
     private static final long STATS_OBSERVE_INTERVAL_TICKS = 5;
     private static final long CLEAR_STATE_OBSERVE_INTERVAL_TICKS = 5;
@@ -41,17 +36,13 @@ public final class DungeonStateTracker {
     private static final int DEBUG_DOOR_SIZE = 6;
     private static final int DEBUG_CELL_GAP = 1;
     private static final int PLAYER_IDENTITY_MATCH_DISTANCE = 12;
-    private static final Pattern RUN_START_SIGNAL = Pattern.compile("^Starting in 1 second\\.$");
-    private static final Pattern RUN_FINISHED_SIGNAL = Pattern.compile(
-        "^\\s*(?:\\S\\s+)?Defeated\\s+(.+?)\\s+in\\s+0?([\\dhms ]+?)\\s*(?:\\(NEW RECORD!\\))?$"
-    );
-
     private final DungeonState state = new DungeonState();
+    private final DungeonRoomRepository roomRepository;
     private final DungeonRunDetector runDetector = new DungeonRunDetector();
     private final DungeonScanRecorder scanRecorder = new DungeonScanRecorder();
     private final DungeonRunStats runStats = new DungeonRunStats();
     private final DungeonSplitTracker splitTracker = new DungeonSplitTracker();
-    private final BloodRushHelperFeature bloodRushHelper = new BloodRushHelperFeature();
+    private final BloodRushHelperFeature bloodRushHelper = BloodRushHelperFeature.INSTANCE;
     private boolean lastInDungeon;
     private boolean dungeonInstanceActive;
     private boolean inDungeonArea;
@@ -85,7 +76,17 @@ public final class DungeonStateTracker {
     private boolean runStartMessageSent;
     private boolean runEndMessageSent;
     private boolean realRunStarted;
+
     public DungeonStateTracker() {
+        this(KnownDungeonRoomRepository.INSTANCE);
+    }
+
+    public DungeonStateTracker(DungeonRoomRepository roomRepository) {
+        this.roomRepository = java.util.Objects.requireNonNull(roomRepository, "roomRepository");
+    }
+
+    public DungeonRoomRepository roomRepository() {
+        return roomRepository;
     }
 
     public DungeonState state() {
@@ -114,10 +115,6 @@ public final class DungeonStateTracker {
 
     boolean realRunStarted() {
         return realRunStarted;
-    }
-
-    void scanDungeonNow(Minecraft client) {
-        scanRecorder.scanNow(client, this);
     }
 
     public boolean isInDungeonArea() {
@@ -151,14 +148,17 @@ public final class DungeonStateTracker {
     public DungeonLiveMapWriter.MatchRenderPlan renderPlan() {
         DungeonMapSnapshot snapshot = scanRecorder.mapSnapshot();
         long revision = snapshot.revision();
-        long catalogRevision = DungeonKnownRoomCatalog.revision();
+        long catalogRevision = roomRepository.revision();
         if (cachedRenderPlan == null
             || cachedRenderPlanRevision != revision
             || cachedRenderPlanCatalogRevision != catalogRevision) {
-            DungeonLiveMapWriter.MatchRenderPlan renderPlan = DungeonLiveMapWriter.MatchRenderPlan.from(snapshot);
+            DungeonLiveMapWriter.MatchRenderPlan renderPlan = DungeonLiveMapWriter.MatchRenderPlan.from(
+                snapshot,
+                roomRepository
+            );
             if (autoLearnStableHashes(snapshot, renderPlan)) {
-                renderPlan = DungeonLiveMapWriter.MatchRenderPlan.from(snapshot);
-                catalogRevision = DungeonKnownRoomCatalog.revision();
+                renderPlan = DungeonLiveMapWriter.MatchRenderPlan.from(snapshot, roomRepository);
+                catalogRevision = roomRepository.revision();
             }
             cachedRenderPlan = renderPlan;
             cachedRenderPlanRevision = revision;
@@ -222,7 +222,7 @@ public final class DungeonStateTracker {
         for (DungeonKnownRoomCatalog.MatchedRoom match : renderPlan.matches()) {
             try {
                 DungeonKnownRoomCatalog.AutoLearnResult result =
-                    DungeonKnownRoomCatalog.autoLearnStableHashes(match, snapshot);
+                    roomRepository.autoLearnStableHashes(match, snapshot);
                 if (result.learned()) {
                     learnedAny = true;
                     KungMod.LOGGER.info(
@@ -246,7 +246,7 @@ public final class DungeonStateTracker {
     public List<String> debugMapDecorations(Minecraft client) {
         MapItemSavedData map = DungeonMapItems.mapData(client);
         if (map == null || client.player == null) {
-            return List.of("Keine Dungeon-Map im Inventar/Offhand/ausgewaehlten Slot gefunden.");
+            return List.of("No dungeon map found in the inventory, offhand, or selected slot.");
         }
 
         List<String> lines = new ArrayList<>();
@@ -290,18 +290,18 @@ public final class DungeonStateTracker {
             + " stateInDungeon=" + state.isInDungeon()
             + " recording=" + scanRecorder.isRecording()
             + " dungeonTick=" + dungeonTick);
-        appendLine(debug, "config enabled=" + DungeonMapOverlayConfig.INSTANCE.enabled()
-            + " playerTracking=" + DungeonMapOverlayConfig.INSTANCE.playerTrackingEnabled()
-            + " debugMessagesEnabled=" + DungeonMapOverlayConfig.INSTANCE.debugMessagesEnabled()
-            + " dungeonDebugMessages=" + DungeonMapOverlayConfig.INSTANCE.debugMessages()
-            + " roomCrypts=" + DungeonMapOverlayConfig.INSTANCE.debugRoomCrypts()
-            + " roomDebug=" + DungeonMapOverlayConfig.INSTANCE.debugRoomMatches()
-            + " scale=" + DungeonMapOverlayConfig.INSTANCE.scale()
-            + " unopenedAlpha=" + DungeonMapOverlayConfig.INSTANCE.unopenedRoomAlpha());
+        appendLine(debug, "config enabled=" + KungConfig.get().dungeon.enabled()
+            + " playerTracking=" + KungConfig.get().dungeon.playerTrackingEnabled()
+            + " debugMessagesEnabled=" + KungConfig.get().debug.enabled()
+            + " dungeonDebugMessages=" + KungConfig.get().debug.dungeonMessages()
+            + " roomCrypts=" + KungConfig.get().dungeon.debugRoomCrypts()
+            + " roomDebug=" + KungConfig.get().dungeon.debugRoomMatches()
+            + " scale=" + KungConfig.get().dungeon.scale()
+            + " unopenedAlpha=" + KungConfig.get().dungeon.unopenedRoomAlpha());
 
         if (client.player == null || client.level == null) {
             appendLine(debug, "client=no-player-or-world");
-            return RoomDataResult.found("Ultra-Debug kopiert: keine Welt/kein Spieler.", debug.toString());
+            return RoomDataResult.found("Ultra debug copied: no world or player.", debug.toString());
         }
 
         DungeonScanUtils.GridPosition selfGrid = DungeonScanUtils.getRoomGridPosition(client.player.blockPosition());
@@ -325,7 +325,7 @@ public final class DungeonStateTracker {
             appendLine(debug, "currentRoomDataClipboard=" + roomData.clipboardText());
         }
 
-        return RoomDataResult.found("Ultra-Debug in die Zwischenablage kopiert.", debug.toString());
+        return RoomDataResult.found("Ultra debug copied to the clipboard.", debug.toString());
     }
 
     private void appendSnapshotDebug(StringBuilder debug, DungeonMapSnapshot snapshot) {
@@ -383,7 +383,7 @@ public final class DungeonStateTracker {
             + " crypts=" + runStats.cryptsOpened()
             + "/" + runStats.cryptsAvailable());
         int index = 0;
-        for (DungeonRunStats.PlayerStats stats : runStats.dungeonPlayersInOrder()) {
+        for (DungeonPlayerStats stats : runStats.dungeonPlayersInOrder()) {
             appendLine(debug, "orderedPlayer[" + index++ + "] name=" + stats.name()
                 + " uuid=" + stats.uuid()
                 + " class=" + stats.dungeonClass()
@@ -394,8 +394,8 @@ public final class DungeonStateTracker {
                 + " lastSeenTick=" + stats.lastSeenTick()
                 + " loaded=" + (loadedPlayer(client, stats.uuid()) != null));
         }
-        for (Map.Entry<UUID, DungeonRunStats.PlayerStats> entry : runStats.players().entrySet()) {
-            DungeonRunStats.PlayerStats stats = entry.getValue();
+        for (Map.Entry<UUID, DungeonPlayerStats> entry : runStats.players().entrySet()) {
+            DungeonPlayerStats stats = entry.getValue();
             appendLine(debug, "statsPlayer name=" + stats.name()
                 + " uuid=" + entry.getKey()
                 + " class=" + stats.dungeonClass()
@@ -564,9 +564,9 @@ public final class DungeonStateTracker {
         if (nearestLoadedPlayerUuid != null) {
             return nearestLoadedPlayerUuid;
         }
-        List<DungeonRunStats.PlayerStats> players = runStats.dungeonPlayersInOrder();
+        List<DungeonPlayerStats> players = runStats.dungeonPlayersInOrder();
         while (partyPlayerIndex < players.size()) {
-            DungeonRunStats.PlayerStats stats = players.get(partyPlayerIndex++);
+            DungeonPlayerStats stats = players.get(partyPlayerIndex++);
             if (stats != null
                 && !stats.uuid().equals(client.player.getUUID())
                 && !assignedUuids.contains(stats.uuid())) {
@@ -626,7 +626,7 @@ public final class DungeonStateTracker {
     }
 
     private String classText(UUID uuid) {
-        DungeonRunStats.PlayerStats stats = uuid == null ? null : runStats.playerStats(uuid);
+        DungeonPlayerStats stats = uuid == null ? null : runStats.playerStats(uuid);
         return stats == null ? "UNKNOWN(no-stats)" : stats.dungeonClass().name();
     }
 
@@ -725,49 +725,27 @@ public final class DungeonStateTracker {
     }
 
     public void initializeClient() {
-        activeTracker = this;
-        ClientTickEvents.END_CLIENT_TICK.register(this::tick);
-        DungeonServerTickEvents.register(() -> {
-            if (dungeonInstanceActive) {
-                splitTracker.serverTick(System.currentTimeMillis());
-                if (realRunStarted) {
-                    bloodRushHelper.serverTick();
-                }
-            }
-        });
-        ClientReceiveMessageEvents.GAME.register(this::observeGameMessage);
-        ClientReceiveMessageEvents.CHAT.register((message, signedMessage, sender, params, receptionTimestamp) ->
-            observeChatMessage(message));
-        UseBlockCallback.EVENT.register((player, world, hand, hitResult) -> {
-            if (!world.isClientSide()) {
-                return InteractionResult.PASS;
-            }
-            Minecraft client = Minecraft.getInstance();
-            if (player == client.player) {
-                bloodRushHelper.observeDoorBlockUse(client, this, hitResult.getBlockPos());
-            }
-            return InteractionResult.PASS;
-        });
+        new DungeonEventRouter(this).register();
         scanRecorder.initializeClient(this);
     }
 
-    public static void observeEntityDeath(Entity entity) {
-        DungeonStateTracker tracker = activeTracker;
-        if (tracker == null || entity == null || !tracker.isInDungeonArea()) {
+    void observeEntityDeath(Entity entity) {
+        if (!isInDungeonArea()) {
             return;
         }
-        tracker.runStats.observeEntityDeath(Minecraft.getInstance(), entity);
+        runStats.observeEntityDeath(Minecraft.getInstance(), entity);
     }
 
-    public static void observeWorldChangePacket() {
-        DungeonStateTracker tracker = activeTracker;
-        if (tracker != null) {
-            KungDebugRecorder.event("packet", "dungeon world-change packet");
-            tracker.handleWorldChangePacket();
+    void serverTick() {
+        if (dungeonInstanceActive) {
+            splitTracker.serverTick(System.currentTimeMillis());
+            if (realRunStarted) {
+                bloodRushHelper.serverTick();
+            }
         }
     }
 
-    private void handleWorldChangePacket() {
+    void handleWorldChangePacket() {
         KungDebugRecorder.event("dungeon", "world-change reset active="
             + dungeonInstanceActive
             + " pendingSummary="
@@ -785,7 +763,7 @@ public final class DungeonStateTracker {
         }
     }
 
-    private void observeGameMessage(Component message, boolean overlay) {
+    void observeGameMessage(Component message, boolean overlay) {
         try {
             observeDungeonMessage(Minecraft.getInstance(), message.getString(), overlay);
         } catch (RuntimeException | LinkageError exception) {
@@ -794,7 +772,7 @@ public final class DungeonStateTracker {
         }
     }
 
-    private void observeChatMessage(Component message) {
+    void observeChatMessage(Component message) {
         try {
             observeDungeonMessage(Minecraft.getInstance(), message.getString(), false);
         } catch (RuntimeException | LinkageError exception) {
@@ -809,7 +787,7 @@ public final class DungeonStateTracker {
             return;
         }
         runStats.observeMessage(client, text, dungeonTick);
-        bloodRushHelper.observeMessage(client, text, realRunStarted);
+        bloodRushHelper.observeMessage(client, text, realRunStarted, this);
         if (overlay) {
             runStats.observeRoomSecretOverlay(client, text, renderPlan());
         }
@@ -828,7 +806,7 @@ public final class DungeonStateTracker {
             DungeonRoomClassifier.learnRoomType(currentRoomCore.coreHash(), roomType);
         } catch (IOException | IllegalArgumentException exception) {
             KungMod.LOGGER.warn("Failed to learn dungeon room type.", exception);
-            return LearnRoomTypeResult.failed("Konnte den Raumtyp nicht speichern. Siehe latest.log.");
+            return LearnRoomTypeResult.failed("Could not save the room type. See latest.log.");
         }
 
         return LearnRoomTypeResult.learned(
@@ -862,14 +840,14 @@ public final class DungeonStateTracker {
             connectedLearnedRoomComponents(currentRoomCore, name, roomType, secrets, crypts);
         if (roomComponents.size() <= 1) {
             return LearnRoomResult.failed(
-                "Nur eine passende Zelle gefunden. Nutze normales learn oder lade/betritt weitere Raumteile."
+                "Only one matching cell was found. Use regular learn, or load and enter more parts of the room."
             );
         }
         if (roomComponents.size() > MAX_MULTI_LEARN_COMPONENTS) {
             return LearnRoomResult.failed(
-                "Multicell-Learn abgebrochen: "
+                "Multicell learn cancelled: "
                     + roomComponents.size()
-                    + " Zellen gefunden, maximal erlaubt sind "
+                    + " cells found; the maximum allowed is "
                     + MAX_MULTI_LEARN_COMPONENTS
                     + "."
             );
@@ -895,7 +873,7 @@ public final class DungeonStateTracker {
             }
         } catch (IOException | IllegalArgumentException exception) {
             KungMod.LOGGER.warn("Failed to learn multicell dungeon room.", exception);
-            return LearnRoomResult.failed("Konnte den Mehrzellen-Raum nicht speichern. Siehe latest.log.");
+            return LearnRoomResult.failed("Could not save the multicell room. See latest.log.");
         }
 
         pushRoomSyncReport(name, roomType, secrets, crypts, syncComponents);
@@ -958,7 +936,7 @@ public final class DungeonStateTracker {
             }
         } catch (IOException | IllegalArgumentException exception) {
             KungMod.LOGGER.warn("Failed to learn dungeon room.", exception);
-            return LearnRoomResult.failed("Konnte den Raum nicht speichern. Siehe latest.log.");
+            return LearnRoomResult.failed("Could not save the room. See latest.log.");
         }
 
         pushRoomSyncReport(name, roomType, secrets, crypts, components);
@@ -1076,7 +1054,7 @@ public final class DungeonStateTracker {
             CurrentRoomCore roomCore = observedPoint == null
                 ? (roomGridX == currentRoomCore.roomGridX() && roomGridZ == currentRoomCore.roomGridZ()
                     ? currentRoomCore
-                    : CurrentRoomCore.failed("Nicht geladen."))
+                    : CurrentRoomCore.failed("Not loaded."))
                 : CurrentRoomCore.valid(
                     observedPoint.point().coreHash(),
                     observedPoint.point().stableCoreHash(),
@@ -1173,9 +1151,9 @@ public final class DungeonStateTracker {
         RoomType roomType,
         int secrets
     ) {
-        DungeonKnownRoomCatalog.KnownCoreHint hint = DungeonKnownRoomCatalog.knownCoreHint(coreHash);
+        DungeonKnownRoomCatalog.KnownCoreHint hint = KnownDungeonRoomRepository.INSTANCE.knownCoreHint(coreHash);
         if (hint == null && stableCoreHash != 0) {
-            hint = DungeonKnownRoomCatalog.knownCoreHint(stableCoreHash);
+            hint = KnownDungeonRoomRepository.INSTANCE.knownCoreHint(stableCoreHash);
         }
         return hint != null
             && (!hint.name().equalsIgnoreCase(name)
@@ -1185,13 +1163,13 @@ public final class DungeonStateTracker {
 
     public LearnRoomResult updateCurrentRoomCrypts(Minecraft client, int crypts) {
         if (client.level == null || client.player == null) {
-            return LearnRoomResult.failed("Du bist gerade nicht in einer Welt.");
+            return LearnRoomResult.failed("You are not currently in a world.");
         }
 
         DungeonScanUtils.GridPosition roomGrid = DungeonScanUtils.getRoomGridPosition(client.player.blockPosition());
         DungeonKnownRoomCatalog.MatchedRoom match = matchedRoomAt(roomGrid.gridX(), roomGrid.gridZ());
         if (match == null) {
-            return LearnRoomResult.failed("Der aktuelle Raum ist noch nicht eindeutig bekannt.");
+            return LearnRoomResult.failed("The current room has not been uniquely identified yet.");
         }
 
         try {
@@ -1203,7 +1181,7 @@ public final class DungeonStateTracker {
             );
         } catch (IOException | IllegalArgumentException exception) {
             KungMod.LOGGER.warn("Failed to update dungeon room crypts.", exception);
-            return LearnRoomResult.failed("Konnte Crypts fuer diesen Raum nicht speichern. Siehe latest.log.");
+            return LearnRoomResult.failed("Could not save crypts for this room. See latest.log.");
         }
 
         return LearnRoomResult.learned(
@@ -1223,10 +1201,10 @@ public final class DungeonStateTracker {
             return RoomDataResult.failed(currentRoomCore.message());
         }
 
-        DungeonKnownRoomCatalog.KnownCoreHint coreHint = DungeonKnownRoomCatalog.knownCoreHint(currentRoomCore.coreHash());
+        DungeonKnownRoomCatalog.KnownCoreHint coreHint = roomRepository.knownCoreHint(currentRoomCore.coreHash());
         DungeonKnownRoomCatalog.KnownCoreHint stableHint = currentRoomCore.stableCoreHash() == 0
             ? null
-            : DungeonKnownRoomCatalog.knownCoreHint(currentRoomCore.stableCoreHash());
+            : roomRepository.knownCoreHint(currentRoomCore.stableCoreHash());
         DungeonKnownRoomCatalog.MatchedRoom match =
             matchedRoomAt(currentRoomCore.roomGridX(), currentRoomCore.roomGridZ());
         DungeonMapSnapshot.ObservedPoint initialPoint =
@@ -1240,7 +1218,7 @@ public final class DungeonStateTracker {
             + " stableHint=" + formatHint(stableHint)
             + " match=" + formatMatch(match);
 
-        return RoomDataResult.found("RoomData kopiert: " + clipboardText, clipboardText);
+        return RoomDataResult.found("Room data copied: " + clipboardText, clipboardText);
     }
 
     public RoomDataResult exportCurrentRoom(
@@ -1259,14 +1237,14 @@ public final class DungeonStateTracker {
             connectedLearnedRoomComponents(currentRoomCore, name, roomType, secrets, crypts);
         if (components.isEmpty()) {
             return RoomDataResult.failed(
-                "Room-Export abgebrochen: keine passende Raumzelle fuer \"" + name + "\" gefunden."
+                "Room export cancelled: no matching room cell found for \"" + name + "\"."
             );
         }
         if (components.size() > MAX_MULTI_LEARN_COMPONENTS) {
             return RoomDataResult.failed(
-                "Room-Export abgebrochen: "
+                "Room export cancelled: "
                     + components.size()
-                    + " Zellen gefunden, maximal erlaubt sind "
+                    + " cells found; the maximum allowed is "
                     + MAX_MULTI_LEARN_COMPONENTS
                     + "."
             );
@@ -1309,7 +1287,7 @@ public final class DungeonStateTracker {
 
         String clipboardText = roomExportJson(name, roomType, secrets, crypts, exportCells);
         return RoomDataResult.found(
-            "Room-Export kopiert: \""
+            "Room export copied: \""
                 + name
                 + "\" "
                 + roomType.name()
@@ -1506,7 +1484,7 @@ public final class DungeonStateTracker {
 
     private CurrentRoomCore currentRoomCore(Minecraft client) {
         if (client.level == null || client.player == null) {
-            return CurrentRoomCore.failed("Du bist gerade nicht in einer Welt.");
+            return CurrentRoomCore.failed("You are not currently in a world.");
         }
 
         return roomCoreAt(client, client.player.blockPosition());
@@ -1514,7 +1492,7 @@ public final class DungeonStateTracker {
 
     private CurrentRoomCore roomCoreAt(Minecraft client, BlockPos position) {
         if (client.level == null || client.player == null) {
-            return CurrentRoomCore.failed("Du bist gerade nicht in einer Welt.");
+            return CurrentRoomCore.failed("You are not currently in a world.");
         }
 
         DungeonScanUtils.GridPosition roomGrid = DungeonScanUtils.getRoomGridPosition(position);
@@ -1523,7 +1501,7 @@ public final class DungeonStateTracker {
 
         if (!isValidScanRoom(scanGridX, scanGridZ)) {
             return CurrentRoomCore.failed(
-                "Deine Position liegt nicht im bekannten Dungeon-Raster: "
+                "Your position is outside the known dungeon grid: "
                     + roomGrid.gridX() + "," + roomGrid.gridZ()
             );
         }
@@ -1534,7 +1512,7 @@ public final class DungeonStateTracker {
             CurrentRoomCore snapshotCore = snapshotRoomCore(roomGrid.gridX(), roomGrid.gridZ());
             return snapshotCore.valid()
                 ? snapshotCore
-                : CurrentRoomCore.failed("Die Mitte dieses Raums ist noch nicht geladen.");
+                : CurrentRoomCore.failed("The center of this room is not loaded yet.");
         }
 
         int coreHash = DungeonScanUtils.getCoreHash(client.level, worldX, worldZ);
@@ -1542,7 +1520,7 @@ public final class DungeonStateTracker {
             CurrentRoomCore snapshotCore = snapshotRoomCore(roomGrid.gridX(), roomGrid.gridZ());
             return snapshotCore.valid()
                 ? snapshotCore
-                : CurrentRoomCore.failed("Der aktuelle Raum sieht fuer den Scanner leer aus.");
+                : CurrentRoomCore.failed("The current room appears empty to the scanner.");
         }
         int stableCoreHash = DungeonScanUtils.getStableCoreHash(client.level, worldX, worldZ);
 
@@ -1560,7 +1538,7 @@ public final class DungeonStateTracker {
         if (observedPoint == null
             || observedPoint.point().kind() != DungeonScanPointKind.ROOM
             || DungeonRoomClassifier.isEmptyCore(observedPoint.point().coreHash())) {
-            return CurrentRoomCore.failed("Kein geladener Raum-Hash im Snapshot.");
+            return CurrentRoomCore.failed("No loaded room hash is available in the snapshot.");
         }
 
         return CurrentRoomCore.valid(
@@ -1571,7 +1549,7 @@ public final class DungeonStateTracker {
         );
     }
 
-    private void tick(Minecraft client) {
+    void tick(Minecraft client) {
         try {
             tickUnsafe(client);
         } catch (RuntimeException | LinkageError exception) {
@@ -1621,7 +1599,7 @@ public final class DungeonStateTracker {
             return;
         }
 
-        if (dungeonInstanceActive && runDetector.isKnownNonDungeonInstance()) {
+        if (runDetector.isKnownNonDungeonInstance()) {
             logDungeonState(
                 "known-non-dungeon",
                 false,
@@ -1644,33 +1622,37 @@ public final class DungeonStateTracker {
         boolean hasDungeonMap = runDetector.hasDungeonMap(client);
         boolean insideDungeonGrid = runDetector.isInsideDungeonGrid(client);
         boolean knownNonDungeon = runDetector.isKnownNonDungeonInstance();
-        boolean stickyGridContext = dungeonInstanceActive && insideDungeonGrid && !knownNonDungeon;
-        boolean dungeonContextPresent = activeCatacombsInstance || detectedInstanceStart || stickyGridContext;
+        boolean showActiveRunWithoutContext = KungConfig.get().dungeon.showInBoss();
+        DungeonLifecyclePolicy.Decision lifecycle = DungeonLifecyclePolicy.evaluate(
+            dungeonInstanceActive,
+            realRunStarted,
+            missingRunTicks,
+            (int) MISSING_INSTANCE_GRACE_TICKS,
+            new DungeonLifecyclePolicy.Evidence(
+                detectedInstanceStart,
+                activeCatacombsInstance,
+                insideDungeonGrid,
+                knownNonDungeon,
+                showActiveRunWithoutContext
+            )
+        );
+        boolean stickyGridContext = lifecycle.stickyGridContext();
+        boolean dungeonContextPresent = lifecycle.contextPresent();
+        missingRunTicks = lifecycle.missingTicks();
         if (dungeonContextPresent) {
-            missingRunTicks = 0;
             contextLostMessageSent = false;
-        } else if (dungeonInstanceActive) {
-            missingRunTicks++;
         }
-        if (!dungeonInstanceActive && detectedInstanceStart) {
+        if (lifecycle.startInstance()) {
             startDungeonInstance(client);
         }
-
-        if (dungeonInstanceActive && !dungeonContextPresent && realRunStarted) {
+        if (lifecycle.reportContextLost()) {
             reportContextLost(client);
         }
-
-        if (dungeonInstanceActive
-            && !dungeonContextPresent
-            && missingRunTicks > MISSING_INSTANCE_GRACE_TICKS) {
+        if (lifecycle.endInstance()) {
             endDungeonInstance(client);
         }
-
-        boolean stickyDungeonArea = dungeonInstanceActive
-            && !knownNonDungeon
-            && missingRunTicks <= MISSING_INSTANCE_GRACE_TICKS;
-        inDungeonArea = activeCatacombsInstance || detectedInstanceStart || stickyDungeonArea;
-        mapVisibleArea = activeCatacombsInstance || detectedInstanceStart || stickyDungeonArea;
+        inDungeonArea = lifecycle.visibleArea();
+        mapVisibleArea = lifecycle.visibleArea();
         if (mapVisibleArea) {
             lastDungeonAreaSeenTick = dungeonTick;
         }
@@ -1729,7 +1711,7 @@ public final class DungeonStateTracker {
                 + " active="
                 + DungeonRoomDataSyncClient.INSTANCE.active()
                 + " upload="
-                + DungeonMapOverlayConfig.INSTANCE.roomSyncUploadEnabled());
+                + KungConfig.get().dungeon.roomSyncUploadEnabled());
             return;
         }
 
@@ -1743,7 +1725,7 @@ public final class DungeonStateTracker {
             + " active="
             + DungeonRoomDataSyncClient.INSTANCE.active()
             + " upload="
-            + DungeonMapOverlayConfig.INSTANCE.roomSyncUploadEnabled()
+            + KungConfig.get().dungeon.roomSyncUploadEnabled()
             + " localRooms="
             + localRooms.size()
             + " localDoors="
@@ -2177,12 +2159,12 @@ public final class DungeonStateTracker {
         if (runStartMessageSent || client == null || client.player == null) {
             return;
         }
-        if (!DungeonMapOverlayConfig.INSTANCE.dungeonDebugMessagesEnabled()) {
+        if (!KungConfig.get().debug.dungeonMessagesEnabled()) {
             runStartMessageSent = true;
             runEndMessageSent = false;
             return;
         }
-        client.player.sendSystemMessage(KungChat.message("Dungeon", "Run started"));
+        client.player.sendSystemMessage(KungMessages.debug("Dungeon", "Run started"));
         runStartMessageSent = true;
         runEndMessageSent = false;
     }
@@ -2191,11 +2173,11 @@ public final class DungeonStateTracker {
         if (runEndMessageSent || client == null || client.player == null) {
             return;
         }
-        if (!DungeonMapOverlayConfig.INSTANCE.dungeonDebugMessagesEnabled()) {
+        if (!KungConfig.get().debug.dungeonMessagesEnabled()) {
             runEndMessageSent = true;
             return;
         }
-        client.player.sendSystemMessage(KungChat.message("Dungeon", "Run ended"));
+        client.player.sendSystemMessage(KungMessages.debug("Dungeon", "Run ended"));
         runEndMessageSent = true;
     }
 
@@ -2203,14 +2185,14 @@ public final class DungeonStateTracker {
         if (runEndMessageSent || client == null || client.player == null) {
             return;
         }
-        if (!DungeonMapOverlayConfig.INSTANCE.dungeonDebugMessagesEnabled()
+        if (!KungConfig.get().debug.dungeonMessagesEnabled()
             || (lastLeftDungeonsMessageTick != Long.MIN_VALUE
                 && dungeonTick - lastLeftDungeonsMessageTick < MISSING_INSTANCE_GRACE_TICKS)) {
             runEndMessageSent = true;
             return;
         }
         lastLeftDungeonsMessageTick = dungeonTick;
-        client.player.sendSystemMessage(KungChat.message("Dungeon", "Left dungeons"));
+        client.player.sendSystemMessage(KungMessages.debug("Dungeon", "Left dungeons"));
         runEndMessageSent = true;
     }
 
@@ -2222,7 +2204,7 @@ public final class DungeonStateTracker {
             return;
         }
         lastRunErrorMessageTick = dungeonTick;
-        client.player.sendSystemMessage(KungChat.message(
+        client.player.sendSystemMessage(KungMessages.error(
             "Error",
             area + ": " + throwable.getClass().getSimpleName() + " - " + safeErrorMessage(throwable)
         ));
@@ -2238,7 +2220,7 @@ public final class DungeonStateTracker {
         contextLostMessageSent = true;
         HypixelInstanceTracker context = HypixelInstanceTracker.INSTANCE;
         DungeonScanUtils.GridPosition grid = DungeonScanUtils.getRoomGridPosition(client.player.blockPosition());
-        client.player.sendSystemMessage(KungChat.message(
+        client.player.sendSystemMessage(KungMessages.error(
             "Error",
             "Dungeon context missing; keeping map visible. ticks="
                 + missingRunTicks
@@ -2271,17 +2253,11 @@ public final class DungeonStateTracker {
     }
 
     private static boolean isRunStartSignal(String text) {
-        return text != null && RUN_START_SIGNAL.matcher(cleanLifecycleMessage(text)).matches();
+        return DungeonLifecycleSignals.isRunStart(text);
     }
 
     private static boolean isRunFinishedSignal(String text) {
-        return text != null && RUN_FINISHED_SIGNAL.matcher(cleanLifecycleMessage(text)).matches();
-    }
-
-    private static String cleanLifecycleMessage(String text) {
-        return text.replaceAll("\u00a7.", "")
-            .replaceAll("\\s+", " ")
-            .trim();
+        return DungeonLifecycleSignals.isRunFinished(text);
     }
 
     private boolean canAcceptDungeonLifecycleSignal(Minecraft client) {
@@ -2419,8 +2395,8 @@ public final class DungeonStateTracker {
         static LearnRoomTypeResult learned(int coreHash, int roomGridX, int roomGridZ, RoomType roomType) {
             return new LearnRoomTypeResult(
                 true,
-                "Gelernt: " + coreHash + "=" + roomType.name()
-                    + " bei roomGrid " + roomGridX + "," + roomGridZ + ".",
+                "Learned: " + coreHash + "=" + roomType.name()
+                    + " at roomGrid " + roomGridX + "," + roomGridZ + ".",
                 coreHash,
                 roomGridX,
                 roomGridZ,
@@ -2455,7 +2431,7 @@ public final class DungeonStateTracker {
         ) {
             return new LearnRoomResult(
                 true,
-                "Raum gespeichert: \"" + name + "\" " + roomType.name()
+                "Room saved: \"" + name + "\" " + roomType.name()
                     + " secrets=" + secrets
                     + (crypts > 0 ? " crypts=" + crypts : "")
                     + " hash=" + coreHash
@@ -2482,10 +2458,10 @@ public final class DungeonStateTracker {
         ) {
             return new LearnRoomResult(
                 true,
-                "Mehrzellen-Raum gespeichert: \"" + name + "\" " + roomType.name()
+                "Multicell room saved: \"" + name + "\" " + roomType.name()
                     + " secrets=" + secrets
                     + (crypts > 0 ? " crypts=" + crypts : "")
-                    + " zellen=" + componentCount
+                    + " cells=" + componentCount
                     + " startHash=" + coreHash
                     + " roomGrid=" + roomGridX + "," + roomGridZ + ".",
                 name,

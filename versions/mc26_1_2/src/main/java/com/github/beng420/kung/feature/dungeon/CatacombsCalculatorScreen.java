@@ -4,6 +4,14 @@ import static com.github.beng420.kung.util.GuiDraw.fill;
 
 import com.github.beng420.kung.KungMod;
 import com.github.beng420.kung.skyblock.SkyBlockMayorTracker;
+import com.github.beng420.kung.ui.UiBounds;
+import com.github.beng420.kung.ui.UiTextField;
+import com.github.beng420.kung.ui.UiScrollList;
+import com.github.beng420.kung.ui.UiTheme;
+import com.github.beng420.kung.ui.UiSpacing;
+import com.github.beng420.kung.ui.UiTextStyle;
+import com.github.beng420.kung.ui.UiNumberField;
+import com.github.beng420.kung.ui.UiToggle;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
@@ -22,7 +30,6 @@ import java.util.Locale;
 import java.util.Map;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
-import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.CharacterEvent;
 import net.minecraft.client.input.KeyEvent;
@@ -32,26 +39,19 @@ import net.minecraft.network.chat.Component;
 public final class CatacombsCalculatorScreen extends Screen {
     private static final URI PIXELSTATS_DUNGEON_API =
         URI.create("https://www.pixelstats.net/api/calc/dungeon");
-    private static final int BACKDROP = 0xFF262626;
-    private static final int PANEL = 0xFF5A3020;
-    private static final int PANEL_DARK = 0xFF472719;
-    private static final int PANEL_SOFT = 0xFF70402D;
-    private static final int CONTROL = 0xFF737373;
-    private static final int CONTROL_HOVER = 0xFF929292;
-    private static final int BORDER = 0xFF8B8B8B;
-    private static final int TEXT = 0xFFEDEDED;
-    private static final int MUTED = 0xFFB4B4B4;
-    private static final int RED = 0xFFFF5555;
-    private static final int GREEN = 0xFF7CFF83;
-    private static final int GOLD = 0xFFFFD166;
-    private static final int BLUE = 0xFF79A8FF;
+    private static final UiTheme THEME = UiTheme.catacombsCalculator();
+    private static final UiTextStyle TEXT_STYLE = UiTextStyle.normal(THEME);
 
     private static final int TOP = 28;
     private static final int GAP = 10;
     private static final int ROW = 19;
-    private static final int CONTROL_HEIGHT = 16;
+    private static final int CONTROL_HEIGHT = UiSpacing.XL;
     private static final int CONTENT_HEIGHT = 800;
     private static final int SCROLL_STEP = 36;
+    private static final UiNumberField HECATOMB_LEVEL = new UiNumberField(0, 10, 1);
+    private static final UiNumberField GRADUATE_LEVEL = new UiNumberField(0, 10, 1);
+    private static final UiNumberField TARGET_LEVEL = new UiNumberField(1, 50, 1);
+    private static final UiNumberField CLASS_PERK_LEVEL = new UiNumberField(0, 5, 1);
     private static final NumberFormat INTEGER_FORMAT = NumberFormat.getIntegerInstance(Locale.GERMANY);
     private static final DungeonClass[] CLASSES = DungeonClass.values();
     private static final double[] HECATOMB_BONUSES = {
@@ -117,7 +117,7 @@ public final class CatacombsCalculatorScreen extends Screen {
     private final List<ClickRegion> clickRegions = new ArrayList<>();
     private final String initialUsername;
     private final EnumMap<DungeonClass, Integer> classPerks = new EnumMap<>(DungeonClass.class);
-    private EditBox usernameBox;
+    private UiTextField usernameBox;
     private LoadState loadState = LoadState.IDLE;
     private String statusMessage = "Optional: load a player to autofill stats.";
     private PlayerData loadedPlayer;
@@ -133,7 +133,7 @@ public final class CatacombsCalculatorScreen extends Screen {
     private boolean autoLoadStarted;
     private boolean copiedClassAverage;
     private boolean copiedCatacombs;
-    private int verticalScroll;
+    private final UiScrollList verticalScroll = new UiScrollList();
 
     public CatacombsCalculatorScreen(String username) {
         super(Component.literal("Kung Catacombs Calculator"));
@@ -149,10 +149,10 @@ public final class CatacombsCalculatorScreen extends Screen {
         if (name.isBlank() && Minecraft.getInstance().player != null) {
             name = Minecraft.getInstance().player.getName().getString();
         }
-        usernameBox = new EditBox(font, 0, 0, Component.literal("Username"));
-        usernameBox.setMaxLength(16);
+        usernameBox = new UiTextField(font, Component.literal("Username"))
+            .maxLength(16)
+            .textShadow(true);
         usernameBox.setValue(name);
-        usernameBox.setTextShadow(true);
         layoutUsernameBox();
         if (!autoLoadStarted && !name.isBlank()) {
             autoLoadStarted = true;
@@ -167,13 +167,13 @@ public final class CatacombsCalculatorScreen extends Screen {
 
     @Override
     public void extractRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick) {
-        verticalScroll = Math.clamp(verticalScroll, 0, maxVerticalScroll());
+        verticalScroll.setOffsetWithinMax(verticalScroll.offset(), maxVerticalScroll());
         clickRegions.clear();
         layoutUsernameBox();
-        fill(graphics, 0, 0, width, height, BACKDROP);
+        fill(graphics, 0, 0, width, height, THEME.backdrop());
         drawTopBar(graphics, mouseX, mouseY, partialTick);
 
-        int contentTop = 78 - verticalScroll;
+        int contentTop = 78 - verticalScroll.offset();
         int leftWidth = Math.min(340, Math.max(260, width / 3));
         int rightX = GAP + leftWidth + GAP;
         int rightWidth = width - rightX - GAP;
@@ -192,7 +192,7 @@ public final class CatacombsCalculatorScreen extends Screen {
         int mouseY = toGuiY(event.y());
         if (usernameBox != null) {
             MouseButtonEvent guiEvent = new MouseButtonEvent(mouseX, mouseY, event.buttonInfo());
-            if (inside(mouseX, mouseY, usernameBox.getX(), usernameBox.getY(), usernameBox.getWidth(), usernameBox.getHeight())) {
+            if (usernameBox.contains(mouseX, mouseY)) {
                 usernameBox.mouseClicked(guiEvent, doubleClick);
                 return true;
             }
@@ -200,7 +200,7 @@ public final class CatacombsCalculatorScreen extends Screen {
         }
         for (int index = clickRegions.size() - 1; index >= 0; index--) {
             ClickRegion region = clickRegions.get(index);
-            if (inside(mouseX, mouseY, region.x(), region.y(), region.width(), region.height())) {
+            if (region.bounds().contains(mouseX, mouseY)) {
                 region.action().click(mouseX, mouseY, event.button());
                 return true;
             }
@@ -214,7 +214,7 @@ public final class CatacombsCalculatorScreen extends Screen {
             return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
         }
         int direction = scrollY < 0 ? 1 : -1;
-        verticalScroll = Math.clamp(verticalScroll + direction * SCROLL_STEP, 0, maxVerticalScroll());
+        verticalScroll.scrollByWithinMax(direction * SCROLL_STEP, maxVerticalScroll());
         return true;
     }
 
@@ -226,7 +226,7 @@ public final class CatacombsCalculatorScreen extends Screen {
         }
         if (usernameBox != null && usernameBox.isFocused()) {
             if (event.key() == 257 || event.key() == 335) {
-                loadPlayer(usernameBox.getValue());
+                loadPlayer(usernameBox.value());
                 return true;
             }
             return usernameBox.keyPressed(event);
@@ -244,20 +244,21 @@ public final class CatacombsCalculatorScreen extends Screen {
 
     private void drawTopBar(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick) {
         String title = "Kung Catacombs Calculator";
-        graphics.text(font, title, width / 2 - font.width(title) / 2, 8, TEXT, true);
-        graphics.text(font, "Username:", usernameBox.getX() - 58, TOP + 5, TEXT, true);
+        graphics.text(font, title, width / 2 - font.width(title) / 2, UiSpacing.MD,
+            TEXT_STYLE.color(), TEXT_STYLE.shadow());
+        graphics.text(font, "Username:", usernameBox.x() - 58, TOP + 5, THEME.text(), true);
         usernameBox.extractRenderState(graphics, mouseX, mouseY, partialTick);
-        drawButton(graphics, usernameBox.getX() + usernameBox.getWidth() + 8, TOP, 54, 20, "Load", mouseX, mouseY,
-            () -> loadPlayer(usernameBox.getValue()));
-        drawStatus(graphics, usernameBox.getX(), TOP + 24);
+        drawButton(graphics, usernameBox.x() + usernameBox.width() + 8, TOP, 54, 20, "Load", mouseX, mouseY,
+            () -> loadPlayer(usernameBox.value()));
+        drawStatus(graphics, usernameBox.x(), TOP + 24);
     }
 
     private void drawStatus(GuiGraphicsExtractor graphics, int x, int y) {
         int color = switch (loadState) {
-            case LOADED -> GREEN;
-            case ERROR -> RED;
-            case LOADING -> GOLD;
-            default -> MUTED;
+            case LOADED -> THEME.success();
+            case ERROR -> THEME.error();
+            case LOADING -> THEME.warning();
+            default -> THEME.muted();
         };
         graphics.text(font, trim(statusMessage, Math.min(420, width - x - GAP)), x, y, color, true);
     }
@@ -281,24 +282,24 @@ public final class CatacombsCalculatorScreen extends Screen {
                 drawLevelBar(graphics, x + 14, lineY, panelWidth - 28, dungeonClass.label(), profile.classXp(dungeonClass), false);
                 lineY += 42;
             }
-            drawKV(graphics, x + 14, lineY, panelWidth - 28, "Class Average", decimal(classAverage(profile)), TEXT);
+            drawKV(graphics, x + 14, lineY, panelWidth - 28, "Class Average", decimal(classAverage(profile)), THEME.text());
             lineY += ROW;
-            drawKV(graphics, x + 14, lineY, panelWidth - 28, "Daily runs remaining", String.valueOf(Math.max(0, 5 - profile.dailyRuns())), TEXT);
+            drawKV(graphics, x + 14, lineY, panelWidth - 28, "Daily runs remaining", String.valueOf(Math.max(0, 5 - profile.dailyRuns())), THEME.text());
             lineY += ROW + 13;
         }
 
         drawHeading(graphics, "Dungeon stats", x + 12, lineY);
         lineY += 24;
         if (profile != null) {
-            drawKV(graphics, x + 14, lineY, panelWidth - 28, "Profile", selectedProfileName(), TEXT);
+            drawKV(graphics, x + 14, lineY, panelWidth - 28, "Profile", selectedProfileName(), THEME.text());
             lineY += ROW;
-            drawKV(graphics, x + 14, lineY, panelWidth - 28, "Secrets found", format(profile.secrets()), TEXT);
+            drawKV(graphics, x + 14, lineY, panelWidth - 28, "Secrets found", format(profile.secrets()), THEME.text());
             lineY += ROW;
-            drawKV(graphics, x + 14, lineY, panelWidth - 28, "Journals completed", profile.journals() + " / 25", TEXT);
+            drawKV(graphics, x + 14, lineY, panelWidth - 28, "Journals completed", profile.journals() + " / 25", THEME.text());
             lineY += ROW;
-            drawKV(graphics, x + 14, lineY, panelWidth - 28, "Selected class", classLabel(profile.selectedClass()), TEXT);
+            drawKV(graphics, x + 14, lineY, panelWidth - 28, "Selected class", classLabel(profile.selectedClass()), THEME.text());
             lineY += ROW;
-            drawKV(graphics, x + 14, lineY, panelWidth - 28, "Total runs", format(profile.catacombs().totalCompletions()), TEXT);
+            drawKV(graphics, x + 14, lineY, panelWidth - 28, "Total runs", format(profile.catacombs().totalCompletions()), THEME.text());
             lineY += ROW + 13;
         } else {
             drawMuted(graphics, "...", x + 14, lineY);
@@ -309,13 +310,13 @@ public final class CatacombsCalculatorScreen extends Screen {
         lineY += 24;
         FloorStats stats = profile == null ? null : selectedFloor.masterMode() ? profile.master() : profile.catacombs();
         String floorNumber = selectedFloor.floorNumber();
-        drawKV(graphics, x + 14, lineY, panelWidth - 28, "Best score", stats == null ? "..." : floorStat(stats.bestScore(), floorNumber), TEXT);
+        drawKV(graphics, x + 14, lineY, panelWidth - 28, "Best score", stats == null ? "..." : floorStat(stats.bestScore(), floorNumber), THEME.text());
         lineY += ROW;
-        drawKV(graphics, x + 14, lineY, panelWidth - 28, "Personal best (S+)", stats == null ? "..." : duration(stats.sPlus(), floorNumber), TEXT);
+        drawKV(graphics, x + 14, lineY, panelWidth - 28, "Personal best (S+)", stats == null ? "..." : duration(stats.sPlus(), floorNumber), THEME.text());
         lineY += ROW;
-        drawKV(graphics, x + 14, lineY, panelWidth - 28, "Personal best (S)", stats == null ? "..." : duration(stats.s(), floorNumber), TEXT);
+        drawKV(graphics, x + 14, lineY, panelWidth - 28, "Personal best (S)", stats == null ? "..." : duration(stats.s(), floorNumber), THEME.text());
         lineY += ROW;
-        drawKV(graphics, x + 14, lineY, panelWidth - 28, "Completions", stats == null ? "..." : format((long) stats.value(stats.completions(), floorNumber)), TEXT);
+        drawKV(graphics, x + 14, lineY, panelWidth - 28, "Completions", stats == null ? "..." : format((long) stats.value(stats.completions(), floorNumber)), THEME.text());
     }
 
     private void drawRightPanel(GuiGraphicsExtractor graphics, int x, int y, int panelWidth, int mouseX, int mouseY) {
@@ -333,13 +334,12 @@ public final class CatacombsCalculatorScreen extends Screen {
         drawControl(graphics, leftX, rowY, columnWidth, "Floor", selectedFloor.label(), mouseX, mouseY,
             () -> selectedFloor = selectedFloor.previous(),
             () -> selectedFloor = selectedFloor.next());
-        drawControl(graphics, rightX, rowY, columnWidth, "Catacombs Expert Ring", expertRing ? "Yes" : "No", mouseX, mouseY,
-            () -> expertRing = !expertRing,
+        drawToggleControl(graphics, rightX, rowY, columnWidth, "Catacombs Expert Ring", expertRing,
             () -> expertRing = !expertRing);
         rowY += 38;
         drawControl(graphics, leftX, rowY, columnWidth, "Hecatomb", hecatombLabel(), mouseX, mouseY,
-            () -> hecatombLevel = Math.clamp(hecatombLevel - 1, 0, 10),
-            () -> hecatombLevel = Math.clamp(hecatombLevel + 1, 0, 10));
+            () -> hecatombLevel = HECATOMB_LEVEL.decrement(hecatombLevel),
+            () -> hecatombLevel = HECATOMB_LEVEL.increment(hecatombLevel));
         drawControl(graphics, rightX, rowY, columnWidth, "Scarf accessory", scarfAccessory.label(), mouseX, mouseY,
             () -> scarfAccessory = scarfAccessory.previous(),
             () -> scarfAccessory = scarfAccessory.next());
@@ -353,11 +353,11 @@ public final class CatacombsCalculatorScreen extends Screen {
             () -> manualMayorBoost = mayorBoost.next());
         rowY += 38;
         drawControl(graphics, leftX, rowY, columnWidth, "Catacombs Graduate", romanLevel(graduateLevel) + " (" + (graduateLevel * 2) + "%)", mouseX, mouseY,
-            () -> graduateLevel = Math.clamp(graduateLevel - 1, 0, 10),
-            () -> graduateLevel = Math.clamp(graduateLevel + 1, 0, 10));
+            () -> graduateLevel = GRADUATE_LEVEL.decrement(graduateLevel),
+            () -> graduateLevel = GRADUATE_LEVEL.increment(graduateLevel));
         drawControl(graphics, rightX, rowY, columnWidth, "Target Catacombs level", String.valueOf(targetCatacombsLevel), mouseX, mouseY,
-            () -> targetCatacombsLevel = Math.clamp(targetCatacombsLevel - 1, 1, 50),
-            () -> targetCatacombsLevel = Math.clamp(targetCatacombsLevel + 1, 1, 50));
+            () -> targetCatacombsLevel = TARGET_LEVEL.decrement(targetCatacombsLevel),
+            () -> targetCatacombsLevel = TARGET_LEVEL.increment(targetCatacombsLevel));
         rowY += 44;
 
         drawMuted(graphics, "Class XP boost perks (Essence shop, each level +2%)", leftX, rowY);
@@ -369,39 +369,39 @@ public final class CatacombsCalculatorScreen extends Screen {
                 romanLevel(perkLevel) + " (" + (perkLevel * 2) + "%)",
                 mouseX,
                 mouseY,
-                () -> classPerks.put(dungeonClass, Math.clamp(perkLevel - 1, 0, 5)),
-                () -> classPerks.put(dungeonClass, Math.clamp(perkLevel + 1, 0, 5)));
+                () -> classPerks.put(dungeonClass, CLASS_PERK_LEVEL.decrement(perkLevel)),
+                () -> classPerks.put(dungeonClass, CLASS_PERK_LEVEL.increment(perkLevel)));
             rowY += 29;
         }
         rowY += 10;
 
         Calculation calculation = calculate();
         int resultHeight = 178;
-        fill(graphics, leftX, rowY, x + panelWidth - 14, rowY + resultHeight, PANEL_DARK);
+        fill(graphics, leftX, rowY, x + panelWidth - 14, rowY + resultHeight, THEME.panelDark());
         int resultY = rowY + 10;
-        drawKV(graphics, leftX + 12, resultY, panelWidth - 52, "Catacombs XP per run", format(calculation.cataPerRun()), GOLD);
+        drawKV(graphics, leftX + 12, resultY, panelWidth - 52, "Catacombs XP per run", format(calculation.cataPerRun()), THEME.warning());
         resultY += ROW;
-        drawKV(graphics, leftX + 12, resultY, panelWidth - 52, "Class XP per run (average)", format(Math.round(calculation.averageClassPerRun())), GOLD);
+        drawKV(graphics, leftX + 12, resultY, panelWidth - 52, "Class XP per run (average)", format(Math.round(calculation.averageClassPerRun())), THEME.warning());
         resultY += ROW + 5;
-        drawKV(graphics, leftX + 12, resultY, panelWidth - 52, "Runs to Catacombs " + calculation.targetLevel(), runsLabel(calculation.runsToCatacombs()), TEXT);
+        drawKV(graphics, leftX + 12, resultY, panelWidth - 52, "Runs to Catacombs " + calculation.targetLevel(), runsLabel(calculation.runsToCatacombs()), THEME.text());
         resultY += ROW;
         Breakdown breakdown = calculation.breakdown();
         for (DungeonClass dungeonClass : CLASSES) {
             drawKV(graphics, leftX + 12, resultY, panelWidth - 52, "Runs to " + dungeonClass.label() + " 50",
-                breakdown == null ? "..." : runsLabel(breakdown.perClass(dungeonClass)), TEXT);
+                breakdown == null ? "..." : runsLabel(breakdown.perClass(dungeonClass)), THEME.text());
             resultY += 15;
         }
         drawKV(graphics, leftX + 12, resultY, panelWidth - 52, "Runs to Class Average 50",
-            breakdown == null ? "..." : runsLabel(breakdown.total()), TEXT);
+            breakdown == null ? "..." : runsLabel(breakdown.total()), THEME.text());
 
         rowY += resultHeight + 14;
         String classAverageSummary = classAverageSummaryLine(calculation);
-        rowY += drawWrappedText(graphics, classAverageSummary, leftX, rowY, panelWidth - 28, MUTED, 3) + 8;
+        rowY += drawWrappedText(graphics, classAverageSummary, leftX, rowY, panelWidth - 28, THEME.muted(), 3) + 8;
         drawButton(graphics, x + panelWidth - 86, rowY, 72, 20, copiedClassAverage ? "Copied!" : "Copy", mouseX, mouseY,
             () -> copyClassAverageSummary(calculation));
         rowY += 28;
         String catacombsSummary = catacombsSummaryLine(calculation);
-        rowY += drawWrappedText(graphics, catacombsSummary, leftX, rowY, panelWidth - 28, MUTED, 2) + 8;
+        rowY += drawWrappedText(graphics, catacombsSummary, leftX, rowY, panelWidth - 28, THEME.muted(), 2) + 8;
         drawButton(graphics, x + panelWidth - 86, rowY, 72, 20, copiedCatacombs ? "Copied!" : "Copy", mouseX, mouseY,
             () -> copyCatacombsSummary(calculation));
         rowY += 28;
@@ -411,8 +411,8 @@ public final class CatacombsCalculatorScreen extends Screen {
     }
 
     private void drawPanel(GuiGraphicsExtractor graphics, int x, int y, int panelWidth, int panelHeight) {
-        fill(graphics, x - 2, y - 2, x + panelWidth + 2, y + panelHeight + 2, BORDER);
-        fill(graphics, x, y, x + panelWidth, y + panelHeight, PANEL);
+        fill(graphics, x - 2, y - 2, x + panelWidth + 2, y + panelHeight + 2, THEME.border());
+        fill(graphics, x, y, x + panelWidth, y + panelHeight, THEME.panel());
     }
 
     private int drawProfileButtons(
@@ -437,10 +437,10 @@ public final class CatacombsCalculatorScreen extends Screen {
             boolean selected = index == selectedProfileIndex;
             boolean hovered = inside(mouseX, mouseY, cursorX, cursorY, buttonWidth, buttonHeight);
             fill(graphics, cursorX, cursorY, cursorX + buttonWidth, cursorY + buttonHeight,
-                selected ? CONTROL_HOVER : hovered ? PANEL_SOFT : PANEL_DARK);
+                selected ? THEME.controlHover() : hovered ? THEME.panelSoft() : THEME.panelDark());
             String shown = trim(label, buttonWidth - 8);
             graphics.text(font, shown, cursorX + buttonWidth / 2 - font.width(shown) / 2, cursorY + 5,
-                selected ? GOLD : TEXT, true);
+                selected ? THEME.warning() : THEME.text(), true);
             int profileIndex = index;
             addClickRegion(cursorX, cursorY, buttonWidth, buttonHeight, (clickX, clickY, button) -> {
                 if (button == 0) {
@@ -456,11 +456,11 @@ public final class CatacombsCalculatorScreen extends Screen {
     }
 
     private void drawHeading(GuiGraphicsExtractor graphics, String text, int x, int y) {
-        graphics.text(font, text, x, y, TEXT, true);
+        graphics.text(font, text, x, y, THEME.text(), true);
     }
 
     private void drawMuted(GuiGraphicsExtractor graphics, String text, int x, int y) {
-        graphics.text(font, trim(text, width - x - GAP), x, y, MUTED, true);
+        graphics.text(font, trim(text, width - x - GAP), x, y, THEME.muted(), true);
     }
 
     private void drawLevelBar(
@@ -474,19 +474,19 @@ public final class CatacombsCalculatorScreen extends Screen {
     ) {
         double level = levelFromXp(xp);
         String value = decimal(level);
-        graphics.text(font, label, x, y, highlight ? TEXT : classColor(label), true);
-        graphics.text(font, value, x + barWidth - font.width(value), y, TEXT, true);
+        graphics.text(font, label, x, y, highlight ? THEME.text() : classColor(label), true);
+        graphics.text(font, value, x + barWidth - font.width(value), y, THEME.text(), true);
         int barY = y + 13;
-        fill(graphics, x, barY, x + barWidth, barY + 5, PANEL_DARK);
+        fill(graphics, x, barY, x + barWidth, barY + 5, THEME.panelDark());
         double progress = level >= 50.0 ? 1.0 : level - Math.floor(level);
         int fillWidth = (int) Math.round(barWidth * Math.clamp(progress, 0.0, 1.0));
-        fill(graphics, x, barY, x + fillWidth, barY + 5, highlight ? GOLD : BLUE);
+        fill(graphics, x, barY, x + fillWidth, barY + 5, highlight ? THEME.warning() : THEME.accent());
         String xpLabel = compactXp(xp) + " XP";
-        graphics.text(font, xpLabel, x + barWidth - font.width(xpLabel), barY + 8, MUTED, true);
+        graphics.text(font, xpLabel, x + barWidth - font.width(xpLabel), barY + 8, THEME.muted(), true);
     }
 
     private void drawKV(GuiGraphicsExtractor graphics, int x, int y, int rowWidth, String label, String value, int valueColor) {
-        graphics.text(font, trim(label, Math.max(20, rowWidth - 80)), x, y, MUTED, true);
+        graphics.text(font, trim(label, Math.max(20, rowWidth - 80)), x, y, THEME.muted(), true);
         String shown = trim(value, Math.max(40, rowWidth / 2));
         graphics.text(font, shown, x + rowWidth - font.width(shown), y, valueColor, true);
     }
@@ -503,19 +503,40 @@ public final class CatacombsCalculatorScreen extends Screen {
         Runnable previous,
         Runnable next
     ) {
-        graphics.text(font, trim(label, controlWidth - 8), x, y, TEXT, true);
+        graphics.text(font, trim(label, controlWidth - 8), x, y, THEME.text(), true);
         int boxY = y + 12;
-        fill(graphics, x, boxY, x + controlWidth, boxY + CONTROL_HEIGHT, CONTROL);
+        fill(graphics, x, boxY, x + controlWidth, boxY + CONTROL_HEIGHT, THEME.control());
         boolean leftHover = inside(mouseX, mouseY, x, boxY, 16, CONTROL_HEIGHT);
         boolean rightHover = inside(mouseX, mouseY, x + controlWidth - 16, boxY, 16, CONTROL_HEIGHT);
-        fill(graphics, x, boxY, x + 16, boxY + CONTROL_HEIGHT, leftHover ? CONTROL_HOVER : CONTROL);
-        fill(graphics, x + controlWidth - 16, boxY, x + controlWidth, boxY + CONTROL_HEIGHT, rightHover ? CONTROL_HOVER : CONTROL);
-        graphics.text(font, "<", x + 5, boxY + 4, TEXT, true);
-        graphics.text(font, ">", x + controlWidth - 11, boxY + 4, TEXT, true);
+        fill(graphics, x, boxY, x + 16, boxY + CONTROL_HEIGHT, leftHover ? THEME.controlHover() : THEME.control());
+        fill(graphics, x + controlWidth - 16, boxY, x + controlWidth, boxY + CONTROL_HEIGHT, rightHover ? THEME.controlHover() : THEME.control());
+        graphics.text(font, "<", x + 5, boxY + 4, THEME.text(), true);
+        graphics.text(font, ">", x + controlWidth - 11, boxY + 4, THEME.text(), true);
         String shown = trim(value, controlWidth - 38);
-        graphics.text(font, shown, x + controlWidth / 2 - font.width(shown) / 2, boxY + 4, TEXT, true);
+        graphics.text(font, shown, x + controlWidth / 2 - font.width(shown) / 2, boxY + 4, THEME.text(), true);
         addClickRegion(x, boxY, controlWidth / 2, CONTROL_HEIGHT, (clickX, clickY, button) -> previous.run());
         addClickRegion(x + controlWidth / 2, boxY, controlWidth - controlWidth / 2, CONTROL_HEIGHT, (clickX, clickY, button) -> next.run());
+    }
+
+    private void drawToggleControl(
+        GuiGraphicsExtractor graphics,
+        int x,
+        int y,
+        int controlWidth,
+        String label,
+        boolean enabled,
+        Runnable toggle
+    ) {
+        graphics.text(font, trim(label, controlWidth - 8), x, y, THEME.text(), true);
+        int boxY = y + 12;
+        UiBounds bounds = new UiBounds(x, boxY, controlWidth, CONTROL_HEIGHT);
+        fill(graphics, bounds.x(), bounds.y(), bounds.right(), bounds.bottom(), THEME.control());
+        UiToggle.draw(graphics, bounds, enabled, THEME);
+        addClickRegion(bounds.x(), bounds.y(), bounds.width(), bounds.height(), (clickX, clickY, button) -> {
+            if (button == 0) {
+                toggle.run();
+            }
+        });
     }
 
     private void drawInlineControl(
@@ -532,17 +553,17 @@ public final class CatacombsCalculatorScreen extends Screen {
     ) {
         int controlWidth = Math.min(150, Math.max(104, rowWidth / 4));
         int controlX = x + rowWidth - controlWidth;
-        graphics.text(font, trim(label, Math.max(20, rowWidth - controlWidth - 12)), x, y + 5, TEXT, true);
-        fill(graphics, controlX, y + 1, controlX + controlWidth, y + 1 + CONTROL_HEIGHT, CONTROL);
+        graphics.text(font, trim(label, Math.max(20, rowWidth - controlWidth - 12)), x, y + 5, THEME.text(), true);
+        fill(graphics, controlX, y + 1, controlX + controlWidth, y + 1 + CONTROL_HEIGHT, THEME.control());
         boolean leftHover = inside(mouseX, mouseY, controlX, y + 1, 16, CONTROL_HEIGHT);
         boolean rightHover = inside(mouseX, mouseY, controlX + controlWidth - 16, y + 1, 16, CONTROL_HEIGHT);
-        fill(graphics, controlX, y + 1, controlX + 16, y + 1 + CONTROL_HEIGHT, leftHover ? CONTROL_HOVER : CONTROL);
+        fill(graphics, controlX, y + 1, controlX + 16, y + 1 + CONTROL_HEIGHT, leftHover ? THEME.controlHover() : THEME.control());
         fill(graphics, controlX + controlWidth - 16, y + 1, controlX + controlWidth, y + 1 + CONTROL_HEIGHT,
-            rightHover ? CONTROL_HOVER : CONTROL);
-        graphics.text(font, "<", controlX + 5, y + 5, TEXT, true);
-        graphics.text(font, ">", controlX + controlWidth - 11, y + 5, TEXT, true);
+            rightHover ? THEME.controlHover() : THEME.control());
+        graphics.text(font, "<", controlX + 5, y + 5, THEME.text(), true);
+        graphics.text(font, ">", controlX + controlWidth - 11, y + 5, THEME.text(), true);
         String shown = trim(value, controlWidth - 38);
-        graphics.text(font, shown, controlX + controlWidth / 2 - font.width(shown) / 2, y + 5, TEXT, true);
+        graphics.text(font, shown, controlX + controlWidth / 2 - font.width(shown) / 2, y + 5, THEME.text(), true);
         addClickRegion(controlX, y + 1, controlWidth / 2, CONTROL_HEIGHT, (clickX, clickY, button) -> previous.run());
         addClickRegion(controlX + controlWidth / 2, y + 1, controlWidth - controlWidth / 2, CONTROL_HEIGHT,
             (clickX, clickY, button) -> next.run());
@@ -609,7 +630,7 @@ public final class CatacombsCalculatorScreen extends Screen {
         Runnable action
     ) {
         boolean hovered = inside(mouseX, mouseY, x, y, buttonWidth, buttonHeight);
-        fill(graphics, x, y, x + buttonWidth, y + buttonHeight, hovered ? CONTROL_HOVER : CONTROL);
+        fill(graphics, x, y, x + buttonWidth, y + buttonHeight, hovered ? THEME.controlHover() : THEME.control());
         String shown = trim(label, buttonWidth - 6);
         graphics.text(font, shown, x + buttonWidth / 2 - font.width(shown) / 2, y + 6, 0xFF000000, false);
         addClickRegion(x, y, buttonWidth, buttonHeight, (clickX, clickY, button) -> {
@@ -673,7 +694,7 @@ public final class CatacombsCalculatorScreen extends Screen {
 
     private PlayerData parsePlayer(String body) {
         JsonObject root = JsonParser.parseString(body).getAsJsonObject();
-        String name = string(root, "name", usernameBox == null ? "" : usernameBox.getValue());
+        String name = string(root, "name", usernameBox == null ? "" : usernameBox.value());
         ArrayList<ProfileData> profiles = new ArrayList<>();
         JsonElement profilesElement = root.get("profiles");
         if (profilesElement != null && profilesElement.isJsonArray()) {
@@ -750,7 +771,7 @@ public final class CatacombsCalculatorScreen extends Screen {
             return;
         }
         for (DungeonClass dungeonClass : CLASSES) {
-            classPerks.put(dungeonClass, Math.clamp(profile.classPerk(dungeonClass), 0, 5));
+            classPerks.put(dungeonClass, CLASS_PERK_LEVEL.clamp(profile.classPerk(dungeonClass)));
         }
     }
 
@@ -1009,10 +1030,7 @@ public final class CatacombsCalculatorScreen extends Screen {
         }
         int inputWidth = Math.min(176, Math.max(120, width / 4));
         int x = width / 2 - inputWidth / 2 - 28;
-        usernameBox.setX(x);
-        usernameBox.setY(TOP);
-        usernameBox.setWidth(inputWidth);
-        usernameBox.setHeight(20);
+        usernameBox.setBounds(x, TOP, inputWidth, 20);
     }
 
     private int toGuiX(double eventX) {
@@ -1038,7 +1056,7 @@ public final class CatacombsCalculatorScreen extends Screen {
     }
 
     private void addClickRegion(int x, int y, int regionWidth, int regionHeight, ClickAction action) {
-        clickRegions.add(new ClickRegion(x, y, regionWidth, regionHeight, action));
+        clickRegions.add(new ClickRegion(new UiBounds(x, y, regionWidth, regionHeight), action));
     }
 
     private String trim(String value, int maxWidth) {
@@ -1060,7 +1078,7 @@ public final class CatacombsCalculatorScreen extends Screen {
 
     private int classColor(String label) {
         DungeonClass dungeonClass = classFromLabel(label);
-        return dungeonClass == null ? TEXT : dungeonClass.color();
+        return dungeonClass == null ? THEME.text() : dungeonClass.color();
     }
 
     private double classAverage(ProfileData profile) {
@@ -1398,7 +1416,7 @@ public final class CatacombsCalculatorScreen extends Screen {
         void click(int mouseX, int mouseY, int button);
     }
 
-    private record ClickRegion(int x, int y, int width, int height, ClickAction action) {
+    private record ClickRegion(UiBounds bounds, ClickAction action) {
     }
 
     private record PlayerData(String name, List<ProfileData> profiles, int selectedIndex) {

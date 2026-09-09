@@ -1,34 +1,36 @@
 package com.github.beng420.kung.feature.dungeon;
 
+import com.github.beng420.kung.config.category.DungeonChatFilterConfig;
+import com.github.beng420.kung.feature.ConfigurableFeature;
 import com.github.beng420.kung.feature.Feature;
 import com.github.beng420.kung.util.KungDebugRecorder;
 import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
 
-public final class DungeonChatFilterFeature {
+public final class DungeonChatFilterFeature extends ConfigurableFeature<DungeonChatFilterConfig> implements Feature {
     private static final String BOSS_PREFIX = "[BOSS] ";
+    private final DungeonStateTracker tracker;
 
-    private DungeonChatFilterFeature() {
+    public DungeonChatFilterFeature(DungeonStateTracker tracker) {
+        super(config -> config.chatFilter);
+        this.tracker = java.util.Objects.requireNonNull(tracker);
     }
 
-    public static Feature definition() {
-        return new Feature(
-            "dungeon-chat-filter",
-            "Dungeon chat filter",
-            false,
-            "Hides selected Dungeon chat spam."
-        );
-    }
-
-    public static void initializeClient(DungeonStateTracker tracker) {
+    @Override
+    protected void onInitialize() {
         ClientReceiveMessageEvents.ALLOW_CHAT.register((message, signedMessage, sender, params, receptionTimestamp) ->
             allowMessage(tracker, message, false));
         ClientReceiveMessageEvents.ALLOW_GAME.register((message, overlay) ->
             allowMessage(tracker, message, overlay));
     }
 
-    private static boolean allowMessage(DungeonStateTracker tracker, Component message, boolean overlay) {
+    @Override
+    public boolean isEnabled() {
+        return config().enabled();
+    }
+
+    private boolean allowMessage(DungeonStateTracker tracker, Component message, boolean overlay) {
         Minecraft client = Minecraft.getInstance();
         if (!shouldHide(tracker, client, message)) {
             return true;
@@ -39,13 +41,13 @@ public final class DungeonChatFilterFeature {
         return false;
     }
 
-    private static boolean shouldHide(DungeonStateTracker tracker, Minecraft client, Component component) {
+    private boolean shouldHide(DungeonStateTracker tracker, Minecraft client, Component component) {
         if (tracker == null || component == null) {
             return false;
         }
 
-        DungeonMapOverlayConfig config = DungeonMapOverlayConfig.INSTANCE;
-        if (!config.dungeonChatFilterEnabled() || !tracker.canFilterDungeonChat(client)) {
+        DungeonChatFilterConfig config = config();
+        if (!config.enabled() || !tracker.canFilterDungeonChat(client)) {
             return false;
         }
 
@@ -54,16 +56,16 @@ public final class DungeonChatFilterFeature {
             return false;
         }
 
-        if (config.dungeonChatFilterBlessings() && isBlessingMessage(message)) {
+        if (config.blessings() && isBlessingMessage(message)) {
             return true;
         }
-        if (config.dungeonChatFilterLootSpam() && isLootSpamMessage(message)) {
+        if (config.lootSpam() && isLootSpamMessage(message)) {
             return true;
         }
-        if (config.dungeonChatFilterWatcher() && isBossMessageFrom(message, "the watcher")) {
+        if (config.watcher() && isBossMessageFrom(message, "the watcher")) {
             return true;
         }
-        return config.dungeonChatFilterBossMessages() && bossMessageEnabled(config, bossName(message));
+        return config.bossMessages() && bossMessageEnabled(config, bossName(message));
     }
 
     private static boolean isBlessingMessage(String message) {
@@ -104,19 +106,19 @@ public final class DungeonChatFilterFeature {
             .toLowerCase(java.util.Locale.ROOT);
     }
 
-    private static boolean bossMessageEnabled(DungeonMapOverlayConfig config, String bossName) {
+    private static boolean bossMessageEnabled(DungeonChatFilterConfig config, String bossName) {
         return switch (bossName) {
-            case "bonzo" -> config.dungeonChatFilterBonzo();
-            case "scarf" -> config.dungeonChatFilterScarf();
-            case "the professor", "professor" -> config.dungeonChatFilterProfessor();
-            case "thorn" -> config.dungeonChatFilterThorn();
-            case "livid" -> config.dungeonChatFilterLivid();
-            case "sadan" -> config.dungeonChatFilterSadan();
-            case "maxor" -> config.dungeonChatFilterMaxor();
-            case "storm" -> config.dungeonChatFilterStorm();
-            case "goldor" -> config.dungeonChatFilterGoldor();
-            case "necron" -> config.dungeonChatFilterNecron();
-            case "the wither king", "wither king" -> config.dungeonChatFilterWitherKing();
+            case "bonzo" -> config.bonzo();
+            case "scarf" -> config.scarf();
+            case "the professor", "professor" -> config.professor();
+            case "thorn" -> config.thorn();
+            case "livid" -> config.livid();
+            case "sadan" -> config.sadan();
+            case "maxor" -> config.maxor();
+            case "storm" -> config.storm();
+            case "goldor" -> config.goldor();
+            case "necron" -> config.necron();
+            case "the wither king", "wither king" -> config.witherKing();
             default -> false;
         };
     }

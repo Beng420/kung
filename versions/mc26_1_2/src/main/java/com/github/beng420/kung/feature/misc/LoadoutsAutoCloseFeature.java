@@ -1,6 +1,8 @@
 package com.github.beng420.kung.feature.misc;
 
-import com.github.beng420.kung.feature.dungeon.DungeonMapOverlayConfig;
+import com.github.beng420.kung.config.category.MiscConfig;
+import com.github.beng420.kung.feature.ConfigurableFeature;
+import com.github.beng420.kung.feature.Feature;
 import com.github.beng420.kung.util.KungDebugRecorder;
 import java.util.Locale;
 import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
@@ -16,7 +18,8 @@ import net.minecraft.world.inventory.ContainerInput;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
 
-public final class LoadoutsAutoCloseFeature {
+public final class LoadoutsAutoCloseFeature extends ConfigurableFeature<MiscConfig> implements Feature {
+    public static final LoadoutsAutoCloseFeature INSTANCE = new LoadoutsAutoCloseFeature();
     private static final int PLAYER_INVENTORY_SLOT_COUNT = 36;
     private static final int SLOT_UPDATE_LOG_LIMIT = 24;
     private static final int SUPPRESS_HOTKEY_OPEN_PACKET_COUNT = 4;
@@ -31,16 +34,23 @@ public final class LoadoutsAutoCloseFeature {
     private static int slotUpdateLogCount;
 
     private LoadoutsAutoCloseFeature() {
+        super(config -> config.misc);
     }
 
-    public static void initializeClient() {
+    @Override
+    protected void onInitialize() {
         ClientReceiveMessageEvents.GAME.register((message, overlay) -> observeMessage(message));
         ClientReceiveMessageEvents.CHAT.register((message, signedMessage, sender, params, receptionTimestamp) ->
             observeMessage(message));
     }
 
+    @Override
+    public boolean isEnabled() {
+        return config().loadoutsAutoCloseEnabled();
+    }
+
     public static void observeScreenChange(Screen screen) {
-        if (!DungeonMapOverlayConfig.INSTANCE.loadoutsAutoCloseEnabled()) {
+        if (!INSTANCE.isEnabled()) {
             return;
         }
 
@@ -97,7 +107,7 @@ public final class LoadoutsAutoCloseFeature {
 
         ItemStack stack = slot == null ? ItemStack.EMPTY : slot.getItem();
         boolean context = isLoadoutsContext(screen, screen.getMenu(), stack);
-        if (!DungeonMapOverlayConfig.INSTANCE.loadoutsAutoCloseEnabled() && !context) {
+        if (!INSTANCE.isEnabled() && !context) {
             return;
         }
 
@@ -113,7 +123,7 @@ public final class LoadoutsAutoCloseFeature {
         AbstractContainerMenu menu = client.player.containerMenu;
         ItemStack stack = slotStack(menu, slotId);
         boolean context = isLoadoutsContext(client.screen, menu, stack);
-        if (!DungeonMapOverlayConfig.INSTANCE.loadoutsAutoCloseEnabled() && !context) {
+        if (!INSTANCE.isEnabled() && !context) {
             return;
         }
 
@@ -122,7 +132,7 @@ public final class LoadoutsAutoCloseFeature {
 
     public static boolean handleLoadoutHotkey(AbstractContainerScreen<?> screen, KeyEvent event) {
         Minecraft client = Minecraft.getInstance();
-        if (!DungeonMapOverlayConfig.INSTANCE.loadoutsAutoCloseEnabled()
+        if (!INSTANCE.isEnabled()
             || client.player == null
             || client.gameMode == null
             || screen == null
@@ -140,7 +150,7 @@ public final class LoadoutsAutoCloseFeature {
 
     public static boolean handleLoadoutMouseHotkey(AbstractContainerScreen<?> screen, MouseButtonEvent event) {
         Minecraft client = Minecraft.getInstance();
-        if (!DungeonMapOverlayConfig.INSTANCE.loadoutsAutoCloseEnabled()
+        if (!INSTANCE.isEnabled()
             || client.player == null
             || client.gameMode == null
             || screen == null
@@ -207,31 +217,39 @@ public final class LoadoutsAutoCloseFeature {
 
         clearPendingClose("hotkey");
         pendingClose = true;
+        pendingEquipConfirmed = false;
         pendingClickContainerId = menu.containerId;
-        suppressLoadoutsOpenPackets = SUPPRESS_HOTKEY_OPEN_PACKET_COUNT;
+        boolean closeOnlyOnChange = INSTANCE.config().loadoutsCloseOnlyOnChange();
+        suppressLoadoutsOpenPackets = closeOnlyOnChange ? 0 : SUPPRESS_HOTKEY_OPEN_PACKET_COUNT;
         KungDebugRecorder.event("loadouts-auto-close", "hotkey index="
             + (loadoutIndex + 1)
             + " source="
             + source
             + " keybind=\""
-            + DungeonMapOverlayConfig.INSTANCE.loadoutKeybind(loadoutIndex)
+            + INSTANCE.config().loadoutKeybind(loadoutIndex)
             + "\""
             + " slot="
             + slotId
             + " container="
             + menu.containerId
+            + " closeOnlyOnChange="
+            + closeOnlyOnChange
             + " item="
             + itemDebug(stack)
             + " suppressOpenPackets="
             + suppressLoadoutsOpenPackets);
         client.gameMode.handleContainerInput(menu.containerId, slotId, 0, ContainerInput.PICKUP, client.player);
+        if (closeOnlyOnChange) {
+            KungDebugRecorder.event("loadouts-auto-close", "hotkey waiting for equip confirmation");
+            return true;
+        }
         screen.onClose();
         KungDebugRecorder.event("loadouts-auto-close", "hotkey closed immediate");
         return true;
     }
 
     public static String loadoutStackSizeLabel(AbstractContainerScreen<?> screen, Slot slot) {
-        if (!DungeonMapOverlayConfig.INSTANCE.loadoutsAutoCloseEnabled()
+        if (!INSTANCE.isEnabled()
             || screen == null
             || slot == null
             || !isLoadoutsScreen(screen)) {
@@ -243,7 +261,7 @@ public final class LoadoutsAutoCloseFeature {
             return null;
         }
 
-        String keybind = DungeonMapOverlayConfig.INSTANCE.loadoutKeybind(loadoutIndex);
+        String keybind = INSTANCE.config().loadoutKeybind(loadoutIndex);
         if (keybind.isBlank()) {
             return null;
         }
@@ -277,7 +295,7 @@ public final class LoadoutsAutoCloseFeature {
     }
 
     public static void observeSlotUpdate(int containerId, int slotId, ItemStack stack) {
-        if (!DungeonMapOverlayConfig.INSTANCE.loadoutsAutoCloseEnabled()) {
+        if (!INSTANCE.isEnabled()) {
             return;
         }
 
@@ -363,7 +381,17 @@ public final class LoadoutsAutoCloseFeature {
         }
 
         String text = cleanMessage(message.getString());
-        if (!isLoadoutEquipConfirmation(text)) {
+        LoadoutEquipResult equipResult = loadoutEquipResult(text);
+        if (equipResult == LoadoutEquipResult.NONE) {
+            return;
+        }
+
+        if (equipResult == LoadoutEquipResult.ALREADY_EQUIPPED && INSTANCE.config().loadoutsCloseOnlyOnChange()) {
+            KungDebugRecorder.event("loadouts-auto-close", "already-equipped keep-open text=\""
+                + text
+                + "\" clickContainer="
+                + pendingClickContainerId);
+            clearPendingClose("already-equipped");
             return;
         }
 
@@ -401,7 +429,7 @@ public final class LoadoutsAutoCloseFeature {
         }
 
         Minecraft client = Minecraft.getInstance();
-        if (!DungeonMapOverlayConfig.INSTANCE.loadoutsAutoCloseEnabled() || client.player == null) {
+        if (!INSTANCE.isEnabled() || client.player == null) {
             KungDebugRecorder.event("loadouts-auto-close", "reactive close cancelled source="
                 + source
                 + " "
@@ -476,10 +504,15 @@ public final class LoadoutsAutoCloseFeature {
         suppressLoadoutsOpenPackets = 0;
     }
 
-    private static boolean isLoadoutEquipConfirmation(String text) {
+    private static LoadoutEquipResult loadoutEquipResult(String text) {
         String normalized = text.toLowerCase(Locale.ROOT);
-        return normalized.startsWith("you equipped ")
-            || normalized.endsWith(" is already equipped!");
+        if (normalized.startsWith("you equipped ")) {
+            return LoadoutEquipResult.EQUIPPED;
+        }
+        if (normalized.endsWith(" is already equipped!")) {
+            return LoadoutEquipResult.ALREADY_EQUIPPED;
+        }
+        return LoadoutEquipResult.NONE;
     }
 
     private static String cleanMessage(String text) {
@@ -493,7 +526,7 @@ public final class LoadoutsAutoCloseFeature {
 
     private static int matchingKeybindIndex(KeyEvent event) {
         for (int index = 0; index < LOADOUT_HOTKEY_SLOTS.length; index++) {
-            if (keybindMatchesKey(DungeonMapOverlayConfig.INSTANCE.loadoutKeybind(index), event)) {
+            if (keybindMatchesKey(INSTANCE.config().loadoutKeybind(index), event)) {
                 return index;
             }
         }
@@ -502,7 +535,7 @@ public final class LoadoutsAutoCloseFeature {
 
     private static int matchingMouseKeybindIndex(int button) {
         for (int index = 0; index < LOADOUT_HOTKEY_SLOTS.length; index++) {
-            if (keybindMatchesMouse(DungeonMapOverlayConfig.INSTANCE.loadoutKeybind(index), button)) {
+            if (keybindMatchesMouse(INSTANCE.config().loadoutKeybind(index), button)) {
                 return index;
             }
         }
@@ -668,7 +701,7 @@ public final class LoadoutsAutoCloseFeature {
         ContainerInput input,
         ItemStack stack
     ) {
-        if (!DungeonMapOverlayConfig.INSTANCE.loadoutsAutoCloseEnabled()) {
+        if (!INSTANCE.isEnabled()) {
             return "disabled";
         }
         if (button != 0) {
@@ -818,5 +851,11 @@ public final class LoadoutsAutoCloseFeature {
         }
 
         return "screen=" + screen.getClass().getSimpleName() + " title=\"" + screen.getTitle().getString() + "\"";
+    }
+
+    private enum LoadoutEquipResult {
+        NONE,
+        EQUIPPED,
+        ALREADY_EQUIPPED
     }
 }

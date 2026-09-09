@@ -1,0 +1,541 @@
+package com.github.beng420.kung.feature.dungeon;
+
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
+
+import com.github.beng420.kung.feature.dungeon.room.RoomType;
+import java.io.IOException;
+import java.util.List;
+import org.junit.Test;
+
+public final class BloodRushHelperReliabilityTest {
+    private static final DungeonRoomRepository EMPTY_REPOSITORY = new DungeonRoomRepository() {
+        @Override
+        public long revision() {
+            return 0L;
+        }
+
+        @Override
+        public List<DungeonKnownRoomCatalog.MatchedRoom> matchKnownRooms(DungeonMapSnapshot snapshot) {
+            return List.of();
+        }
+
+        @Override
+        public DungeonKnownRoomCatalog.KnownCoreHint knownCoreHint(int coreHash) {
+            return null;
+        }
+
+        @Override
+        public DungeonKnownRoomCatalog.AutoLearnResult autoLearnStableHashes(
+            DungeonKnownRoomCatalog.MatchedRoom match,
+            DungeonMapSnapshot snapshot
+        ) throws IOException {
+            return null;
+        }
+
+        @Override
+        public boolean hasPrince(String roomName) {
+            return false;
+        }
+    };
+
+    @Test
+    public void lockedDoorDisappearingStillCountsAsOpened() {
+        DungeonMapSnapshot snapshot = new DungeonMapSnapshot();
+        snapshot.addScan(1, 1L, 0, 0, List.of(door(3, 0, DungeonDoorKind.WITHER)));
+        snapshot.addScan(2, 2L, 0, 0, List.of(door(3, 0, DungeonDoorKind.NONE)));
+
+        assertTrue(snapshot.openedLockedDoors().contains(new DungeonMapSnapshot.GridKey(3, 0)));
+        assertEquals(DungeonDoorKind.NONE, snapshot.pointAt(3, 0).point().doorKind());
+    }
+
+    @Test
+    public void lockedDoorRevertingToUnclassifiedBlockDoesNotCountAsOpened() {
+        DungeonMapSnapshot snapshot = new DungeonMapSnapshot();
+        snapshot.addScan(1, 1L, 0, 0, List.of(door(3, 0, DungeonDoorKind.BLOOD, 11458)));
+        snapshot.addScan(2, 2L, 0, 0, List.of(door(3, 0, DungeonDoorKind.NONE, 15292)));
+
+        assertFalse(snapshot.openedLockedDoors().contains(new DungeonMapSnapshot.GridKey(3, 0)));
+        assertTrue(snapshot.observedLockedDoors().contains(new DungeonMapSnapshot.GridKey(3, 0)));
+        assertEquals(DungeonDoorKind.BLOOD, snapshot.pointAt(3, 0).point().doorKind());
+    }
+
+    @Test
+    public void exactBloodRushDoorEstimateRequiresVisiblePath() {
+        DungeonMapSnapshot snapshot = remoteBloodRushSnapshot();
+        DungeonLiveMapWriter.MatchRenderPlan plan = DungeonLiveMapWriter.MatchRenderPlan.from(snapshot, EMPTY_REPOSITORY);
+
+        assertFalse(plan.bloodRushDoorEstimateExact(snapshot));
+        assertEquals(2, plan.bloodRushTotalSpecialDoorCount());
+
+        snapshot.observeMapVisibleRoom(0, 0);
+        snapshot.observeMapVisibleRoom(3, 0);
+        plan = DungeonLiveMapWriter.MatchRenderPlan.from(snapshot, EMPTY_REPOSITORY);
+
+        assertFalse(plan.bloodRushDoorEstimateExact(snapshot));
+
+        snapshot.observeMapVisibleRoom(1, 0);
+        snapshot.observeMapVisibleRoom(2, 0);
+        plan = DungeonLiveMapWriter.MatchRenderPlan.from(snapshot, EMPTY_REPOSITORY);
+
+        assertTrue(plan.bloodRushDoorEstimateExact(snapshot));
+        assertEquals(2, plan.bloodRushTotalSpecialDoorCount());
+    }
+
+    @Test
+    public void rawDoorScanCanMakeBloodRushDoorEstimateExactBeforeWholePathIsVisible() {
+        DungeonMapSnapshot snapshot = remoteBloodRushSnapshot();
+        snapshot.addScan(1, 1L, 0, 0, List.of(
+            door(3, 0, DungeonDoorKind.WITHER),
+            door(5, 0, DungeonDoorKind.BLOOD)
+        ));
+
+        DungeonLiveMapWriter.MatchRenderPlan plan = DungeonLiveMapWriter.MatchRenderPlan.from(snapshot, EMPTY_REPOSITORY);
+
+        assertFalse(plan.bloodRushDoorEstimateExact(snapshot));
+        assertTrue(plan.rawNonStartSpecialDoorEstimateExact(snapshot));
+    }
+
+    @Test
+    public void openPuzzleDoorDoesNotInflateBloodRushDoorTotal() {
+        DungeonMapSnapshot snapshot = remoteBloodRushSnapshotWithPuzzleDoor();
+        snapshot.addScan(1, 1L, 0, 0, List.of(door(1, 2, DungeonDoorKind.OPEN)));
+        snapshot.observeMapOpenDoor(1, 2);
+
+        DungeonLiveMapWriter.MatchRenderPlan plan = DungeonLiveMapWriter.MatchRenderPlan.from(snapshot, EMPTY_REPOSITORY);
+
+        assertEquals(2, plan.bloodRushTotalSpecialDoorCount());
+        assertEquals(2, plan.knownNonStartSpecialDoorCount());
+    }
+
+    @Test
+    public void mapOpenSignalDoesNotOverrideVisibleLockedDoor() {
+        DungeonMapSnapshot snapshot = remoteBloodRushSnapshot();
+        snapshot.addScan(1, 1L, 0, 0, List.of(
+            door(3, 0, DungeonDoorKind.WITHER),
+            door(5, 0, DungeonDoorKind.BLOOD)
+        ));
+        snapshot.observeMapOpenDoor(3, 0);
+
+        DungeonLiveMapWriter.MatchRenderPlan plan = DungeonLiveMapWriter.MatchRenderPlan.from(snapshot, EMPTY_REPOSITORY);
+
+        assertEquals(DungeonDoorKind.WITHER, plan.doorAt(3, 0).kind());
+        assertEquals(0, plan.openedRawNonStartSpecialDoorCount(snapshot));
+        assertTrue(plan.minimumVisibleOpenedSpecialDoorCells(snapshot).isEmpty());
+        assertTrue(plan.bloodRushOpenedSpecialDoorCells().isEmpty());
+    }
+
+    @Test
+    public void traversedSignalDoesNotOverrideVisibleLockedDoor() {
+        DungeonMapSnapshot snapshot = remoteBloodRushSnapshot();
+        snapshot.addScan(1, 1L, 1, 0, List.of(
+            door(3, 0, DungeonDoorKind.WITHER),
+            door(5, 0, DungeonDoorKind.BLOOD)
+        ));
+        snapshot.addScan(2, 2L, 2, 0, List.of(
+            door(3, 0, DungeonDoorKind.WITHER),
+            door(5, 0, DungeonDoorKind.BLOOD)
+        ));
+
+        DungeonLiveMapWriter.MatchRenderPlan plan = DungeonLiveMapWriter.MatchRenderPlan.from(snapshot, EMPTY_REPOSITORY);
+
+        assertEquals(DungeonDoorKind.WITHER, plan.doorAt(3, 0).kind());
+        assertEquals(0, plan.openedRawNonStartSpecialDoorCount(snapshot));
+        assertTrue(plan.minimumVisibleOpenedSpecialDoorCells(snapshot).isEmpty());
+        assertTrue(plan.bloodRushOpenedSpecialDoorCells().isEmpty());
+    }
+
+    @Test
+    public void blockTransitionOpensLockedDoorAfterMapOpenSignal() {
+        DungeonMapSnapshot snapshot = remoteBloodRushSnapshot();
+        snapshot.addScan(1, 1L, 0, 0, List.of(
+            door(3, 0, DungeonDoorKind.WITHER),
+            door(5, 0, DungeonDoorKind.BLOOD)
+        ));
+        snapshot.observeMapOpenDoor(3, 0);
+        snapshot.addScan(2, 2L, 0, 0, List.of(
+            door(3, 0, DungeonDoorKind.OPEN),
+            door(5, 0, DungeonDoorKind.BLOOD)
+        ));
+
+        DungeonLiveMapWriter.MatchRenderPlan plan = DungeonLiveMapWriter.MatchRenderPlan.from(snapshot, EMPTY_REPOSITORY);
+
+        assertEquals(DungeonDoorKind.OPEN, plan.doorAt(3, 0).kind());
+        assertEquals(1, plan.openedRawNonStartSpecialDoorCount(snapshot));
+        assertTrue(plan.minimumVisibleOpenedSpecialDoorCells(snapshot).contains(new DungeonLiveMapWriter.CellKey(3, 0)));
+        assertTrue(plan.bloodRushOpenedSpecialDoorCells().contains(new DungeonLiveMapWriter.CellKey(3, 0)));
+    }
+
+    @Test
+    public void remoteOpenSignalDoesNotOverrideVisibleBloodDoor() {
+        DungeonMapSnapshot snapshot = new DungeonMapSnapshot();
+        snapshot.replaceRemoteLiveData(
+            List.of(
+                room(0, 0, "Start", RoomType.START),
+                room(1, 0, "Hall", RoomType.NORMAL),
+                room(2, 0, "Blood", RoomType.BLOOD)
+            ),
+            List.of(
+                remoteDoor(1, 0, DungeonDoorKind.OPEN, RoomType.NORMAL),
+                remoteDoor(3, 0, DungeonDoorKind.OPEN, RoomType.BLOOD)
+            )
+        );
+        snapshot.addScan(1, 1L, 0, 0, List.of(door(3, 0, DungeonDoorKind.BLOOD)));
+
+        DungeonLiveMapWriter.MatchRenderPlan plan = DungeonLiveMapWriter.MatchRenderPlan.from(snapshot, EMPTY_REPOSITORY);
+
+        assertEquals(DungeonDoorKind.BLOOD, plan.doorAt(3, 0).kind());
+        assertEquals(0, plan.openedRawNonStartSpecialDoorCount(snapshot));
+        assertTrue(plan.minimumVisibleOpenedSpecialDoorCells(snapshot).isEmpty());
+        assertTrue(plan.bloodRushOpenedSpecialDoorCells().isEmpty());
+    }
+
+    @Test
+    public void localLockedDoorsAreAllKeptWhenTopologyHasDuplicateRoomPairEdges() {
+        DungeonMapSnapshot snapshot = new DungeonMapSnapshot();
+        snapshot.replaceRemoteLiveData(
+            List.of(
+                room(0, 0, "Start", RoomType.START),
+                room(1, 0, "Tall Hall", RoomType.NORMAL),
+                room(1, 1, "Tall Hall", RoomType.NORMAL),
+                room(2, 0, "Tall Branch", RoomType.NORMAL),
+                room(2, 1, "Tall Branch", RoomType.NORMAL),
+                room(3, 0, "Blood", RoomType.BLOOD)
+            ),
+            List.of(remoteDoor(5, 0, DungeonDoorKind.BLOOD, RoomType.BLOOD))
+        );
+        snapshot.addScan(1, 1L, 0, 0, List.of(
+            door(3, 0, DungeonDoorKind.WITHER),
+            door(3, 2, DungeonDoorKind.WITHER),
+            door(5, 0, DungeonDoorKind.BLOOD)
+        ));
+
+        DungeonLiveMapWriter.MatchRenderPlan plan = DungeonLiveMapWriter.MatchRenderPlan.from(snapshot, EMPTY_REPOSITORY);
+
+        assertEquals(DungeonDoorKind.WITHER, plan.doorAt(3, 0).kind());
+        assertEquals(DungeonDoorKind.WITHER, plan.doorAt(3, 2).kind());
+        assertEquals(DungeonDoorKind.BLOOD, plan.doorAt(5, 0).kind());
+        assertEquals(3, plan.rawNonStartSpecialDoorCount(snapshot));
+    }
+
+    @Test
+    public void localLockedDoorEvidenceWinsOverRemoteOpenDoor() {
+        DungeonMapSnapshot snapshot = new DungeonMapSnapshot();
+        snapshot.replaceRemoteLiveData(
+            List.of(
+                room(0, 0, "Start", RoomType.START),
+                room(1, 0, "Hall", RoomType.NORMAL),
+                room(2, 0, "Blood", RoomType.BLOOD)
+            ),
+            List.of(
+                remoteDoor(1, 0, DungeonDoorKind.OPEN, RoomType.NORMAL),
+                remoteDoor(3, 0, DungeonDoorKind.OPEN, RoomType.BLOOD)
+            )
+        );
+        snapshot.addScan(1, 1L, 0, 0, List.of(door(3, 0, DungeonDoorKind.WITHER)));
+
+        DungeonLiveMapWriter.MatchRenderPlan plan = DungeonLiveMapWriter.MatchRenderPlan.from(snapshot, EMPTY_REPOSITORY);
+
+        assertEquals(DungeonDoorKind.WITHER, plan.doorAt(3, 0).kind());
+        assertTrue(plan.bloodRushOpenedSpecialDoorCells().isEmpty());
+    }
+
+    @Test
+    public void rawSpecialDoorLowerBoundKeepsOpenedDoorsInTheTotal() {
+        DungeonMapSnapshot snapshot = remoteBloodRushSnapshot();
+        snapshot.addScan(1, 1L, 0, 0, List.of(
+            door(3, 0, DungeonDoorKind.WITHER),
+            door(5, 0, DungeonDoorKind.BLOOD)
+        ));
+        snapshot.addScan(2, 2L, 0, 0, List.of(
+            door(3, 0, DungeonDoorKind.OPEN),
+            door(5, 0, DungeonDoorKind.BLOOD)
+        ));
+
+        DungeonLiveMapWriter.MatchRenderPlan plan = DungeonLiveMapWriter.MatchRenderPlan.from(snapshot, EMPTY_REPOSITORY);
+
+        assertEquals(2, plan.rawNonStartSpecialDoorCount(snapshot));
+        assertEquals(1, plan.openedRawNonStartSpecialDoorCount(snapshot));
+        assertEquals(1, plan.visibleRawNonStartSpecialDoorCount(snapshot));
+    }
+
+    @Test
+    public void fairyWitherDoorCountsOnBloodRushPath() {
+        DungeonMapSnapshot snapshot = new DungeonMapSnapshot();
+        snapshot.replaceRemoteLiveData(
+            List.of(
+                room(0, 0, "Start", RoomType.START),
+                room(1, 0, "Pre Fairy", RoomType.NORMAL),
+                room(2, 0, "Fairy", RoomType.FAIRY),
+                room(3, 0, "After Fairy", RoomType.NORMAL),
+                room(4, 0, "Blood", RoomType.BLOOD)
+            ),
+            List.of(
+                remoteDoor(1, 0, DungeonDoorKind.OPEN, RoomType.NORMAL),
+                remoteDoor(3, 0, DungeonDoorKind.OPEN, RoomType.FAIRY),
+                remoteDoor(5, 0, DungeonDoorKind.WITHER, RoomType.FAIRY),
+                remoteDoor(7, 0, DungeonDoorKind.BLOOD, RoomType.BLOOD)
+            )
+        );
+        snapshot.addScan(1, 1L, 0, 0, List.of(
+            door(5, 0, DungeonDoorKind.WITHER),
+            door(7, 0, DungeonDoorKind.BLOOD)
+        ));
+
+        DungeonLiveMapWriter.MatchRenderPlan plan = DungeonLiveMapWriter.MatchRenderPlan.from(snapshot, EMPTY_REPOSITORY);
+
+        assertTrue(plan.isBloodRushSpecialDoor(5, 0));
+        assertEquals(2, plan.bloodRushTotalSpecialDoorCount());
+        assertEquals(2, plan.knownNonStartSpecialDoorCount());
+        assertEquals(2, plan.rawNonStartSpecialDoorCount(snapshot));
+    }
+
+    @Test
+    public void fairyEntranceIsIgnoredButFairyExitCountsInRawFallbackEvenBeforePathIsKnown() {
+        DungeonMapSnapshot snapshot = new DungeonMapSnapshot();
+        snapshot.replaceRemoteLiveData(
+            List.of(
+                room(0, 0, "Start", RoomType.START),
+                room(1, 0, "Pre Fairy", RoomType.NORMAL),
+                room(2, 0, "Fairy", RoomType.FAIRY),
+                room(3, 0, "After Fairy", RoomType.NORMAL),
+                room(5, 0, "Blood", RoomType.BLOOD)
+            ),
+            List.of(
+                remoteDoor(1, 0, DungeonDoorKind.OPEN, RoomType.NORMAL),
+                remoteDoor(9, 0, DungeonDoorKind.BLOOD, RoomType.BLOOD)
+            )
+        );
+        snapshot.addScan(1, 1L, 0, 0, List.of(
+            door(3, 0, DungeonDoorKind.OPEN),
+            door(5, 0, DungeonDoorKind.WITHER),
+            door(9, 0, DungeonDoorKind.BLOOD)
+        ));
+
+        DungeonLiveMapWriter.MatchRenderPlan plan = DungeonLiveMapWriter.MatchRenderPlan.from(snapshot, EMPTY_REPOSITORY);
+
+        assertEquals(2, plan.rawNonStartSpecialDoorCount(snapshot));
+        assertEquals(2, plan.visibleRawNonStartSpecialDoorCount(snapshot));
+    }
+
+    @Test
+    public void ambiguousLockedFairyDoorsAreNotGuessedAsEntrance() {
+        DungeonMapSnapshot snapshot = new DungeonMapSnapshot();
+        snapshot.replaceRemoteLiveData(
+            List.of(
+                room(4, 3, "Pre Fairy", RoomType.NORMAL),
+                room(5, 3, "Fairy", RoomType.FAIRY),
+                room(5, 4, "After Fairy", RoomType.NORMAL)
+            ),
+            List.of(
+                remoteDoor(9, 6, DungeonDoorKind.WITHER, RoomType.FAIRY),
+                remoteDoor(10, 7, DungeonDoorKind.WITHER, RoomType.FAIRY)
+            )
+        );
+        snapshot.addScan(1, 1L, 0, 0, List.of(
+            door(9, 6, DungeonDoorKind.WITHER),
+            door(10, 7, DungeonDoorKind.WITHER)
+        ));
+
+        DungeonLiveMapWriter.MatchRenderPlan plan = DungeonLiveMapWriter.MatchRenderPlan.from(snapshot, EMPTY_REPOSITORY);
+
+        assertFalse(plan.doorAt(9, 6).colorAsSpecial());
+        assertFalse(plan.doorAt(10, 7).colorAsSpecial());
+        assertEquals(2, plan.rawNonStartSpecialDoorCount(snapshot));
+    }
+
+    @Test
+    public void openFairyDoorIsMarkedAsEntranceWithoutStartDistance() {
+        DungeonMapSnapshot snapshot = new DungeonMapSnapshot();
+        snapshot.replaceRemoteLiveData(
+            List.of(
+                room(4, 3, "Pre Fairy", RoomType.NORMAL),
+                room(5, 3, "Fairy", RoomType.FAIRY),
+                room(5, 4, "After Fairy", RoomType.NORMAL)
+            ),
+            List.of(
+                remoteDoor(9, 6, DungeonDoorKind.OPEN, RoomType.FAIRY),
+                remoteDoor(10, 7, DungeonDoorKind.WITHER, RoomType.FAIRY)
+            )
+        );
+        snapshot.addScan(1, 1L, 0, 0, List.of(
+            door(9, 6, DungeonDoorKind.OPEN),
+            door(10, 7, DungeonDoorKind.WITHER)
+        ));
+
+        DungeonLiveMapWriter.MatchRenderPlan plan = DungeonLiveMapWriter.MatchRenderPlan.from(snapshot, EMPTY_REPOSITORY);
+
+        assertTrue(plan.doorAt(9, 6).colorAsSpecial());
+        assertFalse(plan.doorAt(10, 7).colorAsSpecial());
+        assertEquals(1, plan.rawNonStartSpecialDoorCount(snapshot));
+    }
+
+    @Test
+    public void openFairyEntranceKeepsFairyRenderColor() throws Exception {
+        java.lang.reflect.Method colorForDoor = DungeonMapFeature.class.getDeclaredMethod(
+            "colorForDoor",
+            DungeonLiveMapWriter.DoorRenderInfo.class
+        );
+        colorForDoor.setAccessible(true);
+
+        int color = (int) colorForDoor.invoke(
+            null,
+            new DungeonLiveMapWriter.DoorRenderInfo(DungeonDoorKind.OPEN, RoomType.FAIRY, true, true)
+        );
+
+        assertEquals(RoomType.FAIRY.color(), color);
+    }
+
+    @Test
+    public void openedFairyExitStillReducesRemainingDoorCountWhenPathBypassesFairy() {
+        DungeonMapSnapshot snapshot = new DungeonMapSnapshot();
+        snapshot.replaceRemoteLiveData(
+            List.of(
+                room(0, 0, "Start", RoomType.START),
+                room(1, 0, "Path 1", RoomType.NORMAL),
+                room(2, 0, "Path 2", RoomType.NORMAL),
+                room(3, 0, "Blood", RoomType.BLOOD),
+                room(1, 1, "Fairy", RoomType.FAIRY),
+                room(2, 1, "Side Path", RoomType.NORMAL)
+            ),
+            List.of(
+                remoteDoor(1, 0, DungeonDoorKind.OPEN, RoomType.NORMAL),
+                remoteDoor(3, 0, DungeonDoorKind.WITHER, RoomType.NORMAL),
+                remoteDoor(5, 0, DungeonDoorKind.BLOOD, RoomType.BLOOD),
+                remoteDoor(2, 1, DungeonDoorKind.OPEN, RoomType.FAIRY),
+                remoteDoor(3, 2, DungeonDoorKind.WITHER, RoomType.FAIRY)
+            )
+        );
+        snapshot.addScan(1, 1L, 0, 0, List.of(
+            door(3, 0, DungeonDoorKind.WITHER),
+            door(5, 0, DungeonDoorKind.BLOOD),
+            door(2, 1, DungeonDoorKind.OPEN),
+            door(3, 2, DungeonDoorKind.WITHER)
+        ));
+        snapshot.addScan(2, 2L, 0, 0, List.of(
+            door(3, 0, DungeonDoorKind.OPEN),
+            door(5, 0, DungeonDoorKind.BLOOD),
+            door(2, 1, DungeonDoorKind.OPEN),
+            door(3, 2, DungeonDoorKind.OPEN)
+        ));
+
+        DungeonLiveMapWriter.MatchRenderPlan plan = DungeonLiveMapWriter.MatchRenderPlan.from(snapshot, EMPTY_REPOSITORY);
+
+        assertEquals(3, plan.rawNonStartSpecialDoorCount(snapshot));
+        assertEquals(2, plan.openedRawNonStartSpecialDoorCount(snapshot));
+        assertEquals(2, plan.minimumVisibleOpenedSpecialDoorCells(snapshot).size());
+    }
+
+    @Test
+    public void fairyExitFromTraceCountsWhileEntranceDoesNot() {
+        DungeonMapSnapshot snapshot = new DungeonMapSnapshot();
+        snapshot.replaceRemoteLiveData(
+            List.of(
+                room(0, 0, "Start", RoomType.START),
+                room(0, 1, "First Key", RoomType.NORMAL),
+                room(0, 2, "Pre Fairy", RoomType.NORMAL),
+                room(0, 3, "Fairy Entrance Side", RoomType.NORMAL),
+                room(0, 4, "Fairy", RoomType.FAIRY),
+                room(0, 5, "After Fairy", RoomType.NORMAL),
+                room(1, 5, "Second Key", RoomType.NORMAL),
+                room(2, 5, "Blood", RoomType.BLOOD)
+            ),
+            List.of(
+                remoteDoor(0, 1, DungeonDoorKind.OPEN, RoomType.NORMAL),
+                remoteDoor(0, 3, DungeonDoorKind.WITHER, RoomType.NORMAL),
+                remoteDoor(0, 5, DungeonDoorKind.WITHER, RoomType.NORMAL),
+                remoteDoor(0, 7, DungeonDoorKind.OPEN, RoomType.FAIRY),
+                remoteDoor(0, 9, DungeonDoorKind.WITHER, RoomType.FAIRY),
+                remoteDoor(1, 10, DungeonDoorKind.WITHER, RoomType.NORMAL),
+                remoteDoor(3, 10, DungeonDoorKind.BLOOD, RoomType.BLOOD)
+            )
+        );
+        snapshot.addScan(1, 1L, 0, 0, List.of(
+            door(0, 3, DungeonDoorKind.WITHER),
+            door(0, 5, DungeonDoorKind.WITHER),
+            door(0, 7, DungeonDoorKind.OPEN),
+            door(0, 9, DungeonDoorKind.WITHER),
+            door(1, 10, DungeonDoorKind.WITHER),
+            door(3, 10, DungeonDoorKind.BLOOD)
+        ));
+        DungeonLiveMapWriter.MatchRenderPlan beforeExit =
+            DungeonLiveMapWriter.MatchRenderPlan.from(snapshot, EMPTY_REPOSITORY);
+
+        assertTrue(beforeExit.doorAt(0, 7).colorAsSpecial());
+        assertFalse(beforeExit.doorAt(0, 9).colorAsSpecial());
+        assertEquals(5, beforeExit.rawNonStartSpecialDoorCount(snapshot));
+        assertEquals(5, beforeExit.knownNonStartSpecialDoorCount());
+        assertEquals(5, beforeExit.bloodRushTotalSpecialDoorCount());
+
+        snapshot.addScan(2, 2L, 0, 0, List.of(
+            door(0, 3, DungeonDoorKind.WITHER),
+            door(0, 5, DungeonDoorKind.WITHER),
+            door(0, 7, DungeonDoorKind.OPEN),
+            door(0, 9, DungeonDoorKind.OPEN),
+            door(1, 10, DungeonDoorKind.WITHER),
+            door(3, 10, DungeonDoorKind.BLOOD)
+        ));
+        DungeonLiveMapWriter.MatchRenderPlan afterExit =
+            DungeonLiveMapWriter.MatchRenderPlan.from(snapshot, EMPTY_REPOSITORY);
+
+        assertEquals(5, afterExit.rawNonStartSpecialDoorCount(snapshot));
+        assertEquals(1, afterExit.openedRawNonStartSpecialDoorCount(snapshot));
+        assertTrue(afterExit.minimumVisibleOpenedSpecialDoorCells(snapshot)
+            .contains(new DungeonLiveMapWriter.CellKey(0, 9)));
+    }
+
+    private static DungeonMapSnapshot remoteBloodRushSnapshot() {
+        DungeonMapSnapshot snapshot = new DungeonMapSnapshot();
+        snapshot.replaceRemoteLiveData(
+            List.of(
+                room(0, 0, "Start", RoomType.START),
+                room(1, 0, "Hall 1", RoomType.NORMAL),
+                room(2, 0, "Hall 2", RoomType.NORMAL),
+                room(3, 0, "Blood", RoomType.BLOOD)
+            ),
+            List.of(
+                remoteDoor(1, 0, DungeonDoorKind.OPEN, RoomType.NORMAL),
+                remoteDoor(3, 0, DungeonDoorKind.WITHER, RoomType.NORMAL),
+                remoteDoor(5, 0, DungeonDoorKind.BLOOD, RoomType.BLOOD)
+            )
+        );
+        return snapshot;
+    }
+
+    private static DungeonMapSnapshot remoteBloodRushSnapshotWithPuzzleDoor() {
+        DungeonMapSnapshot snapshot = new DungeonMapSnapshot();
+        snapshot.replaceRemoteLiveData(
+            List.of(
+                room(0, 0, "Start", RoomType.START),
+                room(1, 0, "Hall 1", RoomType.NORMAL),
+                room(2, 0, "Hall 2", RoomType.NORMAL),
+                room(3, 0, "Blood", RoomType.BLOOD),
+                room(0, 1, "Side Room", RoomType.NORMAL),
+                room(1, 1, "Puzzle", RoomType.PUZZLE)
+            ),
+            List.of(
+                remoteDoor(1, 0, DungeonDoorKind.OPEN, RoomType.NORMAL),
+                remoteDoor(3, 0, DungeonDoorKind.WITHER, RoomType.NORMAL),
+                remoteDoor(5, 0, DungeonDoorKind.BLOOD, RoomType.BLOOD)
+            )
+        );
+        return snapshot;
+    }
+
+    private static DungeonMapSnapshot.RemoteRoom room(int x, int z, String name, RoomType type) {
+        return new DungeonMapSnapshot.RemoteRoom(x, z, name, type, 0, 0, 0, 0, true, false, false, "test", 1L);
+    }
+
+    private static DungeonMapSnapshot.RemoteDoor remoteDoor(int x, int z, DungeonDoorKind kind, RoomType targetType) {
+        return new DungeonMapSnapshot.RemoteDoor(x, z, kind, targetType, false, "test", 1L);
+    }
+
+    private static DungeonScanPoint door(int x, int z, DungeonDoorKind kind) {
+        return new DungeonScanPoint(x, z, x * 16, z * 16, DungeonScanPointKind.DOOR, true, 0, 0, 1, kind);
+    }
+
+    private static DungeonScanPoint door(int x, int z, DungeonDoorKind kind, int blockId) {
+        return new DungeonScanPoint(x, z, x * 16, z * 16, DungeonScanPointKind.DOOR, true, 0, 0, blockId, kind);
+    }
+}

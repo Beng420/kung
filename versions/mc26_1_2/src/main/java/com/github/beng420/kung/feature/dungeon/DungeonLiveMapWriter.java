@@ -1,17 +1,6 @@
 package com.github.beng420.kung.feature.dungeon;
 
-import com.github.beng420.kung.KungMod;
 import com.github.beng420.kung.feature.dungeon.room.RoomType;
-import java.awt.BasicStroke;
-import java.awt.Color;
-import java.awt.Font;
-import java.awt.Graphics2D;
-import java.awt.RenderingHints;
-import java.awt.image.BufferedImage;
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -19,500 +8,9 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import javax.imageio.ImageIO;
-import net.fabricmc.loader.api.FabricLoader;
 
 public final class DungeonLiveMapWriter {
-    private static final String LIVE_MAP_FILE = "live-dungeon-map.png";
-    private static final String FINAL_MAP_FILE = "last-dungeon-map.png";
-    private static final String LIVE_HTML_FILE = "live-dungeon-map.html";
-    private static final int ROOM_SIZE = 54;
-    private static final int DOOR_SIZE = 18;
-    private static final int CELL_GAP = 3;
-    private static final int ROOM_LABEL_FONT_SIZE = 12;
-    private static final int ROOM_SECRET_FONT_SIZE = 11;
-    private static final int MAX_ROOM_LABEL_LINES = 3;
-    private static final int LONG_WORD_SPLIT_MIN_CHARS = 12;
-    private static final int PADDING = 22;
-    private static final int HEADER_HEIGHT = 44;
-    private static final int LEGEND_HEIGHT = 42;
-    private static final int GRID_UNITS = DungeonScanUtils.SCAN_GRID_SIZE;
-    private static final int IMAGE_WIDTH = PADDING * 2 + scanGridToPixel(GRID_UNITS);
-    private static final int IMAGE_HEIGHT = PADDING * 2 + HEADER_HEIGHT + LEGEND_HEIGHT + scanGridToPixel(GRID_UNITS);
-
-    private static final Color BACKGROUND = new Color(0xFF14171C, true);
-    private static final Color PANEL = new Color(0xFF20242B, true);
-    private static final Color EMPTY = new Color(0xFF2A2E36, true);
-    private static final Color UNSEEN = new Color(0xFF111318, true);
-    private static final Color OPEN_DOOR = new Color(0xFF72451F, true);
-    private static final Color WITHER_DOOR = new Color(0xFF050506, true);
-    private static final Color UNOPENED_ROOM = new Color(0xFF4B5059, true);
-    private static final Color TEXT = new Color(0xFFE9EDF2, true);
-    private static final Color MUTED_TEXT = new Color(0xFF99A1AD, true);
-    private static final Color PLAYER = new Color(0xFFFFFFFF, true);
-
-    public void writeLiveSnapshot(String runTimestamp, DungeonMapSnapshot snapshot) {
-        try {
-            Path directory = outputDirectory();
-            Files.createDirectories(directory);
-            writeHtml(directory);
-            writeImage(directory.resolve(LIVE_MAP_FILE), runTimestamp, snapshot, false);
-        } catch (IOException exception) {
-            KungMod.LOGGER.warn("Failed to write live dungeon map.", exception);
-        }
-    }
-
-    public void writeFinalSnapshot(String runTimestamp, DungeonMapSnapshot snapshot) {
-        if (runTimestamp == null || snapshot.lastScanNumber() < 0) {
-            return;
-        }
-
-        try {
-            Path directory = outputDirectory();
-            Files.createDirectories(directory);
-            writeImage(directory.resolve(FINAL_MAP_FILE), runTimestamp, snapshot, true);
-        } catch (IOException exception) {
-            KungMod.LOGGER.warn("Failed to write final dungeon map snapshot.", exception);
-        }
-    }
-
-    static boolean hasUnknownRooms(DungeonMapSnapshot snapshot) {
-        return MatchRenderPlan.from(snapshot).hasUnknownRooms(snapshot);
-    }
-
-    private static void writeImage(
-        Path file,
-        String runTimestamp,
-        DungeonMapSnapshot snapshot,
-        boolean finalSnapshot
-    ) throws IOException {
-        BufferedImage image = new BufferedImage(IMAGE_WIDTH, IMAGE_HEIGHT, BufferedImage.TYPE_INT_ARGB);
-        Graphics2D graphics = image.createGraphics();
-        try {
-            graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-            graphics.setColor(BACKGROUND);
-            graphics.fillRect(0, 0, IMAGE_WIDTH, IMAGE_HEIGHT);
-
-            drawHeader(graphics, runTimestamp, snapshot, finalSnapshot);
-            drawGrid(graphics, snapshot);
-            drawLegend(graphics);
-        } finally {
-            graphics.dispose();
-        }
-
-        ImageIO.write(image, "png", file.toFile());
-    }
-
-    private static void drawHeader(
-        Graphics2D graphics,
-        String runTimestamp,
-        DungeonMapSnapshot snapshot,
-        boolean finalSnapshot
-    ) {
-        graphics.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 18));
-        graphics.setColor(TEXT);
-        graphics.drawString(finalSnapshot ? "Kung dungeon scan - final" : "Kung dungeon scan - live", PADDING, 27);
-
-        graphics.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 12));
-        graphics.setColor(MUTED_TEXT);
-        MatchRenderPlan renderPlan = MatchRenderPlan.from(snapshot);
-        String details = "run " + runTimestamp
-            + " | scan " + snapshot.lastScanNumber()
-            + " | rooms " + renderPlan.observedRoomCount()
-            + " | player " + snapshot.playerGridX() + "," + snapshot.playerGridZ();
-        graphics.drawString(details, PADDING, 43);
-    }
-
-    private static void drawGrid(Graphics2D graphics, DungeonMapSnapshot snapshot) {
-        int top = PADDING + HEADER_HEIGHT;
-        int left = PADDING;
-        MatchRenderPlan renderPlan = MatchRenderPlan.from(snapshot);
-
-        graphics.setColor(PANEL);
-        graphics.fillRect(left - 8, top - 8, scanGridToPixel(GRID_UNITS) + 16, scanGridToPixel(GRID_UNITS) + 16);
-
-        for (int gridZ = 0; gridZ < DungeonScanUtils.SCAN_GRID_SIZE; gridZ++) {
-            for (int gridX = 0; gridX < DungeonScanUtils.SCAN_GRID_SIZE; gridX++) {
-                if (DungeonScanUtils.isRoomScanPoint(gridX, gridZ)
-                    && renderPlan.isMatchedRoomCell(gridX / 2, gridZ / 2)) {
-                    continue;
-                }
-
-                int x = left + scanGridToPixel(gridX);
-                int y = top + scanGridToPixel(gridZ);
-                int size = sizeFor(gridX, gridZ);
-                if (DungeonScanUtils.isDoorScanPoint(gridX, gridZ)
-                    && renderPlan.isInternalDoor(gridX, gridZ)) {
-                    graphics.setColor(PANEL);
-                    graphics.fillRect(x, y, size, size);
-                    continue;
-                }
-
-                drawCell(graphics, snapshot, renderPlan, gridX, gridZ, x, y, size);
-            }
-        }
-
-        drawMatchedRooms(graphics, left, top, renderPlan);
-        drawInferredRoomConnections(graphics, left, top, renderPlan);
-        drawExternalDoors(graphics, left, top, renderPlan.externalDoors());
-    }
-
-    private static void drawMatchedRooms(
-        Graphics2D graphics,
-        int left,
-        int top,
-        MatchRenderPlan renderPlan
-    ) {
-        for (DungeonKnownRoomCatalog.MatchedRoom match : renderPlan.matches()) {
-            Color roomColor = new Color(match.template().type().color(), true);
-            Color unopenedColor = unopenedColorFor(roomColor);
-
-            for (DungeonKnownRoomCatalog.MatchedComponent component : match.components()) {
-                graphics.setColor(renderPlan.isVisitedRoom(component.roomGridX(), component.roomGridZ())
-                    ? roomColor
-                    : unopenedColor);
-                int x = left + scanGridToPixel(component.roomGridX() * 2);
-                int y = top + scanGridToPixel(component.roomGridZ() * 2);
-                graphics.fillRect(x, y, ROOM_SIZE, ROOM_SIZE);
-            }
-
-            drawInternalRoomConnections(graphics, left, top, renderPlan, match, roomColor, unopenedColor);
-            drawInternalRoomCorners(graphics, left, top, renderPlan, match, roomColor, unopenedColor);
-            drawMatchedRoomLabel(graphics, left, top, match);
-        }
-    }
-
-    private static void drawInternalRoomConnections(
-        Graphics2D graphics,
-        int left,
-        int top,
-        MatchRenderPlan renderPlan,
-        DungeonKnownRoomCatalog.MatchedRoom match,
-        Color roomColor,
-        Color unopenedColor
-    ) {
-        for (DungeonKnownRoomCatalog.MatchedComponent first : match.components()) {
-            for (DungeonKnownRoomCatalog.MatchedComponent second : match.components()) {
-                int distanceX = Math.abs(first.roomGridX() - second.roomGridX());
-                int distanceZ = Math.abs(first.roomGridZ() - second.roomGridZ());
-                if (distanceX + distanceZ != 1) {
-                    continue;
-                }
-
-                int doorGridX = first.roomGridX() + second.roomGridX();
-                int doorGridZ = first.roomGridZ() + second.roomGridZ();
-                int x = left + scanGridToPixel(doorGridX);
-                int y = top + scanGridToPixel(doorGridZ);
-                graphics.setColor(renderPlan.isVisitedRoom(first.roomGridX(), first.roomGridZ())
-                    || renderPlan.isVisitedRoom(second.roomGridX(), second.roomGridZ())
-                    ? roomColor
-                    : unopenedColor);
-                if (isHorizontalDoor(doorGridX, doorGridZ)) {
-                    graphics.fillRect(x - CELL_GAP, y, DOOR_SIZE + CELL_GAP * 2, ROOM_SIZE);
-                } else {
-                    graphics.fillRect(x, y - CELL_GAP, ROOM_SIZE, DOOR_SIZE + CELL_GAP * 2);
-                }
-            }
-        }
-    }
-
-    private static void drawInternalRoomCorners(
-        Graphics2D graphics,
-        int left,
-        int top,
-        MatchRenderPlan renderPlan,
-        DungeonKnownRoomCatalog.MatchedRoom match,
-        Color roomColor,
-        Color unopenedColor
-    ) {
-        for (int roomGridZ = 0; roomGridZ < DungeonScanUtils.SCAN_GRID_SIZE / 2; roomGridZ++) {
-            for (int roomGridX = 0; roomGridX < DungeonScanUtils.SCAN_GRID_SIZE / 2; roomGridX++) {
-                int filledCorners = 0;
-                filledCorners += match.contains(roomGridX, roomGridZ) ? 1 : 0;
-                filledCorners += match.contains(roomGridX + 1, roomGridZ) ? 1 : 0;
-                filledCorners += match.contains(roomGridX, roomGridZ + 1) ? 1 : 0;
-                filledCorners += match.contains(roomGridX + 1, roomGridZ + 1) ? 1 : 0;
-
-                if (filledCorners != 4) {
-                    continue;
-                }
-
-                int separatorGridX = roomGridX * 2 + 1;
-                int separatorGridZ = roomGridZ * 2 + 1;
-                int x = left + scanGridToPixel(separatorGridX);
-                int y = top + scanGridToPixel(separatorGridZ);
-                graphics.setColor(
-                    renderPlan.isVisitedRoom(roomGridX, roomGridZ)
-                        || renderPlan.isVisitedRoom(roomGridX + 1, roomGridZ)
-                        || renderPlan.isVisitedRoom(roomGridX, roomGridZ + 1)
-                        || renderPlan.isVisitedRoom(roomGridX + 1, roomGridZ + 1)
-                        ? roomColor
-                        : unopenedColor
-                );
-                graphics.fillRect(x - CELL_GAP, y - CELL_GAP, DOOR_SIZE + CELL_GAP * 2, DOOR_SIZE + CELL_GAP * 2);
-            }
-        }
-    }
-
-    private static void drawInferredRoomConnections(
-        Graphics2D graphics,
-        int left,
-        int top,
-        MatchRenderPlan renderPlan
-    ) {
-        for (CellKey doorCell : renderPlan.inferredInternalDoors()) {
-            AdjacentRooms adjacentRooms = adjacentRoomsForDoor(doorCell.x(), doorCell.z());
-            if (adjacentRooms == null
-                || !renderPlan.sameRoomOwner(adjacentRooms.first(), adjacentRooms.second())
-                || (renderPlan.isMatchedRoomCell(adjacentRooms.first().x(), adjacentRooms.first().z())
-                    && renderPlan.isMatchedRoomCell(adjacentRooms.second().x(), adjacentRooms.second().z()))) {
-                continue;
-            }
-
-            RoomType firstType = renderPlan.roomTypeAt(adjacentRooms.first().x(), adjacentRooms.first().z());
-            RoomType secondType = renderPlan.roomTypeAt(adjacentRooms.second().x(), adjacentRooms.second().z());
-            RoomType roomType = firstType != RoomType.UNKNOWN ? firstType : secondType;
-            Color roomColor = roomType == RoomType.UNKNOWN ? EMPTY : new Color(roomType.color(), true);
-            Color unopenedColor = unopenedColorFor(roomColor);
-            graphics.setColor(renderPlan.isVisitedRoom(adjacentRooms.first().x(), adjacentRooms.first().z())
-                || renderPlan.isVisitedRoom(adjacentRooms.second().x(), adjacentRooms.second().z())
-                ? roomColor
-                : unopenedColor);
-
-            int x = left + scanGridToPixel(doorCell.x());
-            int y = top + scanGridToPixel(doorCell.z());
-            if (isHorizontalDoor(doorCell.x(), doorCell.z())) {
-                graphics.fillRect(x - CELL_GAP, y, DOOR_SIZE + CELL_GAP * 2, ROOM_SIZE);
-            } else {
-                graphics.fillRect(x, y - CELL_GAP, ROOM_SIZE, DOOR_SIZE + CELL_GAP * 2);
-            }
-        }
-    }
-
-    private static AdjacentRooms adjacentRoomsForDoor(int gridX, int gridZ) {
-        if (!DungeonScanUtils.isDoorScanPoint(gridX, gridZ)) {
-            return null;
-        }
-        if (isHorizontalDoor(gridX, gridZ)) {
-            return new AdjacentRooms(
-                new CellKey((gridX - 1) / 2, gridZ / 2),
-                new CellKey((gridX + 1) / 2, gridZ / 2)
-            );
-        }
-        return new AdjacentRooms(
-            new CellKey(gridX / 2, (gridZ - 1) / 2),
-            new CellKey(gridX / 2, (gridZ + 1) / 2)
-        );
-    }
-
-    private static void drawMatchedRoomLabel(
-        Graphics2D graphics,
-        int left,
-        int top,
-        DungeonKnownRoomCatalog.MatchedRoom match
-    ) {
-        if (!shouldDrawRoomText(match.template().type())) {
-            return;
-        }
-
-        LabelPlacement placement = labelPlacementFor(match, left, top);
-        drawRoomText(
-            graphics,
-            placement.centerX(),
-            placement.centerY(),
-            placement.maxWidth(),
-            match.template().name(),
-            match.template().type(),
-            match.template().secrets()
-        );
-    }
-
-    private static LabelPlacement labelPlacementFor(
-        DungeonKnownRoomCatalog.MatchedRoom match,
-        int left,
-        int top
-    ) {
-        RoomBounds bounds = roomBounds(match);
-        if ((match.components().size() == 2
-                && ((bounds.spanX() == 2 && bounds.spanZ() == 1)
-                    || (bounds.spanX() == 1 && bounds.spanZ() == 2)))
-            || (match.components().size() == 4
-            && ((bounds.spanX() == 2 && bounds.spanZ() == 2)
-                || (bounds.spanX() == 4 && bounds.spanZ() == 1)
-                || (bounds.spanX() == 1 && bounds.spanZ() == 4)))) {
-            return boundsLabelPlacement(bounds, left, top);
-        }
-
-        DungeonKnownRoomCatalog.MatchedComponent labelComponent = labelComponentFor(match);
-        int cellX = left + scanGridToPixel(labelComponent.roomGridX() * 2);
-        int cellY = top + scanGridToPixel(labelComponent.roomGridZ() * 2);
-        return new LabelPlacement(
-            cellX + ROOM_SIZE / 2,
-            cellY + ROOM_SIZE / 2,
-            labelMaxWidthFor(bounds)
-        );
-    }
-
-    private static LabelPlacement boundsLabelPlacement(RoomBounds bounds, int left, int top) {
-        int minPixelX = left + scanGridToPixel(bounds.minX() * 2);
-        int maxPixelX = left + scanGridToPixel(bounds.maxX() * 2) + ROOM_SIZE;
-        int minPixelY = top + scanGridToPixel(bounds.minZ() * 2);
-        int maxPixelY = top + scanGridToPixel(bounds.maxZ() * 2) + ROOM_SIZE;
-        return new LabelPlacement(
-            (minPixelX + maxPixelX) / 2,
-            (minPixelY + maxPixelY) / 2,
-            labelMaxWidthFor(bounds)
-        );
-    }
-
-    private static int labelMaxWidthFor(RoomBounds bounds) {
-        int spanX = Math.max(1, bounds.spanX());
-        int width = ROOM_SIZE * spanX + (spanX - 1) * (DOOR_SIZE + CELL_GAP);
-        return Math.clamp(width - 8, ROOM_SIZE - 6, ROOM_SIZE * 2 + DOOR_SIZE);
-    }
-
-    private static RoomBounds roomBounds(DungeonKnownRoomCatalog.MatchedRoom match) {
-        int minX = Integer.MAX_VALUE;
-        int maxX = Integer.MIN_VALUE;
-        int minZ = Integer.MAX_VALUE;
-        int maxZ = Integer.MIN_VALUE;
-        for (DungeonKnownRoomCatalog.MatchedComponent component : match.components()) {
-            minX = Math.min(minX, component.roomGridX());
-            maxX = Math.max(maxX, component.roomGridX());
-            minZ = Math.min(minZ, component.roomGridZ());
-            maxZ = Math.max(maxZ, component.roomGridZ());
-        }
-
-        return new RoomBounds(minX, maxX, minZ, maxZ);
-    }
-
-    private static DungeonKnownRoomCatalog.MatchedComponent labelComponentFor(
-        DungeonKnownRoomCatalog.MatchedRoom match
-    ) {
-        DungeonKnownRoomCatalog.MatchedComponent corner = lShapeCornerComponent(match);
-        if (corner != null) {
-            return corner;
-        }
-
-        double averageX = 0;
-        double averageZ = 0;
-        for (DungeonKnownRoomCatalog.MatchedComponent component : match.components()) {
-            averageX += component.roomGridX();
-            averageZ += component.roomGridZ();
-        }
-        averageX /= match.components().size();
-        averageZ /= match.components().size();
-
-        DungeonKnownRoomCatalog.MatchedComponent best = match.components().getFirst();
-        double bestDistance = Double.MAX_VALUE;
-        for (DungeonKnownRoomCatalog.MatchedComponent component : match.components()) {
-            double distanceX = component.roomGridX() - averageX;
-            double distanceZ = component.roomGridZ() - averageZ;
-            double distance = distanceX * distanceX + distanceZ * distanceZ;
-            if (distance < bestDistance
-                || (distance == bestDistance && component.roomGridZ() > best.roomGridZ())
-                || (distance == bestDistance
-                    && component.roomGridZ() == best.roomGridZ()
-                    && component.roomGridX() > best.roomGridX())) {
-                best = component;
-                bestDistance = distance;
-            }
-        }
-        return best;
-    }
-
-    private static DungeonKnownRoomCatalog.MatchedComponent lShapeCornerComponent(
-        DungeonKnownRoomCatalog.MatchedRoom match
-    ) {
-        RoomBounds bounds = roomBounds(match);
-        if (match.components().size() != 3 || bounds.spanX() != 2 || bounds.spanZ() != 2) {
-            return null;
-        }
-
-        for (DungeonKnownRoomCatalog.MatchedComponent component : match.components()) {
-            int neighbors = 0;
-            for (DungeonKnownRoomCatalog.MatchedComponent other : match.components()) {
-                int distanceX = Math.abs(component.roomGridX() - other.roomGridX());
-                int distanceZ = Math.abs(component.roomGridZ() - other.roomGridZ());
-                if (distanceX + distanceZ == 1) {
-                    neighbors++;
-                }
-            }
-            if (neighbors == 2) {
-                return component;
-            }
-        }
-        return null;
-    }
-
-    private static void drawOutlinedString(Graphics2D graphics, String text, int x, int y) {
-        graphics.setColor(new Color(0xEE000000, true));
-        graphics.drawString(text, x - 1, y);
-        graphics.drawString(text, x + 1, y);
-        graphics.drawString(text, x, y - 1);
-        graphics.drawString(text, x, y + 1);
-        graphics.drawString(text, x - 1, y - 1);
-        graphics.drawString(text, x + 1, y - 1);
-        graphics.drawString(text, x - 1, y + 1);
-        graphics.drawString(text, x + 1, y + 1);
-
-        graphics.setColor(new Color(0xFFF7F7F7, true));
-        graphics.drawString(text, x, y);
-    }
-
-    private static String trimToWidth(Graphics2D graphics, String value, int maxWidth) {
-        if (graphics.getFontMetrics().stringWidth(value) <= maxWidth) {
-            return value;
-        }
-        String suffix = "...";
-        for (int end = value.length(); end > 0; end--) {
-            String candidate = value.substring(0, end) + suffix;
-            if (graphics.getFontMetrics().stringWidth(candidate) <= maxWidth) {
-                return candidate;
-            }
-        }
-        return suffix;
-    }
-
-    private static void drawExternalDoors(Graphics2D graphics, int left, int top, Map<CellKey, DoorRenderInfo> doors) {
-        for (Map.Entry<CellKey, DoorRenderInfo> entry : doors.entrySet()) {
-            graphics.setColor(colorForDoor(entry.getValue()));
-            CellKey door = entry.getKey();
-            drawDoorConnection(graphics, left, top, door.x(), door.z());
-        }
-    }
-
-    private static Color colorForDoor(DoorRenderInfo door) {
-        Color color;
-        if (door.colorAsSpecial() && door.targetType() == RoomType.FAIRY) {
-            color = new Color(door.targetType().color(), true);
-        } else if (door.kind() == DungeonDoorKind.OPEN) {
-            color = OPEN_DOOR;
-        } else if (door.colorAsSpecial()) {
-            color = new Color(door.targetType().color(), true);
-        } else {
-            color = switch (door.kind()) {
-                case WITHER -> WITHER_DOOR;
-                case BLOOD -> new Color(RoomType.BLOOD.color(), true);
-                default -> PANEL;
-            };
-        }
-
-        if (door.colorAsSpecial()
-            || door.kind() == DungeonDoorKind.BLOOD
-            || door.kind() == DungeonDoorKind.WITHER) {
-            return color;
-        }
-        return door.targetVisited() ? color : unopenedColorFor(color);
-    }
-
-    private static Color unopenedColorFor(Color roomColor) {
-        return new Color(
-            (roomColor.getRed() + UNOPENED_ROOM.getRed() * 3) / 4,
-            (roomColor.getGreen() + UNOPENED_ROOM.getGreen() * 3) / 4,
-            (roomColor.getBlue() + UNOPENED_ROOM.getBlue() * 3) / 4,
-            0xFF
-        );
+    private DungeonLiveMapWriter() {
     }
 
     private static boolean isSpecialDoorTarget(RoomType roomType) {
@@ -522,336 +20,32 @@ public final class DungeonLiveMapWriter {
             && roomType != RoomType.UNKNOWN;
     }
 
-    private static boolean isSpecialDoorInfo(DoorRenderInfo door) {
+    private static boolean isLockedDoorInfo(DoorRenderInfo door) {
         return door != null
             && (door.kind() == DungeonDoorKind.WITHER
-            || door.kind() == DungeonDoorKind.BLOOD
-            || isSpecialDoorTarget(door.targetType()));
+                || door.kind() == DungeonDoorKind.BLOOD);
     }
 
-    private static void drawDoorConnection(Graphics2D graphics, int left, int top, int gridX, int gridZ) {
-        int x = left + scanGridToPixel(gridX);
-        int y = top + scanGridToPixel(gridZ);
-
-        if (isHorizontalDoor(gridX, gridZ)) {
-            int centeredY = y + (ROOM_SIZE - DOOR_SIZE) / 2;
-            graphics.fillRect(x - CELL_GAP, centeredY, DOOR_SIZE + CELL_GAP * 2, DOOR_SIZE);
-            return;
-        }
-
-        int centeredX = x + (ROOM_SIZE - DOOR_SIZE) / 2;
-        graphics.fillRect(centeredX, y - CELL_GAP, DOOR_SIZE, DOOR_SIZE + CELL_GAP * 2);
-    }
-
-    private static void drawCell(
-        Graphics2D graphics,
-        DungeonMapSnapshot snapshot,
-        MatchRenderPlan renderPlan,
-        int gridX,
-        int gridZ,
-        int x,
-        int y,
-        int size
-    ) {
-        DungeonMapSnapshot.ObservedPoint observedPoint = snapshot.pointAt(gridX, gridZ);
-        if (observedPoint == null) {
-            DungeonKnownRoomCatalog.KnownCoreHint remoteHint = DungeonScanUtils.isRoomScanPoint(gridX, gridZ)
-                ? renderPlan.hintAt(gridX / 2, gridZ / 2)
-                : null;
-            if (remoteHint != null) {
-                Color roomColor = new Color(remoteHint.type().color(), true);
-                graphics.setColor(renderPlan.isVisitedRoom(gridX / 2, gridZ / 2)
-                    ? roomColor
-                    : unopenedColorFor(roomColor));
-                graphics.fillRect(x, y, size, size);
-                drawCellHintLabel(graphics, x, y, size, remoteHint);
-                return;
-            }
-            if (DungeonScanUtils.isRoomScanPoint(gridX, gridZ) && renderPlan.hasRoomCell(gridX / 2, gridZ / 2)) {
-                RoomType roomType = renderPlan.roomTypeAt(gridX / 2, gridZ / 2);
-                Color roomColor = roomType == RoomType.UNKNOWN ? EMPTY : new Color(roomType.color(), true);
-                graphics.setColor(renderPlan.isVisitedRoom(gridX / 2, gridZ / 2)
-                    ? roomColor
-                    : unopenedColorFor(roomColor));
-                graphics.fillRect(x, y, size, size);
-                if (roomType == RoomType.UNKNOWN) {
-                    drawUnknownRoomMarker(graphics, x, y, size);
-                }
-                return;
-            }
-            graphics.setColor(UNSEEN);
-            graphics.fillRect(x, y, size, size);
-            return;
-        }
-
-        DungeonScanPoint point = observedPoint.point();
-        if (point.kind() == DungeonScanPointKind.SEPARATOR) {
-            graphics.setColor(PANEL);
-            graphics.fillRect(x, y, size, size);
-            return;
-        }
-
-        if (point.kind() == DungeonScanPointKind.DOOR) {
-            graphics.setColor(PANEL);
-            graphics.fillRect(x, y, DOOR_SIZE, DOOR_SIZE);
-            return;
-        }
-
-        if (DungeonRoomClassifier.isEmptyCore(point.coreHash())) {
-            graphics.setColor(EMPTY);
-            graphics.fillRect(x, y, size, size);
-            return;
-        }
-
-        DungeonKnownRoomCatalog.KnownCoreHint hint = renderPlan.hintAt(gridX / 2, gridZ / 2);
-        if (hint != null) {
-            Color roomColor = new Color(hint.type().color(), true);
-            graphics.setColor(renderPlan.isVisitedRoom(gridX / 2, gridZ / 2)
-                ? roomColor
-                : unopenedColorFor(roomColor));
-            graphics.fillRect(x, y, size, size);
-            drawCellHintLabel(graphics, x, y, size, hint);
-            if (gridX == snapshot.playerGridX() * 2 && gridZ == snapshot.playerGridZ() * 2) {
-                drawPlayerMarker(graphics, x, y, size);
-            }
-            return;
-        }
-
-        RoomType roomType = snapshot.isStartRoom(gridX, gridZ)
-            ? RoomType.START
-            : RoomType.UNKNOWN;
-        if (roomType == RoomType.UNKNOWN) {
-            graphics.setColor(EMPTY);
-            graphics.fillRect(x, y, size, size);
-            drawUnknownRoomMarker(graphics, x, y, size);
-            return;
-        }
-
-        graphics.setColor(new Color(roomType.color(), true));
-        graphics.fillRect(x, y, size, size);
-
-        if (gridX == snapshot.playerGridX() * 2 && gridZ == snapshot.playerGridZ() * 2) {
-            drawPlayerMarker(graphics, x, y, size);
-        }
-    }
-
-    private static void drawCellHintLabel(
-        Graphics2D graphics,
-        int x,
-        int y,
-        int size,
-        DungeonKnownRoomCatalog.KnownCoreHint hint
-    ) {
-        int centerX = x + size / 2;
-        int centerY = y + size / 2;
-        if (shouldDrawRoomText(hint.type())) {
-            drawRoomText(graphics, centerX, centerY, size - 6, hint.name(), hint.type(), hint.secrets());
-        }
-    }
-
-    private static void drawRoomText(
-        Graphics2D graphics,
-        int centerX,
-        int centerY,
-        int maxWidth,
-        String label,
-        RoomType roomType,
-        int secrets
-    ) {
-        if (!shouldDrawRoomText(roomType)) {
-            return;
-        }
-
-        graphics.setFont(new Font(Font.SANS_SERIF, Font.BOLD, ROOM_LABEL_FONT_SIZE));
-        List<String> labelLines = labelLines(graphics, label, maxWidth);
-        int firstLabelY = secrets <= 0
-            ? centerY + (labelLines.size() == 1 ? 4 : -3)
-            : labelLines.size() == 1 ? centerY - 3 : centerY - 10;
-        for (int index = 0; index < labelLines.size(); index++) {
-            String line = labelLines.get(index);
-            int labelX = centerX - graphics.getFontMetrics().stringWidth(line) / 2;
-            drawOutlinedString(graphics, line, labelX, firstLabelY + index * 13);
-        }
-
-        if (secrets <= 0) {
-            return;
-        }
-
-        graphics.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, ROOM_SECRET_FONT_SIZE));
-        String secretText = "0/" + secrets;
-        int secretsX = centerX - graphics.getFontMetrics().stringWidth(secretText) / 2;
-        int secretsY = labelLines.size() == 1 ? centerY + 11 : centerY + 17;
-        drawOutlinedString(graphics, secretText, secretsX, secretsY);
-    }
-
-    private static boolean shouldDrawRoomText(RoomType roomType) {
-        return roomType != RoomType.BLOOD && roomType != RoomType.FAIRY;
-    }
-
-    private static List<String> labelLines(Graphics2D graphics, String value, int maxWidth) {
-        String trimmed = value.trim();
-        if (trimmed.isEmpty()) {
-            return List.of();
-        }
-        String[] words = trimmed.split("\\s+");
-        if (words.length == 1) {
-            if (words[0].length() >= LONG_WORD_SPLIT_MIN_CHARS
-                && graphics.getFontMetrics().stringWidth(words[0]) > maxWidth) {
-                return List.of(trimToWidth(graphics, words[0], maxWidth));
-            }
-            return List.of(words[0]);
-        }
-
-        List<String> lines = new ArrayList<>();
-        String currentLine = "";
-        for (String word : words) {
-            String candidate = currentLine.isEmpty() ? word : currentLine + " " + word;
-            if (!currentLine.isEmpty() && graphics.getFontMetrics().stringWidth(candidate) > maxWidth) {
-                lines.add(currentLine);
-                currentLine = word;
-            } else {
-                currentLine = candidate;
-            }
-        }
-        if (!currentLine.isEmpty()) {
-            lines.add(currentLine);
-        }
-        if (lines.size() <= MAX_ROOM_LABEL_LINES) {
-            return lines;
-        }
-        List<String> clamped = new ArrayList<>(lines.subList(0, MAX_ROOM_LABEL_LINES));
-        int last = clamped.size() - 1;
-        clamped.set(last, clamped.get(last) + "..");
-        return clamped;
-    }
-
-    private static void drawUnknownRoomMarker(Graphics2D graphics, int x, int y, int size) {
-        graphics.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 16));
-        String marker = "?";
-        int markerX = x + size / 2 - graphics.getFontMetrics().stringWidth(marker) / 2;
-        int markerY = y + size / 2 + graphics.getFontMetrics().getAscent() / 3;
-        graphics.setColor(MUTED_TEXT);
-        graphics.drawString(marker, markerX, markerY);
+    private static boolean isLockedObservedPoint(DungeonMapSnapshot.ObservedPoint observedPoint) {
+        return observedPoint != null
+            && (observedPoint.point().doorKind() == DungeonDoorKind.WITHER
+                || observedPoint.point().doorKind() == DungeonDoorKind.BLOOD);
     }
 
     private static boolean isRealRoom(DungeonMapSnapshot snapshot, int gridX, int gridZ) {
         DungeonMapSnapshot.ObservedPoint observedPoint = snapshot.pointAt(gridX, gridZ);
-        if (observedPoint == null || observedPoint.point().kind() != DungeonScanPointKind.ROOM) {
-            return false;
-        }
-        return !DungeonRoomClassifier.isEmptyCore(observedPoint.point().coreHash());
+        return observedPoint != null
+            && observedPoint.point().kind() == DungeonScanPointKind.ROOM
+            && !DungeonRoomClassifier.isEmptyCore(observedPoint.point().coreHash());
     }
 
     private static boolean isHorizontalDoor(int gridX, int gridZ) {
         return !isEven(gridX) && isEven(gridZ);
     }
 
-    private static void drawPlayerMarker(Graphics2D graphics, int x, int y, int size) {
-        graphics.setColor(PLAYER);
-        graphics.setStroke(new BasicStroke(3));
-        graphics.drawOval(x + size / 2 - 8, y + size / 2 - 8, 16, 16);
-        graphics.setStroke(new BasicStroke(1));
-    }
-
-    private static void drawLegend(Graphics2D graphics) {
-        int y = IMAGE_HEIGHT - LEGEND_HEIGHT + 12;
-        int x = PADDING;
-        x = drawLegendItem(graphics, x, y, RoomType.START, "start");
-        x = drawLegendItem(graphics, x, y, RoomType.NORMAL, "normal");
-        x = drawLegendItem(graphics, x, y, RoomType.PUZZLE, "puzzle");
-        x = drawLegendItem(graphics, x, y, RoomType.FAIRY, "fairy");
-        x = drawLegendItem(graphics, x, y, RoomType.TRAP, "trap");
-        x = drawLegendItem(graphics, x, y, RoomType.BLOOD, "blood");
-        drawLegendItem(graphics, x, y, RoomType.YELLOW, "yellow");
-    }
-
-    private static int drawLegendItem(Graphics2D graphics, int x, int y, RoomType roomType, String label) {
-        graphics.setColor(new Color(roomType.color(), true));
-        graphics.fillRect(x, y, 12, 12);
-        graphics.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 12));
-        graphics.setColor(MUTED_TEXT);
-        graphics.drawString(label, x + 17, y + 11);
-        return x + 74;
-    }
-
-    private static void writeHtml(Path directory) throws IOException {
-        Path html = directory.resolve(LIVE_HTML_FILE);
-        if (Files.exists(html)) {
-            return;
-        }
-
-        Files.writeString(
-            html,
-            """
-                <!doctype html>
-                <html lang="en">
-                <head>
-                    <meta charset="utf-8">
-                    <title>Kung Dungeon Scan</title>
-                    <style>
-                        html, body {
-                            margin: 0;
-                            min-height: 100%;
-                            background: #0f1115;
-                            color: #e9edf2;
-                            font-family: system-ui, Segoe UI, sans-serif;
-                        }
-                        body {
-                            display: grid;
-                            place-items: center;
-                        }
-                        img {
-                            max-width: 100vw;
-                            max-height: 100vh;
-                            image-rendering: crisp-edges;
-                        }
-                    </style>
-                </head>
-                <body>
-                    <img id="map" src="live-dungeon-map.png" alt="Kung dungeon scan">
-                    <script>
-                        const image = document.getElementById("map");
-                        setInterval(() => {
-                            image.src = "live-dungeon-map.png?t=" + Date.now();
-                        }, 1000);
-                    </script>
-                </body>
-                </html>
-                """,
-            StandardCharsets.UTF_8
-        );
-    }
-
-    private static Path outputDirectory() {
-        return FabricLoader.getInstance()
-            .getGameDir()
-            .resolve("kung-dungeon-scans")
-            .resolve("tmp");
-    }
-
-    private static int scanGridToPixel(int gridPosition) {
-        int pixel = 0;
-        for (int index = 0; index < gridPosition; index++) {
-            pixel += sizeFor(index) + CELL_GAP;
-        }
-        return pixel;
-    }
-
-    private static int sizeFor(int gridX, int gridZ) {
-        if (DungeonScanUtils.isSeparatorScanPoint(gridX, gridZ)) {
-            return DOOR_SIZE;
-        }
-        return DungeonScanUtils.isRoomScanPoint(gridX, gridZ) ? ROOM_SIZE : DOOR_SIZE;
-    }
-
-    private static int sizeFor(int gridPosition) {
-        return (gridPosition & 1) == 0 ? ROOM_SIZE : DOOR_SIZE;
-    }
-
     private static boolean isEven(int value) {
         return (value & 1) == 0;
     }
-
     static record MatchRenderPlan(
         List<DungeonKnownRoomCatalog.MatchedRoom> matches,
         Set<CellKey> matchedRoomCells,
@@ -869,7 +63,11 @@ public final class DungeonLiveMapWriter {
         CellKey fairyEntranceDoor
     ) {
         static MatchRenderPlan from(DungeonMapSnapshot snapshot) {
-            List<DungeonKnownRoomCatalog.MatchedRoom> matches = DungeonKnownRoomCatalog.matchKnownRooms(snapshot);
+            return from(snapshot, KnownDungeonRoomRepository.INSTANCE);
+        }
+
+        static MatchRenderPlan from(DungeonMapSnapshot snapshot, DungeonRoomRepository roomRepository) {
+            List<DungeonKnownRoomCatalog.MatchedRoom> matches = roomRepository.matchKnownRooms(snapshot);
             Set<CellKey> matchedRoomCells = new HashSet<>();
             Set<CellKey> internalDoors = new HashSet<>();
             Map<CellKey, DoorRenderInfo> externalDoors = new HashMap<>();
@@ -948,9 +146,9 @@ public final class DungeonLiveMapWriter {
                     roomOwners.put(roomCell, "cell:" + roomGridX + "," + roomGridZ);
 
                     DungeonKnownRoomCatalog.KnownCoreHint hint =
-                        DungeonKnownRoomCatalog.knownCoreHint(observedPoint.point().coreHash());
+                        roomRepository.knownCoreHint(observedPoint.point().coreHash());
                     if (hint == null && observedPoint.point().stableCoreHash() != 0) {
-                        hint = DungeonKnownRoomCatalog.knownCoreHint(observedPoint.point().stableCoreHash());
+                        hint = roomRepository.knownCoreHint(observedPoint.point().stableCoreHash());
                     }
                     if (hint != null) {
                         hints.put(roomCell, hint);
@@ -997,15 +195,21 @@ public final class DungeonLiveMapWriter {
                             Math.max(0, remoteRoom.crypts())
                         );
                     hints.putIfAbsent(roomCell, hint);
-                    roomTypes.putIfAbsent(roomCell, remoteType);
-                    roomOwners.putIfAbsent(
-                        roomCell,
-                        "remote:" + compactName(remoteRoom.source()) + ":" + compactName(hint.name())
-                    );
-                    roomIdentities.putIfAbsent(
-                        roomCell,
-                        RoomIdentity.of(hint.name(), hint.type(), hint.secrets())
-                    );
+                    if (roomTypes.getOrDefault(roomCell, RoomType.UNKNOWN) == RoomType.UNKNOWN) {
+                        roomTypes.put(roomCell, remoteType);
+                        roomOwners.put(roomCell, "remote:" + compactName(remoteRoom.source()) + ":" + compactName(hint.name()));
+                        roomIdentities.put(roomCell, RoomIdentity.of(hint.name(), hint.type(), hint.secrets()));
+                    } else {
+                        roomTypes.putIfAbsent(roomCell, remoteType);
+                        roomOwners.putIfAbsent(
+                            roomCell,
+                            "remote:" + compactName(remoteRoom.source()) + ":" + compactName(hint.name())
+                        );
+                        roomIdentities.putIfAbsent(
+                            roomCell,
+                            RoomIdentity.of(hint.name(), hint.type(), hint.secrets())
+                        );
+                    }
                 } else {
                     roomTypes.putIfAbsent(roomCell, RoomType.UNKNOWN);
                     roomOwners.putIfAbsent(roomCell, "remote:" + compactName(remoteRoom.source()));
@@ -1107,6 +311,10 @@ public final class DungeonLiveMapWriter {
                 if (!observedVisibleDoor && touchesRoomType(roomTypes, gridX, gridZ, RoomType.PUZZLE)) {
                     continue;
                 }
+                if (isLockedObservedPoint(observedPoint)
+                    && !snapshot.openedLockedDoors().contains(traversedDoor)) {
+                    continue;
+                }
 
                 openedDoorCells.add(doorCell);
 
@@ -1144,11 +352,11 @@ public final class DungeonLiveMapWriter {
 
                 DoorRenderInfo previousInfo = externalDoors.get(doorCell);
                 DungeonMapSnapshot.ObservedPoint observedPoint = snapshot.pointAt(gridX, gridZ);
-                if (isSpecialDoorInfo(previousInfo)
-                    || (observedPoint != null
-                    && (observedPoint.point().doorKind() == DungeonDoorKind.WITHER
-                    || observedPoint.point().doorKind() == DungeonDoorKind.BLOOD))) {
-                    openedSpecialDoorCells.add(doorCell);
+                boolean knownLockedDoor = isLockedDoorInfo(previousInfo)
+                    || snapshot.observedLockedDoors().contains(mapOpenDoor)
+                    || isLockedObservedPoint(observedPoint);
+                if (knownLockedDoor) {
+                    continue;
                 }
                 openedDoorCells.add(doorCell);
                 externalDoors.put(doorCell, doorInfoFor(
@@ -1188,15 +396,27 @@ public final class DungeonLiveMapWriter {
                     );
                 }
                 externalDoors.merge(doorCell, remoteInfo, MatchRenderPlan::mergeDoorInfo);
-                if (remoteKind == DungeonDoorKind.OPEN && isSpecialDoorTarget(remoteInfo.targetType())) {
+                DungeonMapSnapshot.ObservedPoint observedPoint = snapshot.pointAt(doorCell.x(), doorCell.z());
+                if (remoteKind == DungeonDoorKind.OPEN
+                    && remoteInfo.targetType() == RoomType.BLOOD
+                    && !isLockedObservedPoint(observedPoint)) {
                     openedSpecialDoorCells.add(doorCell);
                 }
             }
 
+            applyLocalLockedDoorEvidence(
+                snapshot,
+                internalDoors,
+                externalDoors,
+                roomTypes,
+                visitedRooms,
+                openedSpecialDoorCells
+            );
+
             expandVisitedRoomGroups(visitedRooms, roomOwners);
             expandVisitedRoomGroups(clearedRooms, roomOwners);
             expandVisitedRoomGroups(completedRooms, roomOwners);
-            CellKey fairyEntranceDoor = fairyEntranceDoor(externalDoors.keySet(), roomTypes, roomOwners);
+            CellKey fairyEntranceDoor = fairyEntranceDoor(externalDoors, roomTypes, roomOwners);
             markSpecialDoorEntrances(externalDoors, fairyEntranceDoor);
 
             return new MatchRenderPlan(
@@ -1251,6 +471,43 @@ public final class DungeonLiveMapWriter {
             String firstOwner = firstDoorSideOwner(roomOwners, gridX, gridZ);
             String secondOwner = secondDoorSideOwner(roomOwners, gridX, gridZ);
             return firstOwner != null && secondOwner != null && !firstOwner.equals(secondOwner);
+        }
+
+        private static void applyLocalLockedDoorEvidence(
+            DungeonMapSnapshot snapshot,
+            Set<CellKey> internalDoors,
+            Map<CellKey, DoorRenderInfo> externalDoors,
+            Map<CellKey, RoomType> roomTypes,
+            Set<CellKey> visitedRooms,
+            Set<CellKey> openedSpecialDoorCells
+        ) {
+            for (DungeonMapSnapshot.ObservedPoint observedPoint : snapshot.points()) {
+                if (observedPoint.point().kind() != DungeonScanPointKind.DOOR) {
+                    continue;
+                }
+
+                int gridX = observedPoint.point().gridX();
+                int gridZ = observedPoint.point().gridZ();
+                if (!DungeonScanUtils.isDoorScanPoint(gridX, gridZ)) {
+                    continue;
+                }
+
+                CellKey doorCell = new CellKey(gridX, gridZ);
+                DungeonMapSnapshot.GridKey gridKey = new DungeonMapSnapshot.GridKey(gridX, gridZ);
+                DungeonDoorKind observedKind = observedPoint.point().doorKind();
+                boolean observedLocked = observedKind == DungeonDoorKind.WITHER || observedKind == DungeonDoorKind.BLOOD;
+                boolean openedLocked = snapshot.openedLockedDoors().contains(gridKey);
+                if (!observedLocked && !openedLocked) {
+                    continue;
+                }
+
+                DungeonDoorKind renderKind = observedLocked ? observedKind : DungeonDoorKind.OPEN;
+                internalDoors.remove(doorCell);
+                externalDoors.put(doorCell, doorInfoFor(renderKind, roomTypes, visitedRooms, gridX, gridZ));
+                if (openedLocked) {
+                    openedSpecialDoorCells.add(doorCell);
+                }
+            }
         }
 
         private static boolean touchesRoomType(
@@ -1437,22 +694,6 @@ public final class DungeonLiveMapWriter {
             return count;
         }
 
-        int totalSpecialDoorCount(DungeonMapSnapshot snapshot) {
-            Set<CellKey> doors = new HashSet<>();
-            for (Map.Entry<CellKey, DoorRenderInfo> entry : externalDoors.entrySet()) {
-                if (isCountedSpecialDoor(entry.getKey(), entry.getValue())) {
-                    doors.add(entry.getKey());
-                }
-            }
-            for (CellKey openedDoor : openedSpecialDoorCells) {
-                DoorRenderInfo door = externalDoors.get(openedDoor);
-                if (isCountedSpecialDoor(openedDoor, door)) {
-                    doors.add(openedDoor);
-                }
-            }
-            return doors.size();
-        }
-
         int knownNonStartSpecialDoorCount() {
             Set<CellKey> doors = new HashSet<>();
             for (Map.Entry<CellKey, DoorRenderInfo> entry : externalDoors.entrySet()) {
@@ -1464,7 +705,9 @@ public final class DungeonLiveMapWriter {
             }
             for (CellKey openedDoor : openedSpecialDoorCells) {
                 DoorRenderInfo door = externalDoors.get(openedDoor);
-                if (door != null && !isExcludedBloodRushDoor(openedDoor, door)) {
+                if (door != null
+                    && bloodRushDoorPath().contains(openedDoor)
+                    && !isExcludedBloodRushDoor(openedDoor, door)) {
                     doors.add(openedDoor);
                 }
             }
@@ -1486,6 +729,16 @@ public final class DungeonLiveMapWriter {
             return visibleDoors == Math.max(0, rawKnownDoors - openedKnownDoors);
         }
 
+        boolean rawNonStartSpecialDoorEstimateExact(DungeonMapSnapshot snapshot) {
+            int rawDoorCount = rawNonStartSpecialDoorCount(snapshot);
+            int pathDoorCount = bloodRushTotalSpecialDoorCount();
+            return hasRoomType(RoomType.BLOOD)
+                && rawDoorCount > 0
+                && pathDoorCount > 0
+                && rawDoorCount == pathDoorCount
+                && visibleRawNonStartDoorCountMatchesRemaining(snapshot);
+        }
+
         boolean onlyVisibleRawNonStartDoorIsBlood(DungeonMapSnapshot snapshot) {
             Set<CellKey> doors = visibleRawNonStartSpecialDoors(snapshot);
             if (doors.size() != 1) {
@@ -1498,14 +751,19 @@ public final class DungeonLiveMapWriter {
         }
 
         int openedRawNonStartSpecialDoorCount(DungeonMapSnapshot snapshot) {
+            return openedRawNonStartSpecialDoorCells(snapshot).size();
+        }
+
+        Set<CellKey> openedRawNonStartSpecialDoorCells(DungeonMapSnapshot snapshot) {
             Set<CellKey> nonStartDoors = rawNonStartSpecialDoors(snapshot);
-            int count = 0;
+            Set<CellKey> doors = new HashSet<>();
             for (DungeonMapSnapshot.GridKey openedDoor : snapshot.openedLockedDoors()) {
-                if (nonStartDoors.contains(new CellKey(openedDoor.gridX(), openedDoor.gridZ()))) {
-                    count++;
+                CellKey doorCell = new CellKey(openedDoor.gridX(), openedDoor.gridZ());
+                if (nonStartDoors.contains(doorCell)) {
+                    doors.add(doorCell);
                 }
             }
-            return count;
+            return doors;
         }
 
         int bloodRushLockedSpecialDoorCount() {
@@ -1572,19 +830,7 @@ public final class DungeonLiveMapWriter {
         }
 
         Set<CellKey> minimumVisibleOpenedSpecialDoorCells(DungeonMapSnapshot snapshot) {
-            if (!bloodRushDoorPath().isEmpty()) {
-                return bloodRushOpenedSpecialDoorCells();
-            }
-
-            Set<CellKey> doors = new HashSet<>();
-            Set<CellKey> nonStartDoors = rawNonStartSpecialDoors(snapshot);
-            for (DungeonMapSnapshot.GridKey openedDoor : snapshot.openedLockedDoors()) {
-                CellKey doorCell = new CellKey(openedDoor.gridX(), openedDoor.gridZ());
-                if (nonStartDoors.contains(doorCell)) {
-                    doors.add(doorCell);
-                }
-            }
-            return doors;
+            return openedRawNonStartSpecialDoorCells(snapshot);
         }
 
         DoorRenderInfo doorAt(int scanGridX, int scanGridZ) {
@@ -1871,8 +1117,13 @@ public final class DungeonLiveMapWriter {
 
         boolean readyForDoorTitle(DungeonMapSnapshot snapshot) {
             return hasRoomType(RoomType.BLOOD)
-                && bloodRushPathVisibleEnough(snapshot)
+                && bloodRushDoorEstimateExact(snapshot)
                 && bloodRushTotalSpecialDoorCount() > 0;
+        }
+
+        boolean bloodRushDoorEstimateExact(DungeonMapSnapshot snapshot) {
+            return hasRoomType(RoomType.BLOOD)
+                && bloodRushPathVisibleEnough(snapshot);
         }
 
         int observedRoomCount() {
@@ -2035,7 +1286,6 @@ public final class DungeonLiveMapWriter {
             RoomType roomType = ownerRoomType(owner);
             if (roomType == RoomType.START
                 || roomType == RoomType.BLOOD
-                || roomType == RoomType.FAIRY
                 || roomType == RoomType.UNKNOWN) {
                 return;
             }
@@ -2228,8 +1478,7 @@ public final class DungeonLiveMapWriter {
             return door == null
                 || door.targetType() == RoomType.START
                 || touchesRoomType(doorCell, RoomType.START)
-                || doorCell.equals(fairyEntranceDoor)
-                || isFairyDoor(doorCell);
+                || doorCell.equals(fairyEntranceDoor);
         }
 
         private Set<CellKey> rawNonStartSpecialDoors(DungeonMapSnapshot snapshot) {
@@ -2282,17 +1531,12 @@ public final class DungeonLiveMapWriter {
 
         private boolean isRawExcludedBloodRushDoor(CellKey doorCell, DungeonDoorKind doorKind) {
             return touchesRoomType(doorCell, RoomType.START)
-                || doorCell.equals(fairyEntranceDoor)
-                || isFairyDoor(doorCell);
+                || doorCell.equals(fairyEntranceDoor);
         }
 
         private boolean touchesRoomType(CellKey doorCell, RoomType roomType) {
             return firstDoorSideType(roomTypes, doorCell.x(), doorCell.z()) == roomType
                 || secondDoorSideType(roomTypes, doorCell.x(), doorCell.z()) == roomType;
-        }
-
-        private boolean isFairyDoor(CellKey doorCell) {
-            return touchesRoomType(doorCell, RoomType.FAIRY);
         }
 
         private record DoorPathEdge(String toOwner, CellKey doorCell) {
@@ -2410,23 +1654,35 @@ public final class DungeonLiveMapWriter {
         }
 
         private static CellKey fairyEntranceDoor(
-            Set<CellKey> doors,
+            Map<CellKey, DoorRenderInfo> doors,
             Map<CellKey, RoomType> roomTypes,
             Map<CellKey, String> roomOwners
         ) {
-            List<CellKey> fairyDoors = doors.stream()
+            List<CellKey> fairyDoors = new ArrayList<>(doors.keySet().stream()
                 .filter(door -> firstDoorSideType(roomTypes, door.x(), door.z()) == RoomType.FAIRY
                     || secondDoorSideType(roomTypes, door.x(), door.z()) == RoomType.FAIRY)
-                .toList();
+                .toList());
+            sortCells(fairyDoors);
             if (fairyDoors.isEmpty()) {
                 return null;
             }
+
+            List<CellKey> openFairyDoors = new ArrayList<>();
+            for (CellKey door : fairyDoors) {
+                DoorRenderInfo info = doors.get(door);
+                if (info != null && info.kind() == DungeonDoorKind.OPEN) {
+                    openFairyDoors.add(door);
+                }
+            }
+            if (openFairyDoors.size() == 1) {
+                return openFairyDoors.getFirst();
+            }
             if (fairyDoors.size() == 1) {
-                return fairyDoors.getFirst();
+                return null;
             }
 
-            Map<CellKey, Integer> distanceFromStart = distanceFromStart(doors, roomTypes, roomOwners);
-            CellKey bestDoor = fairyDoors.getFirst();
+            Map<CellKey, Integer> distanceFromStart = distanceFromStart(doors.keySet(), roomTypes, roomOwners);
+            CellKey bestDoor = null;
             int bestDistance = Integer.MAX_VALUE;
             for (CellKey door : fairyDoors) {
                 CellKey outsideFairy = outsideFairySide(door, roomTypes);
@@ -2513,19 +1769,6 @@ public final class DungeonLiveMapWriter {
                 return new CellKey((gridX + 1) / 2, gridZ / 2);
             }
             return new CellKey(gridX / 2, (gridZ + 1) / 2);
-        }
-    }
-
-    private record LabelPlacement(int centerX, int centerY, int maxWidth) {
-    }
-
-    private record RoomBounds(int minX, int maxX, int minZ, int maxZ) {
-        int spanX() {
-            return maxX - minX + 1;
-        }
-
-        int spanZ() {
-            return maxZ - minZ + 1;
         }
     }
 

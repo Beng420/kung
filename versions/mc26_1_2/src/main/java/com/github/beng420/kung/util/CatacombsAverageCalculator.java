@@ -1,7 +1,8 @@
 package com.github.beng420.kung.util;
 
+import com.github.beng420.kung.config.KungConfig;
+
 import com.github.beng420.kung.skyblock.SkyBlockMayorTracker;
-import com.github.beng420.kung.feature.dungeon.DungeonMapOverlayConfig;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
@@ -57,7 +58,7 @@ public final class CatacombsAverageCalculator {
             return CompletableFuture.completedFuture(Result.error("invalid username"));
         }
 
-        if (DungeonMapOverlayConfig.INSTANCE.directHypixelApiEnabled()) {
+        if (KungConfig.get().misc.directHypixelApiEnabled()) {
             return HypixelSkyBlockProfileClient.INSTANCE.loadPlayer(normalized)
                 .thenCompose(result -> {
                     if (result.success()) {

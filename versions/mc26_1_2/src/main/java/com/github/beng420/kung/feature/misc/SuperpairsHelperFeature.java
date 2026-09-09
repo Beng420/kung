@@ -2,7 +2,9 @@ package com.github.beng420.kung.feature.misc;
 
 import static com.github.beng420.kung.util.GuiDraw.fill;
 
-import com.github.beng420.kung.feature.dungeon.DungeonMapOverlayConfig;
+import com.github.beng420.kung.config.category.MiscConfig;
+import com.github.beng420.kung.feature.ConfigurableFeature;
+import com.github.beng420.kung.feature.Feature;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -21,7 +23,8 @@ import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
 
-public final class SuperpairsHelperFeature {
+public final class SuperpairsHelperFeature extends ConfigurableFeature<MiscConfig> implements Feature {
+    public static final SuperpairsHelperFeature INSTANCE = new SuperpairsHelperFeature();
     private static final int PLAYER_INVENTORY_SLOT_COUNT = 36;
     private static final int MAX_PLAYABLE_FIELDS = 28;
     private static final int ASSUMED_BONUS_FIELDS = 2;
@@ -47,9 +50,11 @@ public final class SuperpairsHelperFeature {
     private static String lastObservedSlot = "none";
 
     private SuperpairsHelperFeature() {
+        super(config -> config.misc);
     }
 
-    public static void initializeClient() {
+    @Override
+    protected void onInitialize() {
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             if (screenLeaveGraceTicks <= 0) {
                 return;
@@ -60,7 +65,7 @@ public final class SuperpairsHelperFeature {
             }
             screenLeaveGraceTicks--;
             if (screenLeaveGraceTicks <= 0) {
-                reset();
+                resetState();
             }
         });
 
@@ -71,7 +76,7 @@ public final class SuperpairsHelperFeature {
 
             screenLeaveGraceTicks = 0;
             if (!superpairsSessionActive) {
-                reset();
+                resetState();
                 superpairsSessionActive = true;
             }
             ScreenEvents.afterExtract(screen).register((currentScreen, graphics, mouseX, mouseY, tickDelta) ->
@@ -83,15 +88,20 @@ public final class SuperpairsHelperFeature {
         });
     }
 
+    @Override
+    public boolean isEnabled() {
+        return config().superpairsHelperEnabled();
+    }
+
     private static synchronized void renderAfterScreen(Screen screen, GuiGraphicsExtractor graphics) {
         Minecraft client = Minecraft.getInstance();
-        if (!DungeonMapOverlayConfig.INSTANCE.superpairsHelperEnabled()
+        if (!INSTANCE.isEnabled()
             || !isSuperpairsGameScreen(screen)
             || client.player == null) {
             return;
         }
 
-        DungeonMapOverlayConfig config = DungeonMapOverlayConfig.INSTANCE;
+        MiscConfig config = INSTANCE.config();
         SuperpairsSnapshot snapshot = readSnapshot(client);
         if (snapshot.boardSlots() > 0) {
             boardSlotCount = Math.max(boardSlotCount, snapshot.boardSlots());
@@ -104,14 +114,14 @@ public final class SuperpairsHelperFeature {
         int discoveredPairTypes = discoveredCounts().size();
         int unseenPairs = totalPairs > 0 ? Math.max(0, totalPairs - discoveredPairTypes) : 0;
 
-        // Immer zeichnen, auch wenn totalPairs in den ersten Millisekunden noch 0 ist
+        // Keep rendering while totalPairs is still 0 during the first few milliseconds.
         drawPanel(graphics, client, unseenPairs, discoveredCounts(), config, snapshot, totalPairs);
     }
 
     public static synchronized void observeSlotUpdate(int containerId, int slot, ItemStack stack) {
         Minecraft client = Minecraft.getInstance();
         slotUpdatePackets++;
-        if (!DungeonMapOverlayConfig.INSTANCE.superpairsHelperEnabled()
+        if (!INSTANCE.isEnabled()
             || !isSuperpairsGameOpen(client)
             || client.player == null
             || client.player.containerMenu.containerId != containerId
@@ -244,7 +254,7 @@ public final class SuperpairsHelperFeature {
     private static String cleanName(ItemStack stack) {
         String name = stack.getHoverName().getString().replaceAll("\\s+", " ").trim();
         
-        // Verzauberung aus der Lore holen, damit Bücher eindeutig unterscheidbar sind
+        // Include the lore enchantment so enchanted books can be distinguished reliably.
         if (itemPath(stack).equals("enchanted_book")) {
             var lore = stack.get(net.minecraft.core.component.DataComponents.LORE);
             if (lore != null && !lore.lines().isEmpty()) {
@@ -276,7 +286,7 @@ public final class SuperpairsHelperFeature {
             .toList();
     }
 
-    public static OverlayBounds overlayBounds(DungeonMapOverlayConfig config) {
+    public static OverlayBounds overlayBounds(MiscConfig config) {
         float scale = config.superpairsHelperScale() / 100.0F;
         int sampleLines = 1 + MAX_VISIBLE_CARD_LINES + (config.superpairsHelperDebugEnabled() ? DEBUG_LINE_COUNT : 0);
         int sampleHeight = PADDING_Y * 2 + sampleLines * ROW_HEIGHT;
@@ -293,7 +303,7 @@ public final class SuperpairsHelperFeature {
         Minecraft client,
         int unseenPairs,
         List<CardCount> cards,
-        DungeonMapOverlayConfig config,
+        MiscConfig config,
         SuperpairsSnapshot snapshot,
         int totalPairs
     ) {
@@ -369,7 +379,7 @@ public final class SuperpairsHelperFeature {
         return value.substring(0, Math.max(0, maxLength - 3)) + "...";
     }
 
-    private static void reset() {
+    private static void resetState() {
         discoveredSlots.clear();
         discoveredBonusSlots.clear();
         boardSlotCount = 0;

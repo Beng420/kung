@@ -3,6 +3,9 @@ package com.github.beng420.kung.feature.dungeon;
 import static com.github.beng420.kung.util.GuiDraw.fill;
 
 import com.github.beng420.kung.KungMod;
+import com.github.beng420.kung.config.KungConfig;
+import com.github.beng420.kung.config.category.DungeonConfig;
+import com.github.beng420.kung.feature.ConfigurableFeature;
 import com.github.beng420.kung.feature.Feature;
 import com.github.beng420.kung.feature.dungeon.room.RoomType;
 import com.github.beng420.kung.util.KungDebugRecorder;
@@ -29,7 +32,7 @@ import net.minecraft.world.level.saveddata.maps.MapDecorationTypes;
 import net.minecraft.world.level.saveddata.maps.MapItemSavedData;
 import net.minecraft.world.phys.Vec3;
 
-public final class DungeonMapFeature {
+public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> implements Feature {
     private static final Identifier HUD_ID = Identifier.fromNamespaceAndPath(KungMod.MOD_ID, "dungeon_map_overlay");
     private static final int ROOM_SIZE = 19;
     private static final int DOOR_SIZE = 6;
@@ -78,20 +81,15 @@ public final class DungeonMapFeature {
     private static long playerMarkerFrame;
     private static long lastPlayerMarkerLogMillis;
     private static String lastPlayerMarkerLogState = "";
+    private final DungeonStateTracker dungeonStateTracker;
 
-    private DungeonMapFeature() {
+    public DungeonMapFeature(DungeonStateTracker dungeonStateTracker) {
+        super(config -> config.dungeon);
+        this.dungeonStateTracker = java.util.Objects.requireNonNull(dungeonStateTracker);
     }
 
-    public static Feature definition() {
-        return new Feature(
-            "dungeon-map-overlay",
-            "Dungeon Map Overlay",
-            true,
-            "Shows the live dungeon scan map in the HUD."
-        );
-    }
-
-    public static void initializeClient(DungeonStateTracker dungeonStateTracker) {
+    @Override
+    protected void onInitialize() {
         HudElementRegistry.attachElementBefore(
             VanillaHudElements.PLAYER_LIST,
             HUD_ID,
@@ -99,7 +97,12 @@ public final class DungeonMapFeature {
         );
     }
 
-    private static void render(
+    @Override
+    public boolean isEnabled() {
+        return config().enabled();
+    }
+
+    private void render(
         GuiGraphicsExtractor graphics,
         DeltaTracker deltaTracker,
         DungeonStateTracker dungeonStateTracker
@@ -112,12 +115,12 @@ public final class DungeonMapFeature {
         }
     }
 
-    private static void renderUnsafe(
+    private void renderUnsafe(
         GuiGraphicsExtractor graphics,
         DeltaTracker deltaTracker,
         DungeonStateTracker dungeonStateTracker
     ) {
-        DungeonMapOverlayConfig config = DungeonMapOverlayConfig.INSTANCE;
+        DungeonConfig config = config();
         if (!config.enabled() || !dungeonStateTracker.isInDungeonArea()) {
             return;
         }
@@ -340,7 +343,7 @@ public final class DungeonMapFeature {
     }
 
     private static int effectiveUnopenedRoomAlpha() {
-        return Math.min(DungeonMapOverlayConfig.INSTANCE.unopenedRoomAlpha(), MAX_UNOPENED_ALPHA);
+        return Math.min(KungConfig.get().dungeon.unopenedRoomAlpha(), MAX_UNOPENED_ALPHA);
     }
 
     private static void drawInternalRoomConnections(
@@ -609,10 +612,10 @@ public final class DungeonMapFeature {
 
     private static int colorForDoor(DungeonLiveMapWriter.DoorRenderInfo door) {
         int color;
-        if (door.kind() == DungeonDoorKind.OPEN) {
-            color = OPEN_DOOR;
-        } else if (door.colorAsSpecial()) {
+        if (door.colorAsSpecial()) {
             color = door.targetType().color();
+        } else if (door.kind() == DungeonDoorKind.OPEN) {
+            color = OPEN_DOOR;
         } else {
             color = switch (door.kind()) {
                 case WITHER -> WITHER_DOOR;
@@ -790,7 +793,8 @@ public final class DungeonMapFeature {
         DungeonRunStats stats,
         String roomName
     ) {
-        if (!DungeonMapOverlayConfig.INSTANCE.princeIconsEnabled() || !DungeonKnownRoomCatalog.hasPrince(roomName)) {
+        if (!KungConfig.get().dungeon.princeIconsEnabled()
+            || !KnownDungeonRoomRepository.INSTANCE.hasPrince(roomName)) {
             return;
         }
 
@@ -832,10 +836,10 @@ public final class DungeonMapFeature {
         if (secrets > 0 && textState.showSecrets()) {
             textLines.add(new RoomTextLine(Math.min(secretsFound, secrets) + "/" + secrets, ROOM_SECRET_SCALE));
         }
-        if (DungeonMapOverlayConfig.INSTANCE.debugRoomCrypts()) {
+        if (KungConfig.get().dungeon.debugRoomCrypts()) {
             textLines.add(new RoomTextLine("Crypts " + roomCryptText(label, crypts), ROOM_SECRET_SCALE));
         }
-        if (DungeonMapOverlayConfig.INSTANCE.debugRoomMatches()) {
+        if (KungConfig.get().dungeon.debugRoomMatches()) {
             for (String debugLine : debugLines) {
                 textLines.add(new RoomTextLine(debugLine, 0.42F));
             }
@@ -1847,7 +1851,7 @@ public final class DungeonMapFeature {
         return x + Math.round(client.font.width(text) * FOOTER_TEXT_SCALE);
     }
 
-    public static OverlayBounds overlayBounds(DungeonMapOverlayConfig config) {
+    public static OverlayBounds overlayBounds(DungeonConfig config) {
         float scale = effectiveScale(config);
         int height = overlayContentHeight(config);
         return new OverlayBounds(
@@ -1858,7 +1862,7 @@ public final class DungeonMapFeature {
         );
     }
 
-    private static float effectiveScale(DungeonMapOverlayConfig config) {
+    private static float effectiveScale(DungeonConfig config) {
         float requestedScale = Math.clamp(config.scale(), 25, MAX_CONFIG_SCALE) / 100.0F;
         Minecraft client = Minecraft.getInstance();
         int screenWidth = client.getWindow().getGuiScaledWidth();
@@ -1876,7 +1880,7 @@ public final class DungeonMapFeature {
         return GRID_PIXEL_SIZE + 10;
     }
 
-    private static int overlayContentHeight(DungeonMapOverlayConfig config) {
+    private static int overlayContentHeight(DungeonConfig config) {
         return GRID_PIXEL_SIZE
             + (config.showLegend() ? LEGEND_HEIGHT : 0)
             + FOOTER_HEIGHT

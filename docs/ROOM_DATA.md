@@ -2,7 +2,7 @@
 
 Bundled/canonical room data uses `known-rooms.json`.
 Kung can still import old `known-rooms.jsonl` files for migration, but active 26er profiles should store learned room data in JSON only.
-Runtime loads bundled Jar room data plus local profile room data when present, so `/kung room learn` affects matching immediately after the catalog reloads. The Dungeon Map `Local Data` setting only gates write-heavy development helpers such as auto-learning stable hashes/preload transitions.
+Runtime always loads bundled Jar room data. Local profile room data is an opt-in development/override layer behind the Dungeon Map `Local Data` setting, so stale files in a Modrinth profile cannot silently change normal player matching.
 
 ## Canonical Format
 
@@ -15,6 +15,7 @@ Runtime loads bundled Jar room data plus local profile room data when present, s
       "type": "NORMAL",
       "secrets": 6,
       "crypts": 0,
+      "prince": false,
       "variants": [
         {
           "id": "variant-1",
@@ -51,7 +52,7 @@ Runtime loads bundled Jar room data plus local profile room data when present, s
 - `updatedAt`: timestamp/order source for learned local data.
 - `source`: where the hash came from, for auditing and future cleanup.
 - `crypts`: total crypt count for the room. Wiki Prince counts are included in this total and must not be added separately.
-- Prince room icons are maintained separately in `DungeonKnownRoomCatalog`. Do not infer them from wiki crypt counts alone; for example, `Andesite` is audited as `crypts=0` and must not show a Prince icon.
+- `prince`: whether this room can contain Prince. Do not infer it from crypt counts; for example, `Andesite` is audited as `crypts=0` and `prince=false`.
 - The map footer treats `crypts=0` as a known zero. It only shows `+?` when a scanned room is still unidentified or a room has an intentionally uncertain wiki value, currently `Admin` or `Buttons`.
 
 Canonical metadata rules:
@@ -60,7 +61,7 @@ Canonical metadata rules:
 - Puzzle rooms with no wiki-listed secrets, including `Ice Path`, use `secrets=0`.
 - `Deathmite` is `NORMAL` with `secrets=6`; learn legitimate 1x3/1x4 shapes with `/kung room learnmulti Deathmite`.
 - `mc26_1_2` is the active room-data target. Keep `mc26_2` untouched unless that port is explicitly resumed.
-- Local profile files (`known-rooms.json`, `known-rooms.jsonl`, `known-room-preloads.jsonl`, and `known-room-types.properties`) must not be required for normal users or friends; bake audited data into the Jar before sharing. The 26.1.2 Gradle build runs `syncLocalDungeonRoomData` before `processResources`, copying local learned data from the active Modrinth profile into bundled resources. Override that profile with `-PkungProfileDir=...` or `KUNG_PROFILE_DIR` if needed.
+- Local profile files (`known-rooms.json`, `known-rooms.jsonl`, `known-room-preloads.jsonl`, and `known-room-types.properties`) must not be required for normal users or friends; bake audited data into the Jar before sharing. Enable `Local Data` only while collecting/testing local room-data overrides. The explicit 26.1.2 Gradle task `syncLocalDungeonRoomData` copies local learned data from the active Modrinth profile into bundled resources. Override that profile with `-PkungProfileDir=...` or `KUNG_PROFILE_DIR` if needed.
 - Variants must be contiguous and at most 4 cells. Larger or disconnected shapes are treated as corrupted data.
 - During a run, Kung remembers the first non-empty hash per room cell and stores it together with later manual learns when it differs.
 - Matching is core-first: once a room cell has a known `core` or `stable` hash, Kung can label that cell even when the full multi-cell shape is incomplete.

@@ -1,4 +1,7 @@
 package com.github.beng420.kung.feature;
 
-public record Feature(String id, String name, boolean enabledByDefault, String description) {
+import com.github.beng420.kung.runtime.LifecycleComponent;
+
+public interface Feature extends LifecycleComponent {
+    boolean isEnabled();
 }

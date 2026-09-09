@@ -1,16 +1,21 @@
 package com.github.beng420.kung.feature.misc;
 
-import com.github.beng420.kung.KungMod;
-import com.github.beng420.kung.feature.dungeon.DungeonMapOverlayConfig;
+import com.github.beng420.kung.config.category.MiscConfig;
+import com.github.beng420.kung.feature.ConfigurableFeature;
+import com.github.beng420.kung.feature.Feature;
+import com.github.beng420.kung.feature.misc.commands.CataChatCommand;
+import com.github.beng420.kung.feature.misc.commands.ChatCommand;
+import com.github.beng420.kung.feature.misc.commands.TpsChatCommand;
+import com.github.beng420.kung.message.HypixelChatSender;
 import com.github.beng420.kung.skyblock.HypixelGuildTracker;
 import com.github.beng420.kung.skyblock.HypixelPartyTracker;
-import com.github.beng420.kung.util.CatacombsAverageCalculator;
 import com.github.beng420.kung.util.CatacombsAverageCalculator.Goal;
 import com.github.beng420.kung.util.KungDebugRecorder;
 import java.util.ArrayDeque;
 import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Queue;
@@ -21,38 +26,68 @@ import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
 import net.minecraft.client.Minecraft;
 
-public final class Ca50ChatCommandFeature {
+public final class ChatCommandsFeature extends ConfigurableFeature<MiscConfig> implements Feature {
+    public static final ChatCommandsFeature INSTANCE = new ChatCommandsFeature();
+    private static final List<ChatCommand> COMMANDS = List.of(
+        new CataChatCommand("c50", Goal.CATACOMBS_50),
+        new CataChatCommand("ca50", Goal.CLASS_AVERAGE_50),
+        new TpsChatCommand()
+    );
+
     private static final Pattern PARTY_GUILD_CHAT_PATTERN =
         Pattern.compile("^(?<channel>Party|Guild)\\s*>\\s*(?<sender>.+?)\\s*:\\s*(?<message>.+)$");
     private static final Pattern PRIVATE_CHAT_PATTERN =
         Pattern.compile("^(?<direction>From|To)\\s+(?<name>.+?)\\s*:\\s*(?<message>.+)$", Pattern.CASE_INSENSITIVE);
     private static final Pattern PUBLIC_CHAT_PATTERN =
         Pattern.compile("^(?<sender>.+?)\\s*:\\s*(?<message>.+)$");
-    private static final Pattern COMMAND_PATTERN =
-        Pattern.compile("^!(?<command>ca50|c50)(?:\\s+(?<name>[A-Za-z0-9_]{1,16}))?\\s*$", Pattern.CASE_INSENSITIVE);
+    private static final Pattern CHAT_TIMESTAMP_PATTERN =
+        Pattern.compile("^\\[[0-9]{2}:[0-9]{2}:[0-9]{2}]\\s+");
     private static final Pattern USERNAME_PATTERN = Pattern.compile("\\b[A-Za-z0-9_]{3,16}\\b");
-    private static final String SERVER_CHAT_PREFIX = "[Kung] ";
     private static final long SEND_INTERVAL_MILLIS = 650L;
     private static final long DUPLICATE_COMMAND_WINDOW_MILLIS = 1_200L;
     private static final int GUILD_RESOLVE_WAIT_TICKS = 45;
 
-    private static final CatacombsAverageCalculator CALCULATOR = new CatacombsAverageCalculator();
     private static final Queue<PendingResponse> PENDING_RESPONSES = new ArrayDeque<>();
-    private static final Queue<PendingCalculation> PENDING_CALCULATIONS = new ArrayDeque<>();
+    private static final Queue<PendingExecution> PENDING_EXECUTIONS = new ArrayDeque<>();
     private static final Map<ChatChannel, Map<String, String>> OBSERVED_CHANNEL_NAMES = new EnumMap<>(ChatChannel.class);
     private static long lastSendMillis;
     private static String lastCommandSignature = "";
     private static long lastCommandMillis;
+    private static HypixelChatSender chatSender;
 
-    private Ca50ChatCommandFeature() {
+    private ChatCommandsFeature() {
+        super(config -> config.misc);
     }
 
-    public static void initializeClient() {
+    @Override
+    protected void onInitialize() {
+        chatSender = services().hypixelChat();
         ClientReceiveMessageEvents.GAME.register((message, overlay) ->
             observeMessage(Minecraft.getInstance(), message.getString(), overlay ? "game-overlay" : "game"));
         ClientReceiveMessageEvents.CHAT.register((message, signedMessage, sender, params, receptionTimestamp) ->
             observeMessage(Minecraft.getInstance(), message.getString(), "chat"));
-        ClientTickEvents.END_CLIENT_TICK.register(Ca50ChatCommandFeature::tick);
+        ClientTickEvents.END_CLIENT_TICK.register(ChatCommandsFeature::tick);
+    }
+
+    @Override
+    protected void onReset() {
+        PENDING_RESPONSES.clear();
+        PENDING_EXECUTIONS.clear();
+        OBSERVED_CHANNEL_NAMES.clear();
+        lastSendMillis = 0L;
+        lastCommandSignature = "";
+        lastCommandMillis = 0L;
+    }
+
+    @Override
+    protected void onShutdown() {
+        onReset();
+        chatSender = null;
+    }
+
+    @Override
+    public boolean isEnabled() {
+        return config().chatCommandsEnabled();
     }
 
     private static void observeMessage(Minecraft client, String rawMessage, String source) {
@@ -60,85 +95,98 @@ public final class Ca50ChatCommandFeature {
             return;
         }
         String clean = cleanLine(rawMessage);
-        boolean mentionsCataCommand = mentionsCataCommand(clean);
         ChatContext chatContext = chatContext(client, clean);
         if (chatContext == null) {
-            if (mentionsCataCommand) {
-                KungDebugRecorder.event("cata-command", "ignored source=" + source + " reason=chat-format line=" + clean);
-            }
             return;
         }
 
         ChatChannel channel = chatContext.channel();
-        if (channel == null || !enabledFor(channel)) {
-            if (mentionsCataCommand) {
-                KungDebugRecorder.event("cata-command", "ignored source=" + source + " reason=disabled-or-channel line=" + clean);
-            }
-            return;
-        }
-
         String senderName = chatContext.senderName();
         rememberChannelName(channel, senderName);
         String body = chatContext.message().trim();
-        Matcher commandMatcher = COMMAND_PATTERN.matcher(body);
-        if (!commandMatcher.matches()) {
-            if (mentionsCataCommand) {
-                KungDebugRecorder.event("cata-command", "ignored source=" + source + " reason=body line=" + clean);
+
+        for (ChatCommand command : COMMANDS) {
+            Matcher matcher = command.pattern().matcher(body);
+            if (!matcher.matches()) {
+                continue;
             }
-            return;
-        }
-        Goal goal = goalFromCommand(commandMatcher.group("command"));
 
-        String signature = commandSignature(channel, senderName, body);
-        if (isDuplicateCommand(signature)) {
-            KungDebugRecorder.event("cata-command", "ignored source=" + source + " reason=duplicate command=" + goal.id()
-                + " channel=" + channel.name() + " sender=" + senderName + " body=" + body);
-            return;
-        }
-
-        String targetName = commandMatcher.group("name");
-        if (targetName == null || targetName.isBlank()) {
-            targetName = senderName;
-        } else {
-            if (channel == ChatChannel.GUILD && HypixelGuildTracker.INSTANCE.shouldRefreshMemberList()) {
-                boolean requested = HypixelGuildTracker.INSTANCE.requestMemberListRefresh(client);
-                PENDING_CALCULATIONS.add(new PendingCalculation(
-                    channel,
-                    senderName,
-                    targetName,
-                    goal,
-                    GUILD_RESOLVE_WAIT_TICKS,
-                    chatContext.replyTarget()
-                ));
-                KungDebugRecorder.event("cata-name", "command=" + goal.id() + " channel=" + channel.name()
-                    + " input=" + targetName
-                    + " reason=defer-guild-refresh requested=" + requested);
+            if (!command.isEnabled(channel)) {
+                KungDebugRecorder.event("chat-command", "ignored source=" + source + " reason=disabled-channel line=" + clean);
                 return;
             }
-            NameResolution resolution = resolveTargetName(client, channel, targetName, senderName);
-            KungDebugRecorder.event("cata-name", "command=" + goal.id() + " channel=" + channel.name()
-                + " input=" + targetName
-                + " resolved=" + resolution.name()
-                + " reason=" + resolution.reason()
-                + " candidates=" + resolution.candidates());
-            targetName = resolution.name();
-        }
-        if (targetName.isBlank()) {
-            queue(channel, chatContext.replyTarget(), "Could not read the player name for !" + goal.id() + ".");
-            return;
-        }
-        if (!validUsername(targetName)) {
-            queue(channel, chatContext.replyTarget(), "Could not match " + commandMatcher.group("name") + " to a player.");
-            return;
-        }
 
-        String finalTargetName = targetName;
-        KungDebugRecorder.event("cata-command", "source=" + source + " command=" + goal.id()
-            + " channel=" + channel.name() + " sender=" + senderName + " target=" + finalTargetName);
-        calculateAndQueue(client, channel, chatContext.replyTarget(), finalTargetName, goal);
+            String signature = commandSignature(channel, senderName, body);
+            if (isDuplicateCommand(signature)) {
+                KungDebugRecorder.event("chat-command", "ignored source=" + source + " reason=duplicate channel=" + channel.name()
+                    + " sender=" + senderName + " body=" + body);
+                return;
+            }
+
+            String targetName = null;
+            try {
+                targetName = matcher.group("name");
+            } catch (IllegalArgumentException ignored) {
+                // Command pattern doesn't capture a target name
+            }
+
+            if (targetName == null || targetName.isBlank()) {
+                targetName = senderName;
+            } else {
+                if (channel == ChatChannel.GUILD && HypixelGuildTracker.INSTANCE.shouldRefreshMemberList()) {
+                    boolean requested = HypixelGuildTracker.INSTANCE.requestMemberListRefresh(client);
+                    PENDING_EXECUTIONS.add(new PendingExecution(
+                        command,
+                        channel,
+                        senderName,
+                        targetName,
+                        matcher,
+                        GUILD_RESOLVE_WAIT_TICKS,
+                        chatContext.replyTarget()
+                    ));
+                    KungDebugRecorder.event("chat-name", "channel=" + channel.name()
+                        + " input=" + targetName
+                        + " reason=defer-guild-refresh requested=" + requested);
+                    return;
+                }
+                NameResolution resolution = resolveTargetName(client, channel, targetName, senderName);
+                KungDebugRecorder.event("chat-name", "channel=" + channel.name()
+                    + " input=" + targetName
+                    + " resolved=" + resolution.name()
+                    + " reason=" + resolution.reason()
+                    + " candidates=" + resolution.candidates());
+                targetName = resolution.name();
+            }
+
+            if (targetName.isBlank()) {
+                queue(channel, chatContext.replyTarget(), "Could not read the target player name.");
+                return;
+            }
+            if (!validUsername(targetName)) {
+                queue(channel, chatContext.replyTarget(), "Could not match " + targetName + " to a player.");
+                return;
+            }
+
+            executeCommand(command, client, channel, senderName, targetName, matcher, chatContext.replyTarget());
+            return;
+        }
+    }
+
+    private static void executeCommand(
+        ChatCommand command,
+        Minecraft client,
+        ChatChannel channel,
+        String senderName,
+        String targetName,
+        Matcher matcher,
+        String replyTarget
+    ) {
+        command.execute(client, channel, senderName, targetName, matcher, response ->
+            queue(channel, replyTarget, response));
     }
 
     private static ChatContext chatContext(Minecraft client, String clean) {
+        clean = stripChatTimestamp(clean);
         Matcher partyGuildMatcher = PARTY_GUILD_CHAT_PATTERN.matcher(clean);
         if (partyGuildMatcher.matches()) {
             ChatChannel channel = ChatChannel.from(partyGuildMatcher.group("channel"));
@@ -171,45 +219,6 @@ public final class Ca50ChatCommandFeature {
             }
         }
         return null;
-    }
-
-    private static void calculateAndQueue(
-        Minecraft client,
-        ChatChannel channel,
-        String replyTarget,
-        String targetName,
-        Goal goal
-    ) {
-        String finalTargetName = targetName;
-        CALCULATOR.calculateAsync(finalTargetName, goal, false).whenComplete((result, throwable) -> client.execute(() -> {
-            if (throwable != null) {
-                KungMod.LOGGER.warn("Failed to answer !" + goal.id() + " command.", throwable);
-                queue(channel, replyTarget, "Could not calculate " + goal.id().toUpperCase(Locale.ROOT) + " for " + finalTargetName + ".");
-                return;
-            }
-            if (result.debugDetails() != null && !result.debugDetails().isBlank()) {
-                KungDebugRecorder.event("cata-result", "command=" + goal.id() + " channel=" + channel.name() + " target=" + finalTargetName
-                    + " success=" + result.success() + " " + result.debugDetails());
-            }
-            if (!result.success()) {
-                queue(channel, replyTarget, "Could not calculate " + goal.id().toUpperCase(Locale.ROOT) + " for " + finalTargetName + ": " + result.message());
-                return;
-            }
-            queue(channel, replyTarget, result.message());
-        }));
-    }
-
-    private static boolean enabledFor(ChatChannel channel) {
-        DungeonMapOverlayConfig config = DungeonMapOverlayConfig.INSTANCE;
-        if (!config.chatCommandsEnabled() || !config.ca50ChatCommandEnabled()) {
-            return false;
-        }
-        return switch (channel) {
-            case PARTY -> config.ca50PartyCommandsEnabled();
-            case GUILD -> config.ca50GuildCommandsEnabled();
-            case ALL -> config.ca50AllChatCommandsEnabled();
-            case PRIVATE -> config.ca50PrivateCommandsEnabled();
-        };
     }
 
     private static NameResolution resolveTargetName(Minecraft client, ChatChannel channel, String input, String senderName) {
@@ -318,28 +327,29 @@ public final class Ca50ChatCommandFeature {
     }
 
     private static void queue(ChatChannel channel, String replyTarget, String message) {
-        PENDING_RESPONSES.add(new PendingResponse(channel, replyTarget, prefixedServerChatMessage(message)));
+        PENDING_RESPONSES.add(new PendingResponse(channel, replyTarget, message));
     }
 
     private static void tick(Minecraft client) {
-        flushPendingCalculations(client);
+        flushPendingExecutions(client);
         flushResponses(client);
     }
 
-    private static void flushPendingCalculations(Minecraft client) {
-        if (client == null || client.player == null || PENDING_CALCULATIONS.isEmpty()) {
+    private static void flushPendingExecutions(Minecraft client) {
+        if (client == null || client.player == null || PENDING_EXECUTIONS.isEmpty()) {
             return;
         }
-        int pendingCount = PENDING_CALCULATIONS.size();
+        int pendingCount = PENDING_EXECUTIONS.size();
         for (int index = 0; index < pendingCount; index++) {
-            PendingCalculation pending = PENDING_CALCULATIONS.remove();
+            PendingExecution pending = PENDING_EXECUTIONS.remove();
             int ticksLeft = pending.ticksLeft() - 1;
             if (ticksLeft > 0) {
-                PENDING_CALCULATIONS.add(new PendingCalculation(
+                PENDING_EXECUTIONS.add(new PendingExecution(
+                    pending.command(),
                     pending.channel(),
                     pending.senderName(),
                     pending.inputName(),
-                    pending.goal(),
+                    pending.matcher(),
                     ticksLeft,
                     pending.replyTarget()
                 ));
@@ -347,7 +357,7 @@ public final class Ca50ChatCommandFeature {
             }
 
             NameResolution resolution = resolveTargetName(client, pending.channel(), pending.inputName(), pending.senderName());
-            KungDebugRecorder.event("cata-name", "command=" + pending.goal().id() + " channel=" + pending.channel().name()
+            KungDebugRecorder.event("chat-name", "channel=" + pending.channel().name()
                 + " input=" + pending.inputName()
                 + " resolved=" + resolution.name()
                 + " reason=after-guild-refresh/" + resolution.reason()
@@ -356,11 +366,15 @@ public final class Ca50ChatCommandFeature {
                 queue(pending.channel(), pending.replyTarget(), "Could not match " + pending.inputName() + " to a player.");
                 continue;
             }
-            KungDebugRecorder.event("cata-command", "source=deferred command=" + pending.goal().id()
-                + " channel=" + pending.channel().name()
-                + " sender=" + pending.senderName()
-                + " target=" + resolution.name());
-            calculateAndQueue(client, pending.channel(), pending.replyTarget(), resolution.name(), pending.goal());
+            executeCommand(
+                pending.command(),
+                client,
+                pending.channel(),
+                pending.senderName(),
+                resolution.name(),
+                pending.matcher(),
+                pending.replyTarget()
+            );
         }
     }
 
@@ -377,7 +391,9 @@ public final class Ca50ChatCommandFeature {
         if (commandPrefix.isBlank()) {
             return;
         }
-        client.player.connection.sendCommand(commandPrefix + " " + response.message());
+        if (chatSender != null) {
+            chatSender.send(client, commandPrefix, response.message());
+        }
         lastSendMillis = now;
     }
 
@@ -399,11 +415,6 @@ public final class Ca50ChatCommandFeature {
             + (body == null ? "" : body.toLowerCase(Locale.ROOT));
     }
 
-    private static String prefixedServerChatMessage(String message) {
-        String normalized = message == null ? "" : message.strip();
-        return normalized.startsWith(SERVER_CHAT_PREFIX) ? normalized : SERVER_CHAT_PREFIX + normalized;
-    }
-
     private static String senderName(String rawSender) {
         String clean = cleanLine(rawSender).replaceAll("\\[[^\\]]+]", " ").replaceAll("\\s+", " ").trim();
         Matcher matcher = USERNAME_PATTERN.matcher(clean);
@@ -414,13 +425,8 @@ public final class Ca50ChatCommandFeature {
         return rawLine.replaceAll("\u00a7.", "").replaceAll("\\s+", " ").trim();
     }
 
-    private static boolean mentionsCataCommand(String line) {
-        String lower = line == null ? "" : line.toLowerCase(Locale.ROOT);
-        return lower.contains("!ca50") || lower.contains("!c50");
-    }
-
-    private static Goal goalFromCommand(String command) {
-        return "c50".equalsIgnoreCase(command) ? Goal.CATACOMBS_50 : Goal.CLASS_AVERAGE_50;
+    private static String stripChatTimestamp(String cleanLine) {
+        return CHAT_TIMESTAMP_PATTERN.matcher(cleanLine).replaceFirst("");
     }
 
     private static boolean validUsername(String name) {
@@ -431,7 +437,7 @@ public final class Ca50ChatCommandFeature {
         return name == null ? "" : name.trim().toLowerCase(Locale.ROOT);
     }
 
-    private enum ChatChannel {
+    public enum ChatChannel {
         PARTY,
         GUILD,
         ALL,
@@ -463,11 +469,12 @@ public final class Ca50ChatCommandFeature {
     private record PendingResponse(ChatChannel channel, String replyTarget, String message) {
     }
 
-    private record PendingCalculation(
+    private record PendingExecution(
+        ChatCommand command,
         ChatChannel channel,
         String senderName,
         String inputName,
-        Goal goal,
+        Matcher matcher,
         int ticksLeft,
         String replyTarget
     ) {

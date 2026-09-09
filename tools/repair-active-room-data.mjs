@@ -16,6 +16,28 @@ const canonicalRooms = new Map([
   ["Blaze", { type: "PUZZLE", secrets: 1, crypts: 0 }],
   ["Ice Path", { type: "PUZZLE", secrets: 1, crypts: 0 }],
 ]);
+const legacyPrinceRoomKeys = new Set([
+  "Big Red Flag",
+  "Bridges",
+  "Draw Bridge",
+  "Chambers",
+  "Doors",
+  "Flags",
+  "Grass Ruin",
+  "Leaves",
+  "Market",
+  "Pirate",
+  "Quartz Knight",
+  "Red Blue",
+  "Red-Blue",
+  "Skull",
+  "Sloth",
+  "Super Tall",
+  "Supertall",
+  "Waterfall",
+  "Withermancer",
+  "Withermancers",
+].map(roomNameKey));
 const maxTemplateComponents = 4;
 const maxTemplateSpan = 4;
 
@@ -64,6 +86,8 @@ function repairDatabase(database) {
   let removedSuspiciousVariants = 0;
   for (const inputRoom of database.rooms || []) {
     const room = normalizeRoom(inputRoom);
+    const princeExplicit = typeof room.prince === "boolean";
+    const prince = princeExplicit ? room.prince : legacyHasPrince(room.name);
     if (room !== inputRoom) {
       mergedCanonicalRooms++;
     }
@@ -71,10 +95,16 @@ function repairDatabase(database) {
     const existing = roomsByKey.get(key);
     if (existing) {
       existing.crypts = Math.max(Number(existing.crypts || 0), Number(room.crypts || 0));
+      if (princeExplicit || !existing.princeExplicit) {
+        existing.prince = prince;
+        existing.princeExplicit ||= princeExplicit;
+      }
       existing.variants.push(...(room.variants || []));
     } else {
       roomsByKey.set(key, {
         ...room,
+        prince,
+        princeExplicit,
         variants: [...(room.variants || [])],
       });
     }
@@ -87,6 +117,9 @@ function repairDatabase(database) {
   }
 
   database.rooms = [...roomsByKey.values()].sort(compareRooms);
+  for (const room of database.rooms) {
+    delete room.princeExplicit;
+  }
   return { mergedCanonicalRooms, removedSuspiciousVariants };
 }
 
@@ -101,6 +134,10 @@ function normalizeRoom(room) {
     secrets: canonical.secrets,
     crypts: Math.max(Number(room.crypts || 0), canonical.crypts),
   };
+}
+
+function legacyHasPrince(name) {
+  return legacyPrinceRoomKeys.has(roomNameKey(name || ""));
 }
 
 function dedupeRoomVariants(room) {
@@ -223,6 +260,10 @@ function compareHashes(a, b) {
 
 function roomKey(room) {
   return `${room.name}|${room.type}|${Number(room.secrets || 0)}|${Number(room.crypts || 0)}`;
+}
+
+function roomNameKey(name) {
+  return String(name).toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
 function cellKey(component) {

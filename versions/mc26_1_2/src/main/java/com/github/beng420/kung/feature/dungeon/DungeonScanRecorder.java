@@ -1,5 +1,7 @@
 package com.github.beng420.kung.feature.dungeon;
 
+import com.github.beng420.kung.config.KungConfig;
+
 import com.github.beng420.kung.KungMod;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -199,7 +201,7 @@ public final class DungeonScanRecorder {
     }
 
     private void observeVisibleTeammateRooms(Minecraft client, DungeonRunStats stats) {
-        if (!DungeonMapOverlayConfig.INSTANCE.playerTrackingEnabled()) {
+        if (!KungConfig.get().dungeon.playerTrackingEnabled()) {
             return;
         }
         if (client.level == null || client.player == null || client.getConnection() == null) {

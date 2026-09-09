@@ -1,6 +1,6 @@
 package com.github.beng420.kung.mixin;
 
-import com.github.beng420.kung.feature.dungeon.DungeonStateTracker;
+import com.github.beng420.kung.feature.dungeon.DungeonEventRouter;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientPacketListener;
 import net.minecraft.network.protocol.game.ClientboundEntityEventPacket;
@@ -23,6 +23,6 @@ public abstract class ClientPacketListenerMixin {
             return;
         }
         Entity entity = packet.getEntity(client.level);
-        DungeonStateTracker.observeEntityDeath(entity);
+        DungeonEventRouter.observeEntityDeath(entity);
     }
 }

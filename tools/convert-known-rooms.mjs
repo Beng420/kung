@@ -21,6 +21,28 @@ const CANONICAL_ROOMS = new Map([
   ["Blaze", { type: "PUZZLE", secrets: 1 }],
   ["Ice Path", { type: "PUZZLE", secrets: 1 }],
 ]);
+const LEGACY_PRINCE_ROOM_KEYS = new Set([
+  "Big Red Flag",
+  "Bridges",
+  "Draw Bridge",
+  "Chambers",
+  "Doors",
+  "Flags",
+  "Grass Ruin",
+  "Leaves",
+  "Market",
+  "Pirate",
+  "Quartz Knight",
+  "Red Blue",
+  "Red-Blue",
+  "Skull",
+  "Sloth",
+  "Super Tall",
+  "Supertall",
+  "Waterfall",
+  "Withermancer",
+  "Withermancers",
+].map(roomNameKey));
 
 for (const inputPath of inputPaths) {
   const sourceName = sourceNameFor(inputPath, sourceIndex++);
@@ -100,6 +122,7 @@ function importRoomDatabase(inputPath, fallbackSource) {
   for (const roomInput of database.rooms || []) {
     const room = roomFor(roomInput);
     room.crypts = Math.max(room.crypts || 0, numberOrZero(roomInput.crypts));
+    applyPrince(room, roomInput);
 
     for (const variantInput of roomInput.variants || []) {
       if (isExcludedRoomDatabaseVariant(roomInput, variantInput)
@@ -206,6 +229,7 @@ function addBurst(burst, sourceName) {
 
   const room = roomFor(first);
   room.crypts = Math.max(room.crypts || 0, numberOrZero(first.crypts));
+  applyPrince(room, first);
 
   const minX = Math.min(...burst.map((row) => row.roomGridX));
   const minZ = Math.min(...burst.map((row) => row.roomGridZ));
@@ -239,6 +263,8 @@ function roomFor(input) {
       type: normalized.type,
       secrets: numberOrZero(normalized.secrets),
       crypts: 0,
+      prince: false,
+      princeExplicit: false,
       variantsBySignature: new Map(),
       variants: [],
     };
@@ -335,6 +361,7 @@ function roomToJson(room) {
     type: room.type,
     secrets: room.secrets,
     crypts: room.crypts || 0,
+    prince: Boolean(room.prince),
     variants: room.variants.sort(compareVariants).map((variant, index) => ({
       id: `variant-${index + 1}`,
       components: variant.cells.sort(compareCells).map((cell) => ({
@@ -350,6 +377,21 @@ function roomToJson(room) {
       })),
     })),
   };
+}
+
+function applyPrince(room, input) {
+  if (typeof input.prince === "boolean") {
+    room.prince = input.prince;
+    room.princeExplicit = true;
+    return;
+  }
+  if (!room.princeExplicit) {
+    room.prince ||= legacyHasPrince(input.name);
+  }
+}
+
+function legacyHasPrince(name) {
+  return LEGACY_PRINCE_ROOM_KEYS.has(roomNameKey(name || ""));
 }
 
 function isExcludedBurst(key, burst) {
@@ -402,6 +444,10 @@ function normalizeRoom(row) {
     type: canonical.type,
     secrets: canonical.secrets,
   };
+}
+
+function roomNameKey(name) {
+  return String(name).toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
 function variantSignature(cells) {

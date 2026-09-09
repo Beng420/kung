@@ -1,7 +1,10 @@
 package com.github.beng420.kung.feature.slayer;
 
-import com.github.beng420.kung.feature.dungeon.DungeonMapOverlayConfig;
-import com.github.beng420.kung.util.KungChat;
+import com.github.beng420.kung.config.KungConfig;
+import com.github.beng420.kung.config.category.SlayerConfig;
+import com.github.beng420.kung.feature.ConfigurableFeature;
+import com.github.beng420.kung.feature.Feature;
+import com.github.beng420.kung.message.KungMessages;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import java.util.List;
@@ -23,7 +26,9 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 
-public final class TarantulaHelperFeature {
+public final class TarantulaHelperFeature extends ConfigurableFeature<SlayerConfig> implements Feature {
+    public static final TarantulaHelperFeature INSTANCE = new TarantulaHelperFeature();
+
     private static final double SEARCH_RANGE = 30.0;
     private static final double NAME_TO_BODY_RANGE = 4.0;
     private static final double OWNER_SEARCH_RANGE = 5.0;
@@ -37,7 +42,6 @@ public final class TarantulaHelperFeature {
     private static final float FIRST_EGG_SAC_PRE_TRIGGER_HEALTH = 0.86F;
     private static final float SECOND_EGG_SAC_PRE_TRIGGER_HEALTH = 0.54F;
     private static final long EGG_SAC_DONE_GRACE_MILLIS = 250L;
-    private static final long EGG_SAC_MIN_PREDICTION_RENDER_MILLIS = 180L;
     private static final long BOSS_REBIND_GRACE_MILLIS = 2_000L;
     private static final long BOSS_MISSING_PREDICTION_MILLIS = 450L;
     private static final long SLAYER_END_SUPPRESS_MILLIS = 1_500L;
@@ -54,43 +58,53 @@ public final class TarantulaHelperFeature {
     private static final int GREEN = 230;
     private static final int BLUE = 255;
     private static final int ALPHA = 235;
-    private static Entity activeBoss;
-    private static int activeBossId = -1;
-    private static int activePhase;
-    private static long lastPositionDebugMillis;
-    private static long missingBossSinceMillis;
-    private static boolean eggSacPhaseActive;
-    private static boolean eggSacSeenDuringPhase;
-    private static long eggSacPhaseStartedMillis;
-    private static long lastEggSacSeenMillis;
-    private static Vec3 eggSacPredictionAnchor;
-    private static double eggSacPredictionHalfX = EGG_SAC_PREDICTION_HALF_X;
-    private static double eggSacPredictionHalfY = EGG_SAC_PREDICTION_HALF_Y;
-    private static double eggSacPredictionHalfZ = EGG_SAC_PREDICTION_HALF_Z;
-    private static List<EggSac> visibleEggSacs = List.of();
-    private static boolean eggSacPhaseStartDebugSent;
-    private static int completedEggSacPhases;
-    private static boolean firstEggSacPhasePredicted;
-    private static boolean secondEggSacPhasePredicted;
-    private static boolean cocoonEggSacPhasePredicted;
-    private static float lastBossHealthPercent = Float.NaN;
-    private static long slayerEndSeenMillis;
-    private static boolean activeBossWasConjoined;
+
+    private Entity activeBoss;
+    private int activeBossId = -1;
+    private int activePhase;
+    private long lastPositionDebugMillis;
+    private long missingBossSinceMillis;
+    private boolean eggSacPhaseActive;
+    private boolean eggSacSeenDuringPhase;
+    private long eggSacPhaseStartedMillis;
+    private long lastEggSacSeenMillis;
+    private Vec3 eggSacPredictionAnchor;
+    private double eggSacPredictionHalfX = EGG_SAC_PREDICTION_HALF_X;
+    private double eggSacPredictionHalfY = EGG_SAC_PREDICTION_HALF_Y;
+    private double eggSacPredictionHalfZ = EGG_SAC_PREDICTION_HALF_Z;
+    private List<EggSac> visibleEggSacs = List.of();
+    private boolean eggSacPhaseStartDebugSent;
+    private int completedEggSacPhases;
+    private boolean firstEggSacPhasePredicted;
+    private boolean secondEggSacPhasePredicted;
+    private boolean cocoonEggSacPhasePredicted;
+    private float lastBossHealthPercent = Float.NaN;
+    private long slayerEndSeenMillis;
+    private boolean activeBossWasConjoined;
 
     private TarantulaHelperFeature() {
+        super(cfg -> cfg.slayer);
     }
 
-    public static void initializeClient() {
-        ClientTickEvents.END_CLIENT_TICK.register(TarantulaHelperFeature::tick);
-        ClientReceiveMessageEvents.GAME.register((message, overlay) -> observeMessage(Minecraft.getInstance(), message.getString()));
+    @Override
+    protected void onInitialize() {
+        ClientTickEvents.END_CLIENT_TICK.register(this::tick);
+        ClientReceiveMessageEvents.GAME.register((message, overlay) ->
+            observeMessage(Minecraft.getInstance(), message.getString())
+        );
         ClientReceiveMessageEvents.CHAT.register((message, signedMessage, sender, params, receptionTimestamp) ->
-            observeMessage(Minecraft.getInstance(), message.getString()));
-        LevelRenderEvents.END_MAIN.register(TarantulaHelperFeature::render);
+            observeMessage(Minecraft.getInstance(), message.getString())
+        );
+        LevelRenderEvents.END_MAIN.register(this::render);
     }
 
-    private static void observeMessage(Minecraft client, String rawMessage) {
-        DungeonMapOverlayConfig config = DungeonMapOverlayConfig.INSTANCE;
-        if (!config.tarantulaHelperEnabled() || client.player == null) {
+    @Override
+    public boolean isEnabled() {
+        return config().tarantulaHelperEnabled();
+    }
+
+    private void observeMessage(Minecraft client, String rawMessage) {
+        if (!isEnabled() || client.player == null) {
             return;
         }
 
@@ -113,12 +127,12 @@ public final class TarantulaHelperFeature {
         }
     }
 
-    private static void tick(Minecraft client) {
-        DungeonMapOverlayConfig config = DungeonMapOverlayConfig.INSTANCE;
-        boolean shouldTrack = config.tarantulaHelperEnabled()
-            && (config.eggSacPredictionRendererEnabled()
-                || config.eggSacPredictionEnabled()
-                || config.tarantulaHelperDebugMessages());
+    private void tick(Minecraft client) {
+        boolean shouldTrack = isEnabled()
+            && (config().eggSacPredictionRendererEnabled()
+                || config().eggSacPredictionEnabled()
+                || KungConfig.get().debug.tarantulaMessages());
+
         if (!shouldTrack || client.level == null || client.player == null) {
             clearTrackedBoss();
             return;
@@ -183,7 +197,7 @@ public final class TarantulaHelperFeature {
 
         anticipateEggSacPhase(client, boss);
         updateEggSacPhase(client, boss);
-        if (config.eggSacPredictionEnabled() && canRenderPredictionForBoss(boss)) {
+        if (config().eggSacPredictionEnabled() && canRenderPredictionForBoss(boss)) {
             updateEggSacPrediction(client, boss);
         }
 
@@ -194,11 +208,11 @@ public final class TarantulaHelperFeature {
         }
     }
 
-    private static void render(LevelRenderContext context) {
+    private void render(LevelRenderContext context) {
         Minecraft client = Minecraft.getInstance();
-        DungeonMapOverlayConfig config = DungeonMapOverlayConfig.INSTANCE;
-        boolean renderBossArrow = config.tarantulaHelperEnabled() && config.eggSacPredictionRendererEnabled();
-        boolean wantsEggSacPrediction = config.tarantulaHelperEnabled() && config.eggSacPredictionEnabled();
+        boolean renderBossArrow = isEnabled() && config().eggSacPredictionRendererEnabled();
+        boolean wantsEggSacPrediction = isEnabled() && config().eggSacPredictionEnabled();
+
         if ((!renderBossArrow && !wantsEggSacPrediction)
             || client.level == null
             || client.player == null) {
@@ -209,6 +223,7 @@ public final class TarantulaHelperFeature {
         if (boss == null) {
             return;
         }
+
         boolean renderEggSacPrediction = wantsEggSacPrediction
             && canRenderPredictionForBoss(boss)
             && !eggSacPredictionFinished()
@@ -223,13 +238,13 @@ public final class TarantulaHelperFeature {
         if (renderEggSacPrediction) {
             drawEggSacPrediction(poseStack, buffers, predictionAnchorFor(boss, renderPartialTick()));
         }
-        if (renderBossArrow && boss != null) {
+        if (renderBossArrow) {
             drawArrow(poseStack, buffers, boss);
         }
         poseStack.popPose();
     }
 
-    private static Entity activeBoss(Minecraft client) {
+    private Entity activeBoss(Minecraft client) {
         if (activeBossId == -1 || client.level == null) {
             return null;
         }
@@ -244,7 +259,7 @@ public final class TarantulaHelperFeature {
         return boss;
     }
 
-    private static Entity findOwnBoss(Minecraft client) {
+    private Entity findOwnBoss(Minecraft client) {
         Entity best = null;
         double bestDistance = SEARCH_RANGE * SEARCH_RANGE;
 
@@ -268,7 +283,7 @@ public final class TarantulaHelperFeature {
         return best;
     }
 
-    private static Entity nearestBossBody(Minecraft client, Entity nameCarrier) {
+    private Entity nearestBossBody(Minecraft client, Entity nameCarrier) {
         Entity best = null;
         double bestDistance = NAME_TO_BODY_RANGE * NAME_TO_BODY_RANGE;
         for (Entity entity : client.level.entitiesForRendering()) {
@@ -285,18 +300,18 @@ public final class TarantulaHelperFeature {
         return best;
     }
 
-    private static boolean isAliveCandidate(Minecraft client, Entity entity) {
+    private boolean isAliveCandidate(Minecraft client, Entity entity) {
         return entity != client.player
             && entity.isAlive()
             && client.player.distanceToSqr(entity) <= SEARCH_RANGE * SEARCH_RANGE;
     }
 
-    private static boolean isSpiderBody(Entity entity) {
+    private boolean isSpiderBody(Entity entity) {
         EntityType<?> type = entity.getType();
         return type == EntityType.SPIDER || type == EntityType.CAVE_SPIDER;
     }
 
-    private static boolean hasTarantulaBossName(Entity entity) {
+    private boolean hasTarantulaBossName(Entity entity) {
         Component customName = entity.getCustomName();
         String name = clean(customName != null ? customName.getString() : entity.getName().getString());
         return name.contains("tarantula broodfather")
@@ -305,13 +320,13 @@ public final class TarantulaHelperFeature {
             || name.contains("conjoined brood");
     }
 
-    private static boolean isOwnBossNameCarrier(Minecraft client, Entity nameCarrier) {
+    private boolean isOwnBossNameCarrier(Minecraft client, Entity nameCarrier) {
         String owner = ownerNameFor(client, nameCarrier);
         String playerName = client.player.getName().getString();
         return owner != null && owner.equalsIgnoreCase(playerName);
     }
 
-    private static String ownerNameFor(Minecraft client, Entity nameCarrier) {
+    private String ownerNameFor(Minecraft client, Entity nameCarrier) {
         for (int offset = 1; offset <= 4; offset++) {
             Entity stackedEntity = client.level.getEntity(nameCarrier.getId() + offset);
             String owner = ownerNameFrom(stackedEntity);
@@ -337,7 +352,7 @@ public final class TarantulaHelperFeature {
         return ownerNameFrom(nearestOwner);
     }
 
-    private static String ownerNameFrom(Entity entity) {
+    private String ownerNameFrom(Entity entity) {
         if (entity == null) {
             return null;
         }
@@ -365,7 +380,7 @@ public final class TarantulaHelperFeature {
         return owner.isEmpty() ? null : owner.toString();
     }
 
-    private static boolean isOwnSlayerEndMessage(String message) {
+    private boolean isOwnSlayerEndMessage(String message) {
         return message.contains("slayer quest complete")
             || message.contains("slayer quest failed")
             || message.contains("slayer boss slain")
@@ -373,13 +388,13 @@ public final class TarantulaHelperFeature {
             || message.contains("nice! slayer boss");
     }
 
-    private static boolean isEggSacPhaseStartMessage(String message) {
+    private boolean isEggSacPhaseStartMessage(String message) {
         return message.contains("broodfather's hatchlings")
             || message.contains("broodfathers hatchlings")
             || message.contains("kill the hatchlings");
     }
 
-    private static void anticipateEggSacPhase(Minecraft client, Entity boss) {
+    private void anticipateEggSacPhase(Minecraft client, Entity boss) {
         if (eggSacPredictionFinished() || isConjoinedBrood(boss)) {
             lastBossHealthPercent = Float.NaN;
             return;
@@ -406,14 +421,14 @@ public final class TarantulaHelperFeature {
         }
     }
 
-    private static boolean crossedHealthThreshold(float previousHealthPercent, float healthPercent, float threshold) {
+    private boolean crossedHealthThreshold(float previousHealthPercent, float healthPercent, float threshold) {
         if (Float.isNaN(previousHealthPercent)) {
             return healthPercent <= threshold;
         }
         return previousHealthPercent > threshold && healthPercent <= threshold;
     }
 
-    private static boolean primeMissingBossPrediction(Minecraft client) {
+    private boolean primeMissingBossPrediction(Minecraft client) {
         if (activeBoss == null || eggSacPredictionFinished() || activeBossWasConjoined || recentlySawSlayerEnd()) {
             return false;
         }
@@ -441,11 +456,11 @@ public final class TarantulaHelperFeature {
         return false;
     }
 
-    private static boolean recentlySawSlayerEnd() {
+    private boolean recentlySawSlayerEnd() {
         return slayerEndSeenMillis != 0L && System.currentTimeMillis() - slayerEndSeenMillis <= SLAYER_END_SUPPRESS_MILLIS;
     }
 
-    private static boolean hasCocoonSignal(Minecraft client, Entity boss) {
+    private boolean hasCocoonSignal(Minecraft client, Entity boss) {
         if (clean(entityName(boss)).contains("cocoon")) {
             return true;
         }
@@ -462,23 +477,23 @@ public final class TarantulaHelperFeature {
         return false;
     }
 
-    private static boolean isConjoinedBrood(Entity entity) {
+    private boolean isConjoinedBrood(Entity entity) {
         return clean(entityName(entity)).contains("conjoined brood");
     }
 
-    private static boolean canRenderPredictionForBoss(Entity boss) {
+    private boolean canRenderPredictionForBoss(Entity boss) {
         return isSpiderBody(boss)
             && !isConjoinedBrood(boss)
             && !isDyingBoss(boss);
     }
 
-    private static boolean isDyingBoss(Entity boss) {
+    private boolean isDyingBoss(Entity boss) {
         return boss instanceof LivingEntity living
             && living.getMaxHealth() > 0.0F
             && living.getHealth() <= 0.0F;
     }
 
-    private static void updateEggSacPhase(Minecraft client, Entity boss) {
+    private void updateEggSacPhase(Minecraft client, Entity boss) {
         long now = System.currentTimeMillis();
         List<EggSac> eggSacs = findEggSacs(client, boss);
         visibleEggSacs = eggSacs;
@@ -502,7 +517,7 @@ public final class TarantulaHelperFeature {
         }
     }
 
-    private static List<EggSac> findEggSacs(Minecraft client, Entity boss) {
+    private List<EggSac> findEggSacs(Minecraft client, Entity boss) {
         java.util.ArrayList<EggSac> sacs = new java.util.ArrayList<>();
         for (Entity timer : client.level.entitiesForRendering()) {
             if (!(timer instanceof ArmorStand) || client.player.distanceToSqr(timer) > EGG_SAC_SEARCH_RANGE * EGG_SAC_SEARCH_RANGE) {
@@ -543,7 +558,7 @@ public final class TarantulaHelperFeature {
         return sacs;
     }
 
-    private static void rebindBossAfterPhaseTransition(Minecraft client, Entity boss) {
+    private void rebindBossAfterPhaseTransition(Minecraft client, Entity boss) {
         activeBoss = boss;
         activeBossId = boss.getId();
         activePhase = phaseFor(boss);
@@ -553,7 +568,7 @@ public final class TarantulaHelperFeature {
         debug(client, DebugMessage.SLAYER_PHASE_CHANGE, "slayer phase change");
     }
 
-    private static boolean markBossMissing(Minecraft client) {
+    private boolean markBossMissing(Minecraft client) {
         long now = System.currentTimeMillis();
         if (missingBossSinceMillis == 0L) {
             missingBossSinceMillis = now;
@@ -563,29 +578,29 @@ public final class TarantulaHelperFeature {
         return now - missingBossSinceMillis > BOSS_REBIND_GRACE_MILLIS;
     }
 
-    private static void markEggSacsSeen() {
+    private void markEggSacsSeen() {
         eggSacSeenDuringPhase = true;
         lastEggSacSeenMillis = System.currentTimeMillis();
     }
 
-    private static String entityName(Entity entity) {
+    private String entityName(Entity entity) {
         Component customName = entity.getCustomName();
         return customName != null ? customName.getString() : entity.getName().getString();
     }
 
-    private static boolean isEggSacTimer(String name) {
+    private boolean isEggSacTimer(String name) {
         return name.matches("\\d+s \\d+/\\d+");
     }
 
-    private static void primeEggSacPhase(Minecraft client, Entity boss) {
+    private void primeEggSacPhase(Minecraft client, Entity boss) {
         startEggSacPhase(client, boss, false);
     }
 
-    private static void startEggSacPhase(Minecraft client, Entity boss) {
+    private void startEggSacPhase(Minecraft client, Entity boss) {
         startEggSacPhase(client, boss, true);
     }
 
-    private static void startEggSacPhase(Minecraft client, Entity boss, boolean sendDebug) {
+    private void startEggSacPhase(Minecraft client, Entity boss, boolean sendDebug) {
         if (eggSacPredictionFinished()) {
             return;
         }
@@ -611,7 +626,7 @@ public final class TarantulaHelperFeature {
         }
     }
 
-    private static void markEggSacPhasePredicted() {
+    private void markEggSacPhasePredicted() {
         if (!firstEggSacPhasePredicted) {
             firstEggSacPhasePredicted = true;
         } else if (!secondEggSacPhasePredicted) {
@@ -621,12 +636,12 @@ public final class TarantulaHelperFeature {
         }
     }
 
-    private static void sendEggSacPhaseStartDebug(Minecraft client) {
+    private void sendEggSacPhaseStartDebug(Minecraft client) {
         eggSacPhaseStartDebugSent = true;
         debug(client, DebugMessage.EGG_SAC_PHASE_START, "egg sac phase start");
     }
 
-    private static void finishEggSacPhase(Minecraft client) {
+    private void finishEggSacPhase(Minecraft client) {
         if (!eggSacPhaseActive) {
             return;
         }
@@ -648,24 +663,24 @@ public final class TarantulaHelperFeature {
         debug(client, DebugMessage.EGG_SAC_PHASE_DONE, "egg sac phase done");
     }
 
-    private static boolean eggSacPredictionFinished() {
+    private boolean eggSacPredictionFinished() {
         return completedEggSacPhases >= 2;
     }
 
-    private static String clean(String text) {
+    private String clean(String text) {
         return plain(text)
             .replaceAll("\\s+", " ")
             .trim()
             .toLowerCase(Locale.ROOT);
     }
 
-    private static String plain(String text) {
+    private String plain(String text) {
         return text.replaceAll("(?:\\u00a7|\\u00c2\\u00a7).", "")
             .replaceAll("\\s+", " ")
             .trim();
     }
 
-    private static int phaseFor(Entity boss) {
+    private int phaseFor(Entity boss) {
         if (!(boss instanceof LivingEntity living) || living.getMaxHealth() <= 0.0F) {
             return 0;
         }
@@ -680,7 +695,7 @@ public final class TarantulaHelperFeature {
         return 3;
     }
 
-    private static String positionText(Entity boss) {
+    private String positionText(Entity boss) {
         AABB bounds = boss.getBoundingBox();
         double x = (bounds.minX + bounds.maxX) * 0.5;
         double y = bounds.minY;
@@ -688,25 +703,25 @@ public final class TarantulaHelperFeature {
         return String.format(Locale.ROOT, "%.1f %.1f %.1f", x, y, z);
     }
 
-    private static void debug(Minecraft client, DebugMessage type, String message) {
-        DungeonMapOverlayConfig config = DungeonMapOverlayConfig.INSTANCE;
-        if (config.tarantulaDebugMessagesEnabled() && isDebugMessageEnabled(config, type) && client.player != null) {
-            client.player.sendSystemMessage(KungChat.message(message));
+    private void debug(Minecraft client, DebugMessage type, String message) {
+        boolean debugEnabled = KungConfig.get().debug.tarantulaMessagesEnabled();
+        if (debugEnabled && isDebugMessageEnabled(type) && client.player != null) {
+            client.player.sendSystemMessage(KungMessages.debug("Tarantula", message));
         }
     }
 
-    private static boolean isDebugMessageEnabled(DungeonMapOverlayConfig config, DebugMessage type) {
+    private boolean isDebugMessageEnabled(DebugMessage type) {
         return switch (type) {
-            case SLAYER_SPAWNED -> config.tarantulaDebugSlayerSpawned();
-            case SLAYER_POSITION -> config.tarantulaDebugSlayerPosition();
-            case SLAYER_PHASE_CHANGE -> config.tarantulaDebugSlayerPhaseChange();
-            case SLAYER_DEAD -> config.tarantulaDebugSlayerDead();
-            case EGG_SAC_PHASE_START -> config.tarantulaDebugEggSacPhaseStart();
-            case EGG_SAC_PHASE_DONE -> config.tarantulaDebugEggSacPhaseDone();
+            case SLAYER_SPAWNED -> config().tarantulaDebugSlayerSpawned();
+            case SLAYER_POSITION -> config().tarantulaDebugSlayerPosition();
+            case SLAYER_PHASE_CHANGE -> config().tarantulaDebugSlayerPhaseChange();
+            case SLAYER_DEAD -> config().tarantulaDebugSlayerDead();
+            case EGG_SAC_PHASE_START -> config().tarantulaDebugEggSacPhaseStart();
+            case EGG_SAC_PHASE_DONE -> config().tarantulaDebugEggSacPhaseDone();
         };
     }
 
-    private static void clearTrackedBoss() {
+    private void clearTrackedBoss() {
         activeBoss = null;
         activeBossId = -1;
         activePhase = 0;
@@ -730,7 +745,7 @@ public final class TarantulaHelperFeature {
         activeBossWasConjoined = false;
     }
 
-    private static void updateEggSacPrediction(Minecraft client, Entity boss) {
+    private void updateEggSacPrediction(Minecraft client, Entity boss) {
         AABB bounds = boss.getBoundingBox();
         double bossX = (bounds.minX + bounds.maxX) * 0.5;
         double bossZ = (bounds.minZ + bounds.maxZ) * 0.5;
@@ -740,19 +755,19 @@ public final class TarantulaHelperFeature {
         eggSacPredictionHalfZ = EGG_SAC_PREDICTION_HALF_Z;
     }
 
-    private static Vec3 predictionAnchorFor(Entity boss, float partialTick) {
+    private Vec3 predictionAnchorFor(Entity boss, float partialTick) {
         Vec3 position = boss.getPosition(partialTick);
         return new Vec3(position.x, position.y + boss.getBbHeight() + EGG_SAC_CENTER_ABOVE_BOSS, position.z);
     }
 
-    private static float renderPartialTick() {
+    private float renderPartialTick() {
         Minecraft client = Minecraft.getInstance();
         return client.gameRenderer.getMainCamera().getCameraEntityPartialTicks(client.getDeltaTracker());
     }
 
-    private static void drawEggSacPrediction(PoseStack poseStack, MultiBufferSource buffers, Vec3 center) {
+    private void drawEggSacPrediction(PoseStack poseStack, MultiBufferSource buffers, Vec3 center) {
         VertexConsumer vertices = buffers.getBuffer(RenderTypes.debugQuads());
-        if (DungeonMapOverlayConfig.INSTANCE.eggSacPredictionRenderMode() == DungeonMapOverlayConfig.EggSacPredictionRenderMode.GRID) {
+        if (config().eggSacPredictionRenderMode() == SlayerConfig.EggSacPredictionRenderMode.GRID) {
             drawEggSacPredictionGrid(Minecraft.getInstance(), poseStack.last(), vertices, center);
             return;
         }
@@ -773,7 +788,7 @@ public final class TarantulaHelperFeature {
         );
     }
 
-    private static void drawEggSacPredictionGrid(Minecraft client, PoseStack.Pose pose, VertexConsumer vertices, Vec3 center) {
+    private void drawEggSacPredictionGrid(Minecraft client, PoseStack.Pose pose, VertexConsumer vertices, Vec3 center) {
         int minGridX = (int) Math.ceil(-eggSacPredictionHalfX / PREDICTION_GRID_SPACING);
         int maxGridX = (int) Math.floor(eggSacPredictionHalfX / PREDICTION_GRID_SPACING);
         int minGridZ = (int) Math.ceil(-eggSacPredictionHalfZ / PREDICTION_GRID_SPACING);
@@ -802,7 +817,7 @@ public final class TarantulaHelperFeature {
         }
     }
 
-    private static double gridYFor(Minecraft client, double x, double normalY, double z) {
+    private double gridYFor(Minecraft client, double x, double normalY, double z) {
         if (client.level == null) {
             return normalY;
         }
@@ -817,7 +832,7 @@ public final class TarantulaHelperFeature {
         return normalY - PREDICTION_GRID_MAX_LOWERED_STEPS;
     }
 
-    private static boolean isGridSlotBlocked(Minecraft client, double x, double centerY, double z) {
+    private boolean isGridSlotBlocked(Minecraft client, double x, double centerY, double z) {
         int baseY = (int) Math.floor(centerY);
         int topY = (int) Math.floor(centerY + PREDICTION_GRID_BLOCK_SCAN_ABOVE);
         for (int y = baseY; y <= topY; y++) {
@@ -831,7 +846,7 @@ public final class TarantulaHelperFeature {
         return false;
     }
 
-    private static void drawArrow(PoseStack poseStack, MultiBufferSource buffers, Entity boss) {
+    private void drawArrow(PoseStack poseStack, MultiBufferSource buffers, Entity boss) {
         float partialTick = renderPartialTick();
         Vec3 position = boss.getPosition(partialTick);
         double x = position.x;
@@ -847,7 +862,7 @@ public final class TarantulaHelperFeature {
         drawBox(pose, vertices, x - 0.32, tipY, z - 0.32, x + 0.32, shaftBottomY, z + 0.32, RED, GREEN, BLUE, ALPHA);
     }
 
-    private static void drawBox(
+    private void drawBox(
         PoseStack.Pose pose,
         VertexConsumer vertices,
         double minX,
@@ -869,7 +884,7 @@ public final class TarantulaHelperFeature {
         addQuad(pose, vertices, minX, minY, maxZ, maxX, minY, maxZ, maxX, minY, minZ, minX, minY, minZ, red, green, blue, alpha);
     }
 
-    private static void addQuad(
+    private void addQuad(
         PoseStack.Pose pose,
         VertexConsumer vertices,
         double x1,
@@ -895,7 +910,7 @@ public final class TarantulaHelperFeature {
         addVertex(pose, vertices, x4, y4, z4, red, green, blue, alpha);
     }
 
-    private static void addVertex(
+    private void addVertex(
         PoseStack.Pose pose,
         VertexConsumer vertices,
         double x,

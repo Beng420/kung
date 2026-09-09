@@ -1,6 +1,7 @@
 package com.github.beng420.kung.update;
 
 import com.github.beng420.kung.KungMod;
+import com.github.beng420.kung.message.KungMessages;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -32,7 +33,6 @@ import net.fabricmc.loader.api.FabricLoader;
 import net.fabricmc.loader.api.ModContainer;
 import net.fabricmc.loader.api.metadata.ModOrigin;
 import net.minecraft.client.Minecraft;
-import net.minecraft.network.chat.Component;
 
 public enum KungUpdater {
     INSTANCE;
@@ -73,7 +73,7 @@ public enum KungUpdater {
                     Status.FAILED,
                     currentVersion(),
                     "",
-                    "Check fehlgeschlagen",
+                    "Update check failed",
                     null
                 ));
             } finally {
@@ -158,7 +158,7 @@ public enum KungUpdater {
             return;
         }
 
-        state.set(snapshot.withStatus(Status.DOWNLOADING, "Download laeuft"));
+        state.set(snapshot.withStatus(Status.DOWNLOADING, "Downloading update"));
         executor.execute(() -> {
             try {
                 Path currentJar = currentModJar()
@@ -166,18 +166,28 @@ public enum KungUpdater {
                 Path downloadedJar = downloadUpdate(snapshot.updateInfo());
                 writePendingMarker(downloadedJar, currentJar, snapshot.updateInfo().version());
                 launchInstaller(downloadedJar, currentJar);
-                state.set(snapshot.withStatus(Status.INSTALL_READY, "Minecraft neu starten"));
-                sendClientMessage(client, "Kung update installiert. Schliesse Minecraft und starte es neu.");
+                state.set(snapshot.withStatus(Status.INSTALL_READY, "Restart Minecraft"));
+                KungMessages.send(
+                    client,
+                    KungMessages.Type.SUCCESS,
+                    "Updater",
+                    "Update installed. Close Minecraft and start it again."
+                );
             } catch (Exception exception) {
                 KungMod.LOGGER.warn("Kung update install failed.", exception);
                 state.set(new State(
                     Status.FAILED,
                     currentVersion(),
                     snapshot.latestVersion(),
-                    "Install fehlgeschlagen",
+                    "Update installation failed",
                     snapshot.updateInfo()
                 ));
-                sendClientMessage(client, "Kung update konnte nicht installiert werden. Siehe latest.log.");
+                KungMessages.send(
+                    client,
+                    KungMessages.Type.ERROR,
+                    "Updater",
+                    "The update could not be installed. See latest.log."
+                );
             } finally {
                 installing.set(false);
             }
@@ -195,7 +205,7 @@ public enum KungUpdater {
             .build();
         HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
         if (response.statusCode() == 404) {
-            return new State(Status.UP_TO_DATE, currentVersion, "", "Keine Releases", null);
+            return new State(Status.UP_TO_DATE, currentVersion, "", "No releases found", null);
         }
         if (response.statusCode() < 200 || response.statusCode() >= 300) {
             throw new IOException("GitHub returned HTTP " + response.statusCode());
@@ -214,7 +224,7 @@ public enum KungUpdater {
                 Status.UNSUPPORTED,
                 currentVersion,
                 latestVersion,
-                "Keine " + minecraftVersion + "-Jar",
+                "No compatible jar for Minecraft " + minecraftVersion,
                 null
             );
         }
@@ -224,7 +234,7 @@ public enum KungUpdater {
             Status.UPDATE_AVAILABLE,
             currentVersion,
             latestVersion,
-            "Update " + latestVersion + " verfuegbar",
+            "Update " + latestVersion + " available",
             updateInfo
         );
     }
@@ -503,14 +513,6 @@ public enum KungUpdater {
         return path.toAbsolutePath().toString().replace("'", "'\"'\"'");
     }
 
-    private static void sendClientMessage(Minecraft client, String message) {
-        client.execute(() -> {
-            if (client.player != null) {
-                client.player.sendSystemMessage(Component.literal(message));
-            }
-        });
-    }
-
     private enum Status {
         CHECKING,
         UP_TO_DATE,
@@ -529,7 +531,7 @@ public enum KungUpdater {
         UpdateInfo updateInfo
     ) {
         static State checking(String currentVersion) {
-            return new State(Status.CHECKING, currentVersion, "", "GitHub wird geprueft", null);
+            return new State(Status.CHECKING, currentVersion, "", "Checking GitHub", null);
         }
 
         State withStatus(Status status, String message) {

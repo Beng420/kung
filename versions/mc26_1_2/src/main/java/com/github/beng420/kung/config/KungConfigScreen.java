@@ -2,12 +2,18 @@ package com.github.beng420.kung.config;
 
 import static com.github.beng420.kung.util.GuiDraw.fill;
 
-import com.github.beng420.kung.feature.dungeon.DungeonMapOverlayConfig;
 import com.github.beng420.kung.feature.dungeon.DungeonKnownRoomCatalog;
 import com.github.beng420.kung.feature.dungeon.DungeonRoomDataSyncClient;
 import com.github.beng420.kung.feature.dungeon.DungeonRoomClassifier;
 import com.github.beng420.kung.feature.misc.CustomSoundsFeature;
 import com.github.beng420.kung.feature.misc.LoadoutsAutoCloseFeature;
+import com.github.beng420.kung.ui.UiBounds;
+import com.github.beng420.kung.ui.UiTextField;
+import com.github.beng420.kung.ui.UiTheme;
+import com.github.beng420.kung.ui.UiScrollList;
+import com.github.beng420.kung.ui.UiSpacing;
+import com.github.beng420.kung.ui.UiTextStyle;
+import com.github.beng420.kung.ui.UiTooltip;
 import com.github.beng420.kung.update.KungUpdater;
 import com.github.beng420.kung.util.HypixelSkyBlockProfileClient;
 import com.mojang.blaze3d.platform.Window;
@@ -26,7 +32,6 @@ import java.util.function.IntSupplier;
 import java.util.function.Supplier;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
-import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.CharacterEvent;
 import net.minecraft.client.input.KeyEvent;
@@ -34,22 +39,15 @@ import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
 
 public final class KungConfigScreen extends Screen {
-    private static final int BACKDROP = 0x66000000;
-    private static final int PANEL = 0xEE151719;
-    private static final int PANEL_SOFT = 0xCC243044;
-    private static final int SETTING_ROW = 0xCC2C384C;
-    private static final int BLUE = 0xFF3498DB;
-    private static final int BLUE_DARK = 0xFF2077AE;
-    private static final int TEXT = 0xFFFFFFFF;
-    private static final int MUTED = 0xFFBBC4D0;
-    private static final int DARK_ROW = 0xEE17191B;
-    private static final int BORDER = 0xAA000000;
+    private static final UiTheme THEME = UiTheme.settings();
+    private static final UiTextStyle TEXT_STYLE = UiTextStyle.normal(THEME);
+    private static final UiTextStyle MUTED_STYLE = UiTextStyle.muted(THEME);
 
-    private static final int LEFT = 8;
+    private static final int LEFT = UiSpacing.MD;
     private static final int COLUMN_WIDTH = 190;
     private static final int ROW_HEIGHT = 18;
     private static final int SETTING_HEIGHT = 16;
-    private static final int GAP = 8;
+    private static final int GAP = UiSpacing.MD;
     private static final int TOP = 22;
     private static final int HEADER_HEIGHT = 18;
     private static final int SETTING_CONTROL_WIDTH = 58;
@@ -67,9 +65,10 @@ public final class KungConfigScreen extends Screen {
     private SettingEntry capturingSetting;
     private SettingEntry draggingSlider;
     private int draggingSliderControlX;
-    private int horizontalScroll;
+    private final UiScrollList horizontalScroll = new UiScrollList();
     private String search = "";
     private boolean searchFocused;
+    private TooltipRequest tooltip;
 
     public KungConfigScreen() {
         this(null);
@@ -92,12 +91,16 @@ public final class KungConfigScreen extends Screen {
 
     @Override
     public void extractRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick) {
-        horizontalScroll = Math.clamp(horizontalScroll, 0, maxHorizontalScroll());
+        horizontalScroll.setOffsetWithinMax(horizontalScroll.offset(), maxHorizontalScroll());
         clickRegions.clear();
-        fill(graphics, 0, 0, width, height, BACKDROP);
+        tooltip = null;
+        fill(graphics, 0, 0, width, height, THEME.backdrop());
         drawTitle(graphics);
         drawColumns(graphics, mouseX, mouseY);
         drawSearchBox(graphics);
+        if (tooltip != null && textEditor == null) {
+            UiTooltip.draw(graphics, font, List.of(tooltip.text()), tooltip.x(), tooltip.y(), THEME);
+        }
         if (textEditor != null) {
             textEditor.draw(graphics, mouseX, mouseY, partialTick);
         }
@@ -127,7 +130,7 @@ public final class KungConfigScreen extends Screen {
         searchFocused = false;
         for (int index = clickRegions.size() - 1; index >= 0; index--) {
             ClickRegion region = clickRegions.get(index);
-            if (inside(mouseX, mouseY, region.x(), region.y(), region.width(), region.height())) {
+            if (region.bounds().contains(mouseX, mouseY)) {
                 return region.action().click(mouseX, mouseY, button);
             }
         }
@@ -178,7 +181,7 @@ public final class KungConfigScreen extends Screen {
         }
 
         int direction = scrollY < 0 ? 1 : -1;
-        horizontalScroll = Math.clamp(horizontalScroll + direction * SCROLL_STEP, 0, maxScroll);
+        horizontalScroll.scrollByWithinMax(direction * SCROLL_STEP, maxScroll);
         return true;
     }
 
@@ -233,11 +236,12 @@ public final class KungConfigScreen extends Screen {
 
     private void drawTitle(GuiGraphicsExtractor graphics) {
         String title = "Kung";
-        graphics.text(font, title, width / 2 - font.width(title) / 2, 8, TEXT, true);
+        graphics.text(font, title, width / 2 - font.width(title) / 2, UiSpacing.MD,
+            TEXT_STYLE.color(), TEXT_STYLE.shadow());
     }
 
     private void drawColumns(GuiGraphicsExtractor graphics, int mouseX, int mouseY) {
-        int startX = LEFT - horizontalScroll;
+        int startX = LEFT - horizontalScroll.offset();
         int visibleIndex = 0;
         for (CategoryEntry category : categories) {
             if (!categoryMatches(category)) {
@@ -260,10 +264,10 @@ public final class KungConfigScreen extends Screen {
     ) {
         int panelHeight = panelHeight(category);
         setCategoryScroll(category, categoryScroll(category));
-        fill(graphics, x - 1, TOP - 1, x + COLUMN_WIDTH + 1, TOP + panelHeight + 1, BORDER);
-        fill(graphics, x, TOP, x + COLUMN_WIDTH, TOP + panelHeight, PANEL);
+        fill(graphics, x - 1, TOP - 1, x + COLUMN_WIDTH + 1, TOP + panelHeight + 1, THEME.border());
+        fill(graphics, x, TOP, x + COLUMN_WIDTH, TOP + panelHeight, THEME.panel());
 
-        drawCentered(graphics, trimToWidth(category.name(), COLUMN_WIDTH - 8), x + COLUMN_WIDTH / 2, TOP + 5, TEXT, true);
+        drawCentered(graphics, trimToWidth(category.name(), COLUMN_WIDTH - 8), x + COLUMN_WIDTH / 2, TOP + 5, THEME.text(), true);
 
         int viewportTop = TOP + HEADER_HEIGHT;
         int panelBottom = TOP + panelHeight;
@@ -291,7 +295,7 @@ public final class KungConfigScreen extends Screen {
                     }
                 }
                 if (rowY > viewportTop && rowY <= panelBottom) {
-                    fill(graphics, x, rowY - 1, x + COLUMN_WIDTH, rowY, BLUE_DARK);
+                    fill(graphics, x, rowY - 1, x + COLUMN_WIDTH, rowY, THEME.accentDark());
                 }
             }
         }
@@ -312,9 +316,9 @@ public final class KungConfigScreen extends Screen {
         }
         boolean hovered = inside(mouseX, mouseY, x, rowY, COLUMN_WIDTH, ROW_HEIGHT);
         boolean clickable = feature.clickable() || !feature.settings().isEmpty();
-        int color = feature.enabled() ? BLUE : hovered && clickable ? PANEL_SOFT : DARK_ROW;
+        int color = feature.enabled() ? THEME.accent() : hovered && clickable ? THEME.panelSoft() : THEME.panelDark();
         fill(graphics, x, rowY, x + COLUMN_WIDTH, rowY + ROW_HEIGHT, color);
-        drawCentered(graphics, trimToWidth(feature.name(), COLUMN_WIDTH - 8), x + COLUMN_WIDTH / 2, rowY + 5, TEXT, true);
+        drawCentered(graphics, trimToWidth(feature.name(), COLUMN_WIDTH - 8), x + COLUMN_WIDTH / 2, rowY + 5, THEME.text(), true);
         addClickRegion(x, rowY, COLUMN_WIDTH, ROW_HEIGHT, (clickX, clickY, button) -> clickFeature(feature, button));
     }
 
@@ -336,19 +340,24 @@ public final class KungConfigScreen extends Screen {
         int indent
     ) {
         boolean hovered = inside(mouseX, mouseY, x, rowY, COLUMN_WIDTH, SETTING_HEIGHT);
-        fill(graphics, x, rowY, x + COLUMN_WIDTH, rowY + SETTING_HEIGHT, hovered ? PANEL_SOFT : SETTING_ROW);
+        fill(graphics, x, rowY, x + COLUMN_WIDTH, rowY + SETTING_HEIGHT, hovered ? THEME.panelSoft() : THEME.control());
         if (setting.expandable()) {
-            graphics.text(font, setting == expandedSetting ? "v" : ">", x + 5 + indent, rowY + 4, TEXT, true);
+            graphics.text(font, setting == expandedSetting ? "v" : ">", x + 5 + indent, rowY + 4, THEME.text(), true);
         }
         int labelX = x + 5 + indent + (setting.expandable() ? 11 : 0);
-        if (setting.kind() == Kind.LABEL) {
-            graphics.text(font, trimToWidth(setting.label(), COLUMN_WIDTH - indent - 10), labelX, rowY + 4, MUTED, true);
+        if (setting.kind() == SettingKind.LABEL) {
+            graphics.text(font, trimToWidth(setting.label(), COLUMN_WIDTH - indent - 10), labelX, rowY + 4,
+                MUTED_STYLE.color(), MUTED_STYLE.shadow());
             return;
         }
         int controlWidth = controlWidthFor(setting);
-        graphics.text(font, trimToWidth(setting.label(), COLUMN_WIDTH - controlWidth - indent - 20), labelX, rowY + 4, TEXT, true);
+        int labelWidth = COLUMN_WIDTH - controlWidth - indent - 20;
+        graphics.text(font, trimToWidth(setting.label(), labelWidth), labelX, rowY + 4, THEME.text(), true);
+        if (hovered && font.width(setting.label()) > labelWidth) {
+            tooltip = new TooltipRequest(setting.label(), mouseX + UiSpacing.MD, mouseY + UiSpacing.MD);
+        }
         int controlX = x + COLUMN_WIDTH - controlWidth - 5;
-        setting.draw(graphics, controlX, rowY, controlWidth, SETTING_HEIGHT, setting == capturingSetting);
+        setting.draw(graphics, font, THEME, controlX, rowY, controlWidth, SETTING_HEIGHT, setting == capturingSetting);
         addClickRegion(x, rowY, COLUMN_WIDTH, SETTING_HEIGHT, (clickX, clickY, button) ->
             clickSetting(setting, clickX, button, controlX, controlWidth)
         );
@@ -364,10 +373,10 @@ public final class KungConfigScreen extends Screen {
     }
 
     private int controlWidthFor(SettingEntry setting) {
-        if (setting.kind() == Kind.GROUP) {
+        if (setting.kind() == SettingKind.GROUP) {
             return 16;
         }
-        if (setting.kind() == Kind.TEXT || setting.kind() == Kind.KEYBIND) {
+        if (setting.kind() == SettingKind.TEXT || setting.kind() == SettingKind.KEYBIND) {
             return TEXT_SETTING_CONTROL_WIDTH;
         }
         return SETTING_CONTROL_WIDTH;
@@ -392,10 +401,10 @@ public final class KungConfigScreen extends Screen {
         int boxHeight = 20;
         int x = width / 2 - boxWidth / 2;
         int y = height - 30;
-        fill(graphics, x - 2, y - 2, x + boxWidth + 2, y + boxHeight + 2, searchFocused ? TEXT : BLUE);
-        fill(graphics, x, y, x + boxWidth, y + boxHeight, PANEL);
+        fill(graphics, x - 2, y - 2, x + boxWidth + 2, y + boxHeight + 2, searchFocused ? THEME.text() : THEME.accent());
+        fill(graphics, x, y, x + boxWidth, y + boxHeight, THEME.panel());
         String label = search.isEmpty() ? "Search here..." : search;
-        drawCentered(graphics, label, x + boxWidth / 2, y + 6, search.isEmpty() ? MUTED : TEXT, true);
+        drawCentered(graphics, label, x + boxWidth / 2, y + 6, search.isEmpty() ? THEME.muted() : THEME.text(), true);
     }
 
     private boolean clickSearchBox(int mouseX, int mouseY, int button) {
@@ -430,22 +439,22 @@ public final class KungConfigScreen extends Screen {
             return true;
         }
         if (button == 0) {
-            if (setting.kind() == Kind.GROUP && setting.expandable()) {
+            if (setting.kind() == SettingKind.GROUP && setting.expandable()) {
                 toggleSettingExpansion(setting);
                 return true;
             }
-            if (setting.kind() == Kind.TEXT) {
+            if (setting.kind() == SettingKind.TEXT) {
                 openTextEditor(setting);
                 capturingSetting = null;
                 return true;
             }
-            if (setting.kind() == Kind.KEYBIND) {
+            if (setting.kind() == SettingKind.KEYBIND) {
                 capturingSetting = setting;
                 return true;
             }
             capturingSetting = null;
             setting.click(mouseX, controlX, controlWidth);
-            if (setting.kind() == Kind.SLIDER) {
+            if (setting.kind() == SettingKind.SLIDER) {
                 draggingSlider = setting;
                 draggingSliderControlX = controlX;
             }
@@ -459,7 +468,7 @@ public final class KungConfigScreen extends Screen {
     }
 
     private void openTextEditor(SettingEntry setting) {
-        if (setting == null || setting.kind() != Kind.TEXT) {
+        if (setting == null || setting.kind() != SettingKind.TEXT) {
             return;
         }
         textEditor = new TextEditorOverlay(setting);
@@ -467,7 +476,7 @@ public final class KungConfigScreen extends Screen {
     }
 
     private void addClickRegion(int x, int y, int width, int height, ClickAction action) {
-        clickRegions.add(new ClickRegion(x, y, width, height, action));
+        clickRegions.add(new ClickRegion(new UiBounds(x, y, width, height), action));
     }
 
     private int contentWidth() {
@@ -511,7 +520,7 @@ public final class KungConfigScreen extends Screen {
     }
 
     private CategoryScrollArea categoryScrollAreaAt(int mouseX, int mouseY) {
-        int startX = LEFT - horizontalScroll;
+        int startX = LEFT - horizontalScroll.offset();
         int visibleIndex = 0;
         for (CategoryEntry category : categories) {
             if (!categoryMatches(category)) {
@@ -630,117 +639,115 @@ public final class KungConfigScreen extends Screen {
     }
 
     private List<CategoryEntry> createCategories() {
-        DungeonMapOverlayConfig config = DungeonMapOverlayConfig.INSTANCE;
+        KungConfig config = KungConfig.get();
         List<CategoryEntry> result = new ArrayList<>();
         result.add(new CategoryEntry("Dungeon", List.of(
             new FeatureEntry(
                 "Dungeon Map",
-                config::enabled,
-                () -> config.setEnabled(!config.enabled()),
+                config.dungeon::enabled,
+                () -> config.dungeon.setEnabled(!config.dungeon.enabled()),
                 List.of(
-                    SettingEntry.stepper("X Position", config::x, config::setX, -300, 1000, 4),
-                    SettingEntry.stepper("Y Position", config::y, config::setY, -300, 700, 4),
-                    SettingEntry.stepper("Scale", config::scale, config::setScale, 25, 150, 5),
                     SettingEntry.stepper(
                         "Unopened Alpha",
-                        config::unopenedRoomAlpha,
-                        config::setUnopenedRoomAlpha,
+                        config.dungeon::unopenedRoomAlpha,
+                        config.dungeon::setUnopenedRoomAlpha,
                         0,
                         28,
                         2
                     ),
-                    SettingEntry.toggle("Legend", config::showLegend, () -> config.setShowLegend(!config.showLegend())),
+                    SettingEntry.toggle("Legend", config.dungeon::showLegend, () -> config.dungeon.setShowLegend(!config.dungeon.showLegend())),
+                    SettingEntry.toggle("Boss Map", config.dungeon::showInBoss, () -> config.dungeon.setShowInBoss(!config.dungeon.showInBoss())),
                     SettingEntry.toggle(
                         "Prince Icons",
-                        config::princeIconsEnabled,
-                        () -> config.setPrinceIconsEnabled(!config.princeIconsEnabled())
+                        config.dungeon::princeIconsEnabled,
+                        () -> config.dungeon.setPrinceIconsEnabled(!config.dungeon.princeIconsEnabled())
                     ),
                     SettingEntry.toggle(
                         "Force Paul",
-                        config::forcePaulScoreEnabled,
-                        () -> config.setForcePaulScoreEnabled(!config.forcePaulScoreEnabled())
+                        config.dungeon::forcePaulScoreEnabled,
+                        () -> config.dungeon.setForcePaulScoreEnabled(!config.dungeon.forcePaulScoreEnabled())
                     ),
                     SettingEntry.toggle(
                         "Room Debug",
-                        config::debugRoomMatches,
-                        () -> config.setDebugRoomMatches(!config.debugRoomMatches())
+                        config.dungeon::debugRoomMatches,
+                        () -> config.dungeon.setDebugRoomMatches(!config.dungeon.debugRoomMatches())
                     ),
                     SettingEntry.toggle(
                         "Local Data",
-                        config::localRoomDataEnabled,
+                        config.dungeon::localRoomDataEnabled,
                         () -> toggleLocalRoomData(config)
                     )
                 )
             ),
             new FeatureEntry(
                 "Player Stats",
-                config::playerTrackingEnabled,
-                () -> config.setPlayerTrackingEnabled(!config.playerTrackingEnabled()),
+                config.dungeon::playerTrackingEnabled,
+                () -> config.dungeon.setPlayerTrackingEnabled(!config.dungeon.playerTrackingEnabled()),
                 List.of()
             ),
             new FeatureEntry(
                 "Death Messages",
-                config::deathMessagesEnabled,
-                () -> config.setDeathMessagesEnabled(!config.deathMessagesEnabled()),
+                config.dungeon::deathMessagesEnabled,
+                () -> config.dungeon.setDeathMessagesEnabled(!config.dungeon.deathMessagesEnabled()),
                 List.of(
                     SettingEntry.group("Announce To Party").withChildren(List.of(
                         SettingEntry.toggle(
                             "Share Total",
-                            config::deathMessagesShareTotalEnabled,
-                            () -> config.setDeathMessagesShareTotalEnabled(!config.deathMessagesShareTotalEnabled())
+                            config.dungeon::deathMessagesShareTotalEnabled,
+                            () -> config.dungeon.setDeathMessagesShareTotalEnabled(!config.dungeon.deathMessagesShareTotalEnabled())
                         ),
                         SettingEntry.toggle(
                             "Share Individual",
-                            config::deathMessagesShareIndividualEnabled,
-                            () -> config.setDeathMessagesShareIndividualEnabled(!config.deathMessagesShareIndividualEnabled())
+                            config.dungeon::deathMessagesShareIndividualEnabled,
+                            () -> config.dungeon.setDeathMessagesShareIndividualEnabled(!config.dungeon.deathMessagesShareIndividualEnabled())
                         )
                     ))
                 )
             ),
             new FeatureEntry(
                 "Crypts",
-                () -> config.debugRoomCrypts()
-                    || config.cryptProgressPartyMessageEnabled()
-                    || config.fiveCryptTitleEnabled()
-                    || config.fiveCryptPartyMessageEnabled(),
+                () -> config.dungeon.debugRoomCrypts()
+                    || config.dungeon.cryptProgressPartyMessageEnabled()
+                    || config.dungeon.fiveCryptTitleEnabled()
+                    || config.dungeon.fiveCryptPartyMessageEnabled(),
                 null,
                 List.of(
                     SettingEntry.toggle(
                         "Room Crypts",
-                        config::debugRoomCrypts,
-                        () -> config.setDebugRoomCrypts(!config.debugRoomCrypts())
+                        config.dungeon::debugRoomCrypts,
+                        () -> config.dungeon.setDebugRoomCrypts(!config.dungeon.debugRoomCrypts())
                     ),
                     SettingEntry.toggle(
                         "Announce Progress",
-                        config::cryptProgressPartyMessageEnabled,
-                        () -> config.setCryptProgressPartyMessageEnabled(!config.cryptProgressPartyMessageEnabled())
+                        config.dungeon::cryptProgressPartyMessageEnabled,
+                        () -> config.dungeon.setCryptProgressPartyMessageEnabled(!config.dungeon.cryptProgressPartyMessageEnabled())
                     ),
                     SettingEntry.toggle(
                         "5 Crypt Title",
-                        config::fiveCryptTitleEnabled,
-                        () -> config.setFiveCryptTitleEnabled(!config.fiveCryptTitleEnabled())
+                        config.dungeon::fiveCryptTitleEnabled,
+                        () -> config.dungeon.setFiveCryptTitleEnabled(!config.dungeon.fiveCryptTitleEnabled())
                     ),
                     SettingEntry.toggle(
                         "5 Crypts Msg",
-                        config::fiveCryptPartyMessageEnabled,
-                        () -> config.setFiveCryptPartyMessageEnabled(!config.fiveCryptPartyMessageEnabled())
+                        config.dungeon::fiveCryptPartyMessageEnabled,
+                        () -> config.dungeon.setFiveCryptPartyMessageEnabled(!config.dungeon.fiveCryptPartyMessageEnabled())
                     ),
                     SettingEntry.text(
                         "Crypt Msg",
-                        config::fiveCryptPartyMessage,
-                        config::setFiveCryptPartyMessage
+                        config.dungeon::fiveCryptPartyMessage,
+                        config.dungeon::setFiveCryptPartyMessage
                     )
                 )
             ),
             new FeatureEntry(
                 "Blood rush helper",
-                config::bloodRushHelperEnabled,
-                () -> config.setBloodRushHelperEnabled(!config.bloodRushHelperEnabled()),
+                config.bloodRush::enabled,
+                () -> config.bloodRush.setEnabled(!config.bloodRush.enabled()),
                 List.of(
                     SettingEntry.slider(
                         "Title Time",
-                        config::bloodRushHelperTitleDurationTenths,
-                        config::setBloodRushHelperTitleDurationTenths,
+                        config.bloodRush::titleDurationTenths,
+                        config.bloodRush::setTitleDurationTenths,
                         1,
                         50,
                         1
@@ -749,118 +756,114 @@ public final class KungConfigScreen extends Screen {
             ),
             new FeatureEntry(
                 "Dungeon Chat Filter",
-                config::dungeonChatFilterEnabled,
-                () -> config.setDungeonChatFilterEnabled(!config.dungeonChatFilterEnabled()),
+                config.chatFilter::enabled,
+                () -> config.chatFilter.setEnabled(!config.chatFilter.enabled()),
                 List.of(
                     SettingEntry.toggle(
                         "Blessings",
-                        config::dungeonChatFilterBlessings,
-                        () -> config.setDungeonChatFilterBlessings(!config.dungeonChatFilterBlessings())
+                        config.chatFilter::blessings,
+                        () -> config.chatFilter.setBlessings(!config.chatFilter.blessings())
                     ),
                     SettingEntry.toggle(
                         "Loot Spam",
-                        config::dungeonChatFilterLootSpam,
-                        () -> config.setDungeonChatFilterLootSpam(!config.dungeonChatFilterLootSpam())
+                        config.chatFilter::lootSpam,
+                        () -> config.chatFilter.setLootSpam(!config.chatFilter.lootSpam())
                     ),
                     SettingEntry.toggle(
                         "Watcher",
-                        config::dungeonChatFilterWatcher,
-                        () -> config.setDungeonChatFilterWatcher(!config.dungeonChatFilterWatcher())
+                        config.chatFilter::watcher,
+                        () -> config.chatFilter.setWatcher(!config.chatFilter.watcher())
                     ),
                     SettingEntry.toggle(
                         "Boss Messages",
-                        config::dungeonChatFilterBossMessages,
-                        () -> config.setDungeonChatFilterBossMessages(!config.dungeonChatFilterBossMessages())
+                        config.chatFilter::bossMessages,
+                        () -> config.chatFilter.setBossMessages(!config.chatFilter.bossMessages())
                     ).withChildren(List.of(
                         SettingEntry.toggle(
                             "Bonzo",
-                            config::dungeonChatFilterBonzo,
-                            () -> config.setDungeonChatFilterBonzo(!config.dungeonChatFilterBonzo())
+                            config.chatFilter::bonzo,
+                            () -> config.chatFilter.setBonzo(!config.chatFilter.bonzo())
                         ),
                         SettingEntry.toggle(
                             "Scarf",
-                            config::dungeonChatFilterScarf,
-                            () -> config.setDungeonChatFilterScarf(!config.dungeonChatFilterScarf())
+                            config.chatFilter::scarf,
+                            () -> config.chatFilter.setScarf(!config.chatFilter.scarf())
                         ),
                         SettingEntry.toggle(
                             "Professor",
-                            config::dungeonChatFilterProfessor,
-                            () -> config.setDungeonChatFilterProfessor(!config.dungeonChatFilterProfessor())
+                            config.chatFilter::professor,
+                            () -> config.chatFilter.setProfessor(!config.chatFilter.professor())
                         ),
                         SettingEntry.toggle(
                             "Thorn",
-                            config::dungeonChatFilterThorn,
-                            () -> config.setDungeonChatFilterThorn(!config.dungeonChatFilterThorn())
+                            config.chatFilter::thorn,
+                            () -> config.chatFilter.setThorn(!config.chatFilter.thorn())
                         ),
                         SettingEntry.toggle(
                             "Livid",
-                            config::dungeonChatFilterLivid,
-                            () -> config.setDungeonChatFilterLivid(!config.dungeonChatFilterLivid())
+                            config.chatFilter::livid,
+                            () -> config.chatFilter.setLivid(!config.chatFilter.livid())
                         ),
                         SettingEntry.toggle(
                             "Sadan",
-                            config::dungeonChatFilterSadan,
-                            () -> config.setDungeonChatFilterSadan(!config.dungeonChatFilterSadan())
+                            config.chatFilter::sadan,
+                            () -> config.chatFilter.setSadan(!config.chatFilter.sadan())
                         ),
                         SettingEntry.toggle(
                             "Maxor",
-                            config::dungeonChatFilterMaxor,
-                            () -> config.setDungeonChatFilterMaxor(!config.dungeonChatFilterMaxor())
+                            config.chatFilter::maxor,
+                            () -> config.chatFilter.setMaxor(!config.chatFilter.maxor())
                         ),
                         SettingEntry.toggle(
                             "Storm",
-                            config::dungeonChatFilterStorm,
-                            () -> config.setDungeonChatFilterStorm(!config.dungeonChatFilterStorm())
+                            config.chatFilter::storm,
+                            () -> config.chatFilter.setStorm(!config.chatFilter.storm())
                         ),
                         SettingEntry.toggle(
                             "Goldor",
-                            config::dungeonChatFilterGoldor,
-                            () -> config.setDungeonChatFilterGoldor(!config.dungeonChatFilterGoldor())
+                            config.chatFilter::goldor,
+                            () -> config.chatFilter.setGoldor(!config.chatFilter.goldor())
                         ),
                         SettingEntry.toggle(
                             "Necron",
-                            config::dungeonChatFilterNecron,
-                            () -> config.setDungeonChatFilterNecron(!config.dungeonChatFilterNecron())
+                            config.chatFilter::necron,
+                            () -> config.chatFilter.setNecron(!config.chatFilter.necron())
                         ),
                         SettingEntry.toggle(
                             "Wither King",
-                            config::dungeonChatFilterWitherKing,
-                            () -> config.setDungeonChatFilterWitherKing(!config.dungeonChatFilterWitherKing())
+                            config.chatFilter::witherKing,
+                            () -> config.chatFilter.setWitherKing(!config.chatFilter.witherKing())
                         )
                     ))
                 )
             ),
             new FeatureEntry(
                 "Splits Overlay",
-                config::splitsEnabled,
-                () -> config.setSplitsEnabled(!config.splitsEnabled()),
-                List.of(
-                    SettingEntry.stepper("X Position", config::splitsX, config::setSplitsX, -300, 1000, 4),
-                    SettingEntry.stepper("Y Position", config::splitsY, config::setSplitsY, -300, 700, 4),
-                    SettingEntry.stepper("Scale", config::splitsScale, config::setSplitsScale, 25, 300, 5)
-                )
+                config.splits::enabled,
+                () -> config.splits.setEnabled(!config.splits.enabled()),
+                List.of()
             )
         )));
         result.add(new CategoryEntry("Slayer", List.of(
             new FeatureEntry(
                 "Tarantula Helper",
-                config::tarantulaHelperEnabled,
-                () -> config.setTarantulaHelperEnabled(!config.tarantulaHelperEnabled()),
+                config.slayer::tarantulaHelperEnabled,
+                () -> config.slayer.setTarantulaHelperEnabled(!config.slayer.tarantulaHelperEnabled()),
                 List.of(
                     SettingEntry.toggle(
                         "Where Is My Boss",
-                        config::eggSacPredictionRendererEnabled,
-                        () -> config.setEggSacPredictionRendererEnabled(!config.eggSacPredictionRendererEnabled())
+                        config.slayer::eggSacPredictionRendererEnabled,
+                        () -> config.slayer.setEggSacPredictionRendererEnabled(!config.slayer.eggSacPredictionRendererEnabled())
                     ),
                     SettingEntry.toggle(
                         "Egg Sac Prediction",
-                        config::eggSacPredictionEnabled,
-                        () -> config.setEggSacPredictionEnabled(!config.eggSacPredictionEnabled())
+                        config.slayer::eggSacPredictionEnabled,
+                        () -> config.slayer.setEggSacPredictionEnabled(!config.slayer.eggSacPredictionEnabled())
                     ),
                     SettingEntry.choice(
                         "Prediction Mode",
-                        config::eggSacPredictionRenderModeLabel,
-                        config::cycleEggSacPredictionRenderMode
+                        config.slayer::eggSacPredictionRenderModeLabel,
+                        config.slayer::cycleEggSacPredictionRenderMode
                     )
                 )
             )
@@ -868,77 +871,126 @@ public final class KungConfigScreen extends Screen {
         result.add(new CategoryEntry("Util", List.of(
             new FeatureEntry(
                 "Lobby Hop Helper",
-                config::lobbyHopHelperEnabled,
-                () -> config.setLobbyHopHelperEnabled(!config.lobbyHopHelperEnabled()),
+                config.misc::lobbyHopHelperEnabled,
+                () -> config.misc.setLobbyHopHelperEnabled(!config.misc.lobbyHopHelperEnabled()),
                 List.of()
             ),
             new FeatureEntry(
                 "Hypixel API",
-                config::hypixelApiEnabled,
-                () -> config.setHypixelApiEnabled(!config.hypixelApiEnabled()),
+                config.misc::hypixelApiEnabled,
+                () -> config.misc.setHypixelApiEnabled(!config.misc.hypixelApiEnabled()),
                 List.of(
                     SettingEntry.dynamicLabel(HypixelSkyBlockProfileClient.INSTANCE::statusMessage),
-                    SettingEntry.text("API Key", config::hypixelApiKey, config::setHypixelApiKey)
+                    SettingEntry.text("API Key", config.misc::hypixelApiKey, config.misc::setHypixelApiKey)
                 )
             ),
             new FeatureEntry(
                 "Chat Commands",
-                config::chatCommandsEnabled,
-                () -> config.setChatCommandsEnabled(!config.chatCommandsEnabled()),
+                config.misc::chatCommandsEnabled,
+                () -> config.misc.setChatCommandsEnabled(!config.misc.chatCommandsEnabled()),
                 List.of(
                     SettingEntry.toggle(
-                        "Cata 50",
-                        config::ca50ChatCommandEnabled,
-                        () -> config.setCa50ChatCommandEnabled(!config.ca50ChatCommandEnabled())
+                        "!c50",
+                        config.misc::c50ChatCommandEnabled,
+                        () -> config.misc.setC50ChatCommandEnabled(!config.misc.c50ChatCommandEnabled())
                     ).withChildren(List.of(
                         SettingEntry.toggle(
                             "Party",
-                            config::ca50PartyCommandsEnabled,
-                            () -> config.setCa50PartyCommandsEnabled(!config.ca50PartyCommandsEnabled())
+                            config.misc::c50PartyCommandsEnabled,
+                            () -> config.misc.setC50PartyCommandsEnabled(!config.misc.c50PartyCommandsEnabled())
                         ),
                         SettingEntry.toggle(
                             "Guild",
-                            config::ca50GuildCommandsEnabled,
-                            () -> config.setCa50GuildCommandsEnabled(!config.ca50GuildCommandsEnabled())
+                            config.misc::c50GuildCommandsEnabled,
+                            () -> config.misc.setC50GuildCommandsEnabled(!config.misc.c50GuildCommandsEnabled())
                         ),
                         SettingEntry.toggle(
                             "All Chat",
-                            config::ca50AllChatCommandsEnabled,
-                            () -> config.setCa50AllChatCommandsEnabled(!config.ca50AllChatCommandsEnabled())
+                            config.misc::c50AllChatCommandsEnabled,
+                            () -> config.misc.setC50AllChatCommandsEnabled(!config.misc.c50AllChatCommandsEnabled())
                         ),
                         SettingEntry.toggle(
                             "DMs",
-                            config::ca50PrivateCommandsEnabled,
-                            () -> config.setCa50PrivateCommandsEnabled(!config.ca50PrivateCommandsEnabled())
+                            config.misc::c50PrivateCommandsEnabled,
+                            () -> config.misc.setC50PrivateCommandsEnabled(!config.misc.c50PrivateCommandsEnabled())
+                        )
+                    )),
+                    SettingEntry.toggle(
+                        "!ca50",
+                        config.misc::ca50ChatCommandEnabled,
+                        () -> config.misc.setCa50ChatCommandEnabled(!config.misc.ca50ChatCommandEnabled())
+                    ).withChildren(List.of(
+                        SettingEntry.toggle(
+                            "Party",
+                            config.misc::ca50PartyCommandsEnabled,
+                            () -> config.misc.setCa50PartyCommandsEnabled(!config.misc.ca50PartyCommandsEnabled())
+                        ),
+                        SettingEntry.toggle(
+                            "Guild",
+                            config.misc::ca50GuildCommandsEnabled,
+                            () -> config.misc.setCa50GuildCommandsEnabled(!config.misc.ca50GuildCommandsEnabled())
+                        ),
+                        SettingEntry.toggle(
+                            "All Chat",
+                            config.misc::ca50AllChatCommandsEnabled,
+                            () -> config.misc.setCa50AllChatCommandsEnabled(!config.misc.ca50AllChatCommandsEnabled())
+                        ),
+                        SettingEntry.toggle(
+                            "DMs",
+                            config.misc::ca50PrivateCommandsEnabled,
+                            () -> config.misc.setCa50PrivateCommandsEnabled(!config.misc.ca50PrivateCommandsEnabled())
+                        )
+                    )),
+                    SettingEntry.toggle(
+                        "!tps",
+                        config.misc::tpsChatCommandEnabled,
+                        () -> config.misc.setTpsChatCommandEnabled(!config.misc.tpsChatCommandEnabled())
+                    ).withChildren(List.of(
+                        SettingEntry.toggle(
+                            "Party",
+                            config.misc::tpsPartyCommandsEnabled,
+                            () -> config.misc.setTpsPartyCommandsEnabled(!config.misc.tpsPartyCommandsEnabled())
+                        ),
+                        SettingEntry.toggle(
+                            "Guild",
+                            config.misc::tpsGuildCommandsEnabled,
+                            () -> config.misc.setTpsGuildCommandsEnabled(!config.misc.tpsGuildCommandsEnabled())
+                        ),
+                        SettingEntry.toggle(
+                            "All Chat",
+                            config.misc::tpsAllChatCommandsEnabled,
+                            () -> config.misc.setTpsAllChatCommandsEnabled(!config.misc.tpsAllChatCommandsEnabled())
+                        ),
+                        SettingEntry.toggle(
+                            "DMs",
+                            config.misc::tpsPrivateCommandsEnabled,
+                            () -> config.misc.setTpsPrivateCommandsEnabled(!config.misc.tpsPrivateCommandsEnabled())
                         )
                     ))
                 )
             ),
             new FeatureEntry(
                 "Custom Sounds",
-                config::customSoundsEnabled,
-                () -> config.setCustomSoundsEnabled(!config.customSoundsEnabled()),
+                config.misc::customSoundsEnabled,
+                () -> config.misc.setCustomSoundsEnabled(!config.misc.customSoundsEnabled()),
                 customSoundSettings(config)
             ),
             new FeatureEntry(
                 "Loadouts Auto Close",
-                config::loadoutsAutoCloseEnabled,
-                () -> config.setLoadoutsAutoCloseEnabled(!config.loadoutsAutoCloseEnabled()),
+                config.misc::loadoutsAutoCloseEnabled,
+                () -> config.misc.setLoadoutsAutoCloseEnabled(!config.misc.loadoutsAutoCloseEnabled()),
                 loadoutAutoCloseSettings(config)
             ),
             new FeatureEntry(
                 "Superpairs Helper",
-                config::superpairsHelperEnabled,
-                () -> config.setSuperpairsHelperEnabled(!config.superpairsHelperEnabled()),
+                config.misc::superpairsHelperEnabled,
+                () -> config.misc.setSuperpairsHelperEnabled(!config.misc.superpairsHelperEnabled()),
                 List.of(
                     SettingEntry.toggle(
                         "Debug",
-                        config::superpairsHelperDebugEnabled,
-                        () -> config.setSuperpairsHelperDebugEnabled(!config.superpairsHelperDebugEnabled())
-                    ),
-                    SettingEntry.stepper("X Position", config::superpairsHelperX, config::setSuperpairsHelperX, -300, 1000, 4),
-                    SettingEntry.stepper("Y Position", config::superpairsHelperY, config::setSuperpairsHelperY, -300, 700, 4),
-                    SettingEntry.stepper("Scale", config::superpairsHelperScale, config::setSuperpairsHelperScale, 25, 300, 5)
+                        config.misc::superpairsHelperDebugEnabled,
+                        () -> config.misc.setSuperpairsHelperDebugEnabled(!config.misc.superpairsHelperDebugEnabled())
+                    )
                 )
             )
         )));
@@ -952,82 +1004,82 @@ public final class KungConfigScreen extends Screen {
             ),
             new FeatureEntry(
                 "Debug Messages",
-                config::debugMessagesEnabled,
-                () -> config.setDebugMessagesEnabled(!config.debugMessagesEnabled()),
+                config.debug::enabled,
+                () -> config.debug.setEnabled(!config.debug.enabled()),
                 List.of(
                     SettingEntry.toggle(
                         "Context",
-                        config::debugContextMessages,
-                        () -> config.setDebugContextMessages(!config.debugContextMessages())
+                        config.debug::contextMessages,
+                        () -> config.debug.setContextMessages(!config.debug.contextMessages())
                     ),
                     SettingEntry.toggle(
                         "Dungeon",
-                        config::debugMessages,
-                        () -> config.setDebugMessages(!config.debugMessages())
+                        config.debug::dungeonMessages,
+                        () -> config.debug.setDungeonMessages(!config.debug.dungeonMessages())
                     ),
                     SettingEntry.toggle(
                         "Interface",
-                        config::debugInterfaceMessages,
-                        () -> config.setDebugInterfaceMessages(!config.debugInterfaceMessages())
+                        config.debug::interfaceMessages,
+                        () -> config.debug.setInterfaceMessages(!config.debug.interfaceMessages())
                     ),
                     SettingEntry.toggle(
                         "Tarantula",
-                        config::tarantulaHelperDebugMessages,
-                        () -> config.setTarantulaHelperDebugMessages(!config.tarantulaHelperDebugMessages())
+                        config.debug::tarantulaMessages,
+                        () -> config.debug.setTarantulaMessages(!config.debug.tarantulaMessages())
                     ).withChildren(List.of(
                         SettingEntry.toggle(
                             "Slayer Spawned",
-                            config::tarantulaDebugSlayerSpawned,
-                            () -> config.setTarantulaDebugSlayerSpawned(!config.tarantulaDebugSlayerSpawned())
+                            config.slayer::tarantulaDebugSlayerSpawned,
+                            () -> config.slayer.setTarantulaDebugSlayerSpawned(!config.slayer.tarantulaDebugSlayerSpawned())
                         ),
                         SettingEntry.toggle(
                             "Slayer Pos",
-                            config::tarantulaDebugSlayerPosition,
-                            () -> config.setTarantulaDebugSlayerPosition(!config.tarantulaDebugSlayerPosition())
+                            config.slayer::tarantulaDebugSlayerPosition,
+                            () -> config.slayer.setTarantulaDebugSlayerPosition(!config.slayer.tarantulaDebugSlayerPosition())
                         ),
                         SettingEntry.toggle(
                             "Phase Change",
-                            config::tarantulaDebugSlayerPhaseChange,
-                            () -> config.setTarantulaDebugSlayerPhaseChange(!config.tarantulaDebugSlayerPhaseChange())
+                            config.slayer::tarantulaDebugSlayerPhaseChange,
+                            () -> config.slayer.setTarantulaDebugSlayerPhaseChange(!config.slayer.tarantulaDebugSlayerPhaseChange())
                         ),
                         SettingEntry.toggle(
                             "Slayer Dead",
-                            config::tarantulaDebugSlayerDead,
-                            () -> config.setTarantulaDebugSlayerDead(!config.tarantulaDebugSlayerDead())
+                            config.slayer::tarantulaDebugSlayerDead,
+                            () -> config.slayer.setTarantulaDebugSlayerDead(!config.slayer.tarantulaDebugSlayerDead())
                         ),
                         SettingEntry.toggle(
                             "Egg Sac Start",
-                            config::tarantulaDebugEggSacPhaseStart,
-                            () -> config.setTarantulaDebugEggSacPhaseStart(!config.tarantulaDebugEggSacPhaseStart())
+                            config.slayer::tarantulaDebugEggSacPhaseStart,
+                            () -> config.slayer.setTarantulaDebugEggSacPhaseStart(!config.slayer.tarantulaDebugEggSacPhaseStart())
                         ),
                         SettingEntry.toggle(
                             "Egg Sac Done",
-                            config::tarantulaDebugEggSacPhaseDone,
-                            () -> config.setTarantulaDebugEggSacPhaseDone(!config.tarantulaDebugEggSacPhaseDone())
+                            config.slayer::tarantulaDebugEggSacPhaseDone,
+                            () -> config.slayer.setTarantulaDebugEggSacPhaseDone(!config.slayer.tarantulaDebugEggSacPhaseDone())
                         )
                     ))
                 )
             ),
             new FeatureEntry(
                 "Room Sync",
-                config::roomSyncEnabled,
+                config.dungeon::roomSyncEnabled,
                 () -> toggleRoomSync(config),
                 List.of(
                     SettingEntry.dynamicLabel(() -> "Status: " + DungeonRoomDataSyncClient.INSTANCE.menuStatus()),
                     SettingEntry.text(
                         "Server",
-                        config::roomSyncServerUrl,
-                        config::setRoomSyncServerUrl
+                        config.dungeon::roomSyncServerUrl,
+                        config.dungeon::setRoomSyncServerUrl
                     ),
                     SettingEntry.text(
                         "Token",
-                        config::roomSyncToken,
-                        config::setRoomSyncToken
+                        config.dungeon::roomSyncToken,
+                        config.dungeon::setRoomSyncToken
                     ),
                     SettingEntry.toggle(
                         "Upload",
-                        config::roomSyncUploadEnabled,
-                        () -> config.setRoomSyncUploadEnabled(!config.roomSyncUploadEnabled())
+                        config.dungeon::roomSyncUploadEnabled,
+                        () -> config.dungeon.setRoomSyncUploadEnabled(!config.dungeon.roomSyncUploadEnabled())
                     ),
                     SettingEntry.button(
                         "Pull",
@@ -1045,28 +1097,28 @@ public final class KungConfigScreen extends Screen {
         return result;
     }
 
-    private static void toggleRoomSync(DungeonMapOverlayConfig config) {
-        config.setRoomSyncEnabled(!config.roomSyncEnabled());
+    private static void toggleRoomSync(KungConfig config) {
+        config.dungeon.setRoomSyncEnabled(!config.dungeon.roomSyncEnabled());
         DungeonKnownRoomCatalog.reload();
     }
 
-    private static List<SettingEntry> customSoundSettings(DungeonMapOverlayConfig config) {
+    private static List<SettingEntry> customSoundSettings(KungConfig config) {
         List<SettingEntry> settings = new ArrayList<>();
         settings.add(SettingEntry.dynamicLabel(CustomSoundsFeature::soundsFolderStatus));
         settings.add(SettingEntry.button("Scan Folder", "Refresh", CustomSoundsFeature::refreshSoundIndex));
-        settings.add(SettingEntry.text("Arrow Hit Files", config::customArrowHitSounds, config::setCustomArrowHitSounds));
+        settings.add(SettingEntry.text("Arrow Hit Files", config.misc::customArrowHitSounds, config.misc::setCustomArrowHitSounds));
         settings.add(SettingEntry.slider(
             "Arrow Default Volume",
-            config::customArrowHitVolumeTenths,
-            config::setCustomArrowHitVolumeTenths,
+            config.misc::customArrowHitVolumeTenths,
+            config.misc::setCustomArrowHitVolumeTenths,
             0,
             50,
             1
         ));
         settings.add(SettingEntry.slider(
             "Arrow Default Pitch",
-            config::customArrowHitPitchHundredths,
-            config::setCustomArrowHitPitchHundredths,
+            config.misc::customArrowHitPitchHundredths,
+            config.misc::setCustomArrowHitPitchHundredths,
             25,
             300,
             5
@@ -1075,21 +1127,21 @@ public final class KungConfigScreen extends Screen {
         addArrowSoundSettings(settings, config);
         settings.add(SettingEntry.text(
             "Wither End Files",
-            config::customWitherShieldExpireSounds,
-            config::setCustomWitherShieldExpireSounds
+            config.misc::customWitherShieldExpireSounds,
+            config.misc::setCustomWitherShieldExpireSounds
         ));
         settings.add(SettingEntry.slider(
             "Wither Default Volume",
-            config::customWitherShieldExpireVolumeTenths,
-            config::setCustomWitherShieldExpireVolumeTenths,
+            config.misc::customWitherShieldExpireVolumeTenths,
+            config.misc::setCustomWitherShieldExpireVolumeTenths,
             0,
             50,
             1
         ));
         settings.add(SettingEntry.slider(
             "Wither Default Pitch",
-            config::customWitherShieldExpirePitchHundredths,
-            config::setCustomWitherShieldExpirePitchHundredths,
+            config.misc::customWitherShieldExpirePitchHundredths,
+            config.misc::setCustomWitherShieldExpirePitchHundredths,
             25,
             300,
             5
@@ -1099,21 +1151,21 @@ public final class KungConfigScreen extends Screen {
         return List.copyOf(settings);
     }
 
-    private static void addArrowSoundSettings(List<SettingEntry> settings, DungeonMapOverlayConfig config) {
-        for (String soundName : CustomSoundsFeature.configuredSoundNames(config.customArrowHitSounds())) {
+    private static void addArrowSoundSettings(List<SettingEntry> settings, KungConfig config) {
+        for (String soundName : CustomSoundsFeature.configuredSoundNames(config.misc.customArrowHitSounds())) {
             settings.add(SettingEntry.group("Arrow: " + soundName).withChildren(List.of(
                 SettingEntry.slider(
                     "Volume",
-                    () -> config.customArrowHitSoundVolumeTenths(soundName),
-                    value -> config.setCustomArrowHitSoundVolumeTenths(soundName, value),
+                    () -> config.misc.customArrowHitSoundVolumeTenths(soundName),
+                    value -> config.misc.setCustomArrowHitSoundVolumeTenths(soundName, value),
                     0,
                     50,
                     1
                 ),
                 SettingEntry.slider(
                     "Pitch",
-                    () -> config.customArrowHitSoundPitchHundredths(soundName),
-                    value -> config.setCustomArrowHitSoundPitchHundredths(soundName, value),
+                    () -> config.misc.customArrowHitSoundPitchHundredths(soundName),
+                    value -> config.misc.setCustomArrowHitSoundPitchHundredths(soundName, value),
                     25,
                     300,
                     5
@@ -1123,21 +1175,21 @@ public final class KungConfigScreen extends Screen {
         }
     }
 
-    private static void addWitherSoundSettings(List<SettingEntry> settings, DungeonMapOverlayConfig config) {
-        for (String soundName : CustomSoundsFeature.configuredSoundNames(config.customWitherShieldExpireSounds())) {
+    private static void addWitherSoundSettings(List<SettingEntry> settings, KungConfig config) {
+        for (String soundName : CustomSoundsFeature.configuredSoundNames(config.misc.customWitherShieldExpireSounds())) {
             settings.add(SettingEntry.group("Wither: " + soundName).withChildren(List.of(
                 SettingEntry.slider(
                     "Volume",
-                    () -> config.customWitherShieldExpireSoundVolumeTenths(soundName),
-                    value -> config.setCustomWitherShieldExpireSoundVolumeTenths(soundName, value),
+                    () -> config.misc.customWitherShieldExpireSoundVolumeTenths(soundName),
+                    value -> config.misc.setCustomWitherShieldExpireSoundVolumeTenths(soundName, value),
                     0,
                     50,
                     1
                 ),
                 SettingEntry.slider(
                     "Pitch",
-                    () -> config.customWitherShieldExpireSoundPitchHundredths(soundName),
-                    value -> config.setCustomWitherShieldExpireSoundPitchHundredths(soundName, value),
+                    () -> config.misc.customWitherShieldExpireSoundPitchHundredths(soundName),
+                    value -> config.misc.setCustomWitherShieldExpireSoundPitchHundredths(soundName, value),
                     25,
                     300,
                     5
@@ -1147,21 +1199,26 @@ public final class KungConfigScreen extends Screen {
         }
     }
 
-    private static List<SettingEntry> loadoutAutoCloseSettings(DungeonMapOverlayConfig config) {
+    private static List<SettingEntry> loadoutAutoCloseSettings(KungConfig config) {
         List<SettingEntry> settings = new ArrayList<>();
+        settings.add(SettingEntry.toggle(
+            "Close Only On Change",
+            config.misc::loadoutsCloseOnlyOnChange,
+            () -> config.misc.setLoadoutsCloseOnlyOnChange(!config.misc.loadoutsCloseOnlyOnChange())
+        ));
         for (int index = 0; index < 12; index++) {
             int loadoutIndex = index;
             settings.add(SettingEntry.keybind(
                 "Loadout " + (index + 1),
-                () -> LoadoutsAutoCloseFeature.keybindDisplay(config.loadoutKeybind(loadoutIndex)),
-                keybind -> config.setLoadoutKeybind(loadoutIndex, keybind)
+                () -> LoadoutsAutoCloseFeature.keybindDisplay(config.misc.loadoutKeybind(loadoutIndex)),
+                keybind -> config.misc.setLoadoutKeybind(loadoutIndex, keybind)
             ));
         }
         return List.copyOf(settings);
     }
 
-    private static void toggleLocalRoomData(DungeonMapOverlayConfig config) {
-        config.setLocalRoomDataEnabled(!config.localRoomDataEnabled());
+    private static void toggleLocalRoomData(KungConfig config) {
+        config.dungeon.setLocalRoomDataEnabled(!config.dungeon.localRoomDataEnabled());
         DungeonRoomClassifier.reload();
         DungeonKnownRoomCatalog.reload();
     }
@@ -1182,7 +1239,7 @@ public final class KungConfigScreen extends Screen {
         private static final int BUTTON_HEIGHT = 18;
 
         private final SettingEntry setting;
-        private final EditBox editBox;
+        private final UiTextField editBox;
         private int panelX;
         private int panelY;
         private int panelWidth;
@@ -1193,14 +1250,14 @@ public final class KungConfigScreen extends Screen {
 
         private TextEditorOverlay(SettingEntry setting) {
             this.setting = setting;
-            this.editBox = new EditBox(font, 0, 0, Component.literal(setting.label()));
-            this.editBox.setMaxLength(240);
+            this.editBox = new UiTextField(font, Component.literal(setting.label()))
+                .maxLength(240)
+                .canLoseFocus(false)
+                .textShadow(true);
             this.editBox.setFocused(true);
-            this.editBox.setCanLoseFocus(false);
-            this.editBox.setTextShadow(true);
             layout();
             this.editBox.setValue(setting.textValue());
-            this.editBox.moveCursorToEnd(false);
+            this.editBox.moveCursorToEnd();
         }
 
         private void draw(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick) {
@@ -1209,7 +1266,7 @@ public final class KungConfigScreen extends Screen {
             fill(graphics, 0, 0, width, height, MODAL_BACKDROP);
             fill(graphics, panelX - 1, panelY - 1, panelX + panelWidth + 1, panelY + panelHeight + 1, MODAL_BORDER);
             fill(graphics, panelX, panelY, panelX + panelWidth, panelY + panelHeight, MODAL_PANEL);
-            drawCentered(graphics, trimToWidth(setting.label(), panelWidth - 18), width / 2, panelY + 10, TEXT, true);
+            drawCentered(graphics, trimToWidth(setting.label(), panelWidth - 18), width / 2, panelY + 10, THEME.text(), true);
             editBox.extractRenderState(graphics, mouseX, mouseY, partialTick);
             drawButton(graphics, saveX, buttonsY, BUTTON_WIDTH, BUTTON_HEIGHT, "Save", mouseX, mouseY);
             drawButton(graphics, cancelX, buttonsY, BUTTON_WIDTH, BUTTON_HEIGHT, "Cancel", mouseX, mouseY);
@@ -1226,8 +1283,8 @@ public final class KungConfigScreen extends Screen {
             int mouseY
         ) {
             boolean hovered = inside(mouseX, mouseY, x, y, buttonWidth, buttonHeight);
-            fill(graphics, x, y, x + buttonWidth, y + buttonHeight, hovered ? BLUE : BLUE_DARK);
-            drawCentered(graphics, label, x + buttonWidth / 2, y + 5, TEXT, true);
+            fill(graphics, x, y, x + buttonWidth, y + buttonHeight, hovered ? THEME.accent() : THEME.accentDark());
+            drawCentered(graphics, label, x + buttonWidth / 2, y + 5, THEME.text(), true);
         }
 
         private boolean mouseClicked(MouseButtonEvent event, int mouseX, int mouseY, boolean doubleClick) {
@@ -1273,7 +1330,7 @@ public final class KungConfigScreen extends Screen {
         }
 
         private void save() {
-            setting.setText(editBox.getValue());
+            setting.setText(editBox.value());
             textEditor = null;
         }
 
@@ -1286,10 +1343,7 @@ public final class KungConfigScreen extends Screen {
             panelHeight = 86;
             panelX = width / 2 - panelWidth / 2;
             panelY = height / 2 - panelHeight / 2;
-            editBox.setX(panelX + 14);
-            editBox.setY(panelY + 31);
-            editBox.setWidth(panelWidth - 28);
-            editBox.setHeight(20);
+            editBox.setBounds(panelX + 14, panelY + 31, panelWidth - 28, 20);
             buttonsY = panelY + panelHeight - BUTTON_HEIGHT - 10;
             saveX = panelX + panelWidth - BUTTON_WIDTH * 2 - 22;
             cancelX = panelX + panelWidth - BUTTON_WIDTH - 14;
@@ -1301,7 +1355,10 @@ public final class KungConfigScreen extends Screen {
         boolean click(int mouseX, int mouseY, int button);
     }
 
-    private record ClickRegion(int x, int y, int width, int height, ClickAction action) {
+    private record ClickRegion(UiBounds bounds, ClickAction action) {
+    }
+
+    private record TooltipRequest(String text, int x, int y) {
     }
 
     private record CategoryScrollArea(CategoryEntry category, int maxScroll) {
@@ -1340,225 +1397,4 @@ public final class KungConfigScreen extends Screen {
 
     }
 
-    private record SettingEntry(
-        Supplier<String> labelSupplier,
-        Kind kind,
-        BooleanSupplier booleanSupplier,
-        Runnable toggle,
-        IntSupplier intSupplier,
-        IntConsumer intConsumer,
-        int min,
-        int max,
-        int step,
-        Supplier<String> choiceSupplier,
-        Runnable cycleChoice,
-        Supplier<String> textSupplier,
-        Consumer<String> textConsumer,
-        List<SettingEntry> children
-    ) {
-        String label() {
-            return labelSupplier.get();
-        }
-
-        static SettingEntry toggle(String label, BooleanSupplier supplier, Runnable toggle) {
-            return new SettingEntry(() -> label, Kind.TOGGLE, supplier, toggle, null, null, 0, 0, 0, null, null, null, null, List.of());
-        }
-
-        static SettingEntry stepper(
-            String label,
-            IntSupplier supplier,
-            IntConsumer consumer,
-            int min,
-            int max,
-            int step
-        ) {
-            return new SettingEntry(() -> label, Kind.STEPPER, null, null, supplier, consumer, min, max, step, null, null, null, null, List.of());
-        }
-
-        static SettingEntry slider(
-            String label,
-            IntSupplier supplier,
-            IntConsumer consumer,
-            int min,
-            int max,
-            int step
-        ) {
-            return new SettingEntry(() -> label, Kind.SLIDER, null, null, supplier, consumer, min, max, step, null, null, null, null, List.of());
-        }
-
-        static SettingEntry choice(String label, Supplier<String> supplier, Runnable cycle) {
-            return new SettingEntry(() -> label, Kind.CHOICE, null, null, null, null, 0, 0, 0, supplier, cycle, null, null, List.of());
-        }
-
-        static SettingEntry text(String label, Supplier<String> supplier, Consumer<String> consumer) {
-            return new SettingEntry(() -> label, Kind.TEXT, null, null, null, null, 0, 0, 0, null, null, supplier, consumer, List.of());
-        }
-
-        static SettingEntry group(String label) {
-            return new SettingEntry(() -> label, Kind.GROUP, null, null, null, null, 0, 0, 0, null, null, null, null, List.of());
-        }
-
-        static SettingEntry keybind(String label, Supplier<String> supplier, Consumer<String> consumer) {
-            return new SettingEntry(() -> label, Kind.KEYBIND, null, null, null, null, 0, 0, 0, null, null, supplier, consumer, List.of());
-        }
-
-        static SettingEntry dynamicLabel(Supplier<String> labelSupplier) {
-            return new SettingEntry(labelSupplier, Kind.LABEL, null, null, null, null, 0, 0, 0, null, null, null, null, List.of());
-        }
-
-        static SettingEntry button(String label, String text, Runnable action) {
-            return new SettingEntry(() -> label, Kind.BUTTON, null, action, null, null, 0, 0, 0, () -> text, null, null, null, List.of());
-        }
-
-        SettingEntry withChildren(List<SettingEntry> children) {
-            return new SettingEntry(labelSupplier, kind, booleanSupplier, toggle, intSupplier, intConsumer, min, max, step, choiceSupplier, cycleChoice, textSupplier, textConsumer, children);
-        }
-
-        String textValue() {
-            return textSupplier == null ? "" : textSupplier.get();
-        }
-
-        boolean expandable() {
-            return !children.isEmpty();
-        }
-
-        void draw(GuiGraphicsExtractor graphics, int x, int y, int width, int height, boolean capturing) {
-            Minecraft client = Minecraft.getInstance();
-            switch (kind) {
-                case TOGGLE -> {
-                    boolean enabled = booleanSupplier.getAsBoolean();
-                    int toggleX = x + width - 22;
-                    fill(graphics, toggleX, y + 3, toggleX + 20, y + height - 3, enabled ? BLUE : 0xFF111318);
-                    fill(graphics, toggleX + (enabled ? 11 : 3), y + 5, toggleX + (enabled ? 17 : 9), y + height - 5, TEXT);
-                }
-                case STEPPER -> {
-                    int value = intSupplier.getAsInt();
-                    fill(graphics, x + 1, y + 3, x + 13, y + height - 3, BLUE_DARK);
-                    fill(graphics, x + width - 13, y + 3, x + width - 1, y + height - 3, BLUE_DARK);
-                    graphics.text(client.font, "-", x + 5, y + 4, TEXT, true);
-                    graphics.text(client.font, "+", x + width - 10, y + 4, TEXT, true);
-                    String lowerLabel = label().toLowerCase(Locale.ROOT);
-                    String valueText = value + (lowerLabel.contains("scale") || lowerLabel.contains("alpha") ? "%" : "");
-                    graphics.text(client.font, valueText, x + width / 2 - client.font.width(valueText) / 2, y + 4, TEXT, true);
-                }
-                case SLIDER -> {
-                    int value = intSupplier.getAsInt();
-                    int trackLeft = x + 2;
-                    int trackRight = x + width - 2;
-                    int trackY = y + height / 2 - 1;
-                    double progress = max <= min ? 0.0 : (double) (value - min) / (double) (max - min);
-                    int knobX = trackLeft + (int) Math.round(progress * (trackRight - trackLeft));
-                    fill(graphics, trackLeft, trackY, trackRight, trackY + 2, BLUE_DARK);
-                    fill(graphics, trackLeft, trackY, knobX, trackY + 2, BLUE);
-                    fill(graphics, knobX - 2, y + 3, knobX + 2, y + height - 3, TEXT);
-                    String lowerLabel = label().toLowerCase(Locale.ROOT);
-                    String valueText = lowerLabel.contains("volume")
-                        ? String.format(Locale.ROOT, "x%.1f", value / 10.0)
-                        : lowerLabel.contains("pitch")
-                            ? String.format(Locale.ROOT, "x%.2f", value / 100.0)
-                            : String.format(Locale.ROOT, "%.1fs", value / 10.0);
-                    graphics.text(client.font, valueText, x + width / 2 - client.font.width(valueText) / 2, y + 4, TEXT, true);
-                }
-                case CHOICE -> {
-                    String text = choiceSupplier.get();
-                    fill(graphics, x + 1, y + 3, x + width - 1, y + height - 3, BLUE_DARK);
-                    graphics.text(client.font, text, x + width / 2 - client.font.width(text) / 2, y + 4, TEXT, true);
-                }
-                case LABEL -> {
-                    String text = label();
-                    graphics.text(client.font, text, x + width - client.font.width(text), y + 4, MUTED, true);
-                }
-                case BUTTON -> {
-                    String text = choiceSupplier.get();
-                    fill(graphics, x + 1, y + 3, x + width - 1, y + height - 3, BLUE_DARK);
-                    graphics.text(client.font, text, x + width / 2 - client.font.width(text) / 2, y + 4, TEXT, true);
-                }
-                case GROUP -> {
-                }
-                case TEXT -> {
-                    String text = textSupplier.get();
-                    fill(graphics, x + 1, y + 3, x + width - 1, y + height - 3, BLUE_DARK);
-                    String shown = client.font.plainSubstrByWidth(text, width - 8);
-                    graphics.text(client.font, shown, x + 4, y + 4, TEXT, true);
-                }
-                case KEYBIND -> {
-                    String text = capturing ? "Press..." : textSupplier.get();
-                    fill(graphics, x + 1, y + 3, x + width - 1, y + height - 3, capturing ? BLUE : BLUE_DARK);
-                    String shown = client.font.plainSubstrByWidth(text, width - 8);
-                    graphics.text(client.font, shown, x + width / 2 - client.font.width(shown) / 2, y + 4, TEXT, true);
-                }
-            }
-        }
-
-        void click(int mouseX, int x, int width) {
-            switch (kind) {
-                case TOGGLE -> toggle.run();
-                case STEPPER -> {
-                    int value = intSupplier.getAsInt();
-                    int next = mouseX < x + width / 2
-                        ? value - step
-                        : value + step;
-                    intConsumer.accept(Math.clamp(next, min, max));
-                }
-                case SLIDER -> {
-                    int trackLeft = x + 2;
-                    int trackRight = x + width - 2;
-                    double progress = trackRight <= trackLeft
-                        ? 0.0
-                        : (double) (mouseX - trackLeft) / (double) (trackRight - trackLeft);
-                    int rawValue = min + (int) Math.round(Math.clamp(progress, 0.0, 1.0) * (max - min));
-                    int stepped = min + Math.round((float) (rawValue - min) / (float) step) * step;
-                    intConsumer.accept(Math.clamp(stepped, min, max));
-                }
-                case CHOICE -> cycleChoice.run();
-                case BUTTON -> toggle.run();
-                case TEXT -> {
-                }
-                case KEYBIND -> {
-                }
-                case LABEL -> {
-                }
-                case GROUP -> {
-                }
-            }
-        }
-
-        void appendText(String text) {
-            if (kind != Kind.TEXT || textConsumer == null || text == null) {
-                return;
-            }
-            String current = textSupplier.get();
-            if (current.length() + text.length() <= 120) {
-                textConsumer.accept(current + text);
-            }
-        }
-
-        void backspaceText() {
-            if (kind != Kind.TEXT || textConsumer == null) {
-                return;
-            }
-            String current = textSupplier.get();
-            if (!current.isEmpty()) {
-                textConsumer.accept(current.substring(0, current.length() - 1));
-            }
-        }
-
-        void setText(String text) {
-            if ((kind == Kind.TEXT || kind == Kind.KEYBIND) && textConsumer != null) {
-                textConsumer.accept(text);
-            }
-        }
-    }
-
-    private enum Kind {
-        TOGGLE,
-        STEPPER,
-        SLIDER,
-        CHOICE,
-        TEXT,
-        KEYBIND,
-        LABEL,
-        BUTTON,
-        GROUP
-    }
 }

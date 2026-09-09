@@ -1,8 +1,9 @@
 package com.github.beng420.kung.feature.screen;
 
-import com.github.beng420.kung.feature.dungeon.DungeonMapOverlayConfig;
+import com.github.beng420.kung.config.KungConfig;
+
 import com.github.beng420.kung.feature.misc.LoadoutsAutoCloseFeature;
-import com.github.beng420.kung.util.KungChat;
+import com.github.beng420.kung.message.KungMessages;
 import com.github.beng420.kung.util.KungDebugRecorder;
 import java.util.Locale;
 import java.util.function.Predicate;
@@ -58,9 +59,9 @@ public final class ScreenTracker {
                 + " container=" + nextScreen.container());
         if (nextScreen != null
             && nextScreen.container()
-            && DungeonMapOverlayConfig.INSTANCE.interfaceDebugMessagesEnabled()
+            && KungConfig.get().debug.interfaceMessagesEnabled()
             && client.player != null) {
-            client.player.sendSystemMessage(KungChat.message(
+            client.player.sendSystemMessage(KungMessages.debug(
                 "Debug",
                 "Opened interface: "
                     + nextScreen.title()

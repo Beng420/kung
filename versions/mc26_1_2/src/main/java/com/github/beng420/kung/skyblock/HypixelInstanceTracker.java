@@ -1,7 +1,8 @@
 package com.github.beng420.kung.skyblock;
 
-import com.github.beng420.kung.feature.dungeon.DungeonMapOverlayConfig;
-import com.github.beng420.kung.util.KungChat;
+import com.github.beng420.kung.config.KungConfig;
+import com.github.beng420.kung.config.category.DebugConfig;
+import com.github.beng420.kung.message.KungMessages;
 import com.github.beng420.kung.util.KungDebugRecorder;
 import java.lang.reflect.Field;
 import java.util.ArrayList;
@@ -27,7 +28,7 @@ public final class HypixelInstanceTracker {
         Pattern.compile("\\b(?:mini\\d{1,5}|mega\\d{1,5}|m\\d{2,5})[a-z]{0,4}\\b", Pattern.CASE_INSENSITIVE);
     private static final Pattern LOCATION_LINE_PATTERN =
         Pattern.compile("^(?:\\s*\\u23e3\\s*)?(?:Area|Location)\\s*:\\s*(?<location>.+)$", Pattern.CASE_INSENSITIVE);
-    private static final long PENDING_INSTANCE_TTL_TICKS = 100L;
+    private static final long PENDING_INSTANCE_TTL_TICKS = 400L;
     private static final long PENDING_TRANSFER_SERVER_TTL_TICKS = 200L;
     private static final long CURRENT_TRANSFER_SERVER_TTL_TICKS = 24_000L;
 
@@ -139,6 +140,14 @@ public final class HypixelInstanceTracker {
         return tracking && !dungeonHub && (catacombs || dungeonRunContext);
     }
 
+    public boolean pendingCatacombs() {
+        return tracking
+            && !dungeonHub
+            && isCatacombsInstance(pendingInstanceLine)
+            && recentlyObservedPendingInstance()
+            && pendingInstanceServerReady();
+    }
+
     public boolean dungeonRunContext() {
         return tracking && !dungeonHub && dungeonRunContext;
     }
@@ -225,8 +234,7 @@ public final class HypixelInstanceTracker {
         }
         dungeonRunContext = catacombs || dungeonStartCountdown || dungeonMarkerCount >= 2;
         boolean pendingInstanceAvailable = !pendingInstanceLine.isBlank() && recentlyObservedPendingInstance();
-        boolean pendingInstanceServerReady = !pendingInstanceRequiresNewServer
-            || lastWorldTransferServerTick >= lastPendingInstanceTick;
+        boolean pendingInstanceServerReady = pendingInstanceServerReady();
         boolean usingPendingInstance = instanceLine.isBlank() && pendingInstanceAvailable && pendingInstanceServerReady;
         if (usingPendingInstance) {
             instanceLine = pendingInstanceLine;
@@ -269,8 +277,9 @@ public final class HypixelInstanceTracker {
         if (!context.equals(lastAnnouncedContext)) {
             lastAnnouncedContext = context;
             KungDebugRecorder.event("context", "announce Entered " + context);
-            if (DungeonMapOverlayConfig.INSTANCE.contextDebugMessagesEnabled()) {
-                client.player.sendSystemMessage(KungChat.message("Context", "Entered " + context));
+            DebugConfig debug = KungConfig.get().debug;
+            if (debug.contextMessagesEnabled()) {
+                client.player.sendSystemMessage(KungMessages.debug("Context", "Entered " + context));
             }
         }
     }
@@ -430,6 +439,11 @@ public final class HypixelInstanceTracker {
             && tickCounter - lastWorldTransferServerTick <= CURRENT_TRANSFER_SERVER_TTL_TICKS;
     }
 
+    private boolean pendingInstanceServerReady() {
+        return !pendingInstanceRequiresNewServer
+            || lastWorldTransferServerTick >= lastPendingInstanceTick;
+    }
+
     private static boolean isDungeonRunMarker(String lowerLine) {
         return lowerLine.contains("catacombs")
             || lowerLine.contains("dungeon starts")
@@ -479,6 +493,10 @@ public final class HypixelInstanceTracker {
             return location.isBlank() ? "" : location;
         }
         return "";
+    }
+
+    private static boolean isCatacombsInstance(String value) {
+        return value != null && value.toLowerCase(Locale.ROOT).contains("catacombs");
     }
 
     private static String serverIdFrom(String line) {
@@ -651,5 +669,4 @@ public final class HypixelInstanceTracker {
     private static String blank(String value) {
         return value == null || value.isBlank() ? "?" : KungDebugRecorder.compact(value);
     }
-
 }

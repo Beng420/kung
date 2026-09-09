@@ -1,5 +1,7 @@
 package com.github.beng420.kung.feature.dungeon;
 
+import com.github.beng420.kung.config.KungConfig;
+
 import com.github.beng420.kung.KungMod;
 import com.github.beng420.kung.feature.dungeon.room.RoomType;
 import com.google.gson.Gson;
@@ -24,7 +26,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import net.fabricmc.loader.api.FabricLoader;
+import com.github.beng420.kung.runtime.KungPaths;
 
 public final class DungeonKnownRoomCatalog {
     private static final int MIN_SOFT_MATCHED_COMPONENTS = 2;
@@ -48,32 +50,32 @@ public final class DungeonKnownRoomCatalog {
         -1338494642, BLAZE_PRELOAD_HINT
     );
     private static final Map<String, CanonicalRoomMetadata> CANONICAL_METADATA_OVERRIDES = Map.ofEntries(
-        Map.entry(canonicalNameKey("Mini Waterfall"), new CanonicalRoomMetadata("Small Waterfall", RoomType.NORMAL, 2, 5)),
-        Map.entry(canonicalNameKey("Withermancers"), new CanonicalRoomMetadata("Withermancer", RoomType.NORMAL, 4, 6)),
-        Map.entry(canonicalNameKey("Dino Dig Site"), new CanonicalRoomMetadata("Dino Site", RoomType.NORMAL, 4, 4)),
-        Map.entry(canonicalNameKey("Super Tall"), new CanonicalRoomMetadata("Supertall", RoomType.NORMAL, 6, 6)),
-        Map.entry(canonicalNameKey("Haning Vines"), new CanonicalRoomMetadata("Hanging Vines", RoomType.NORMAL, 1, 0)),
-        Map.entry(canonicalNameKey("Rail Track"), new CanonicalRoomMetadata("Rails", RoomType.NORMAL, 9, 1)),
-        Map.entry(canonicalNameKey("Lots of Floors"), new CanonicalRoomMetadata("Lots Of Floors", RoomType.NORMAL, 3, 1)),
-        Map.entry(canonicalNameKey("Midas"), new CanonicalRoomMetadata("King Midas", RoomType.YELLOW, 0, 1)),
-        Map.entry(canonicalNameKey("Sewer"), new CanonicalRoomMetadata("Pipes", RoomType.NORMAL, 7, 9)),
-        Map.entry(canonicalNameKey("Redstone Skull"), new CanonicalRoomMetadata("Redstone Crypt", RoomType.NORMAL, 3, 0)),
-        Map.entry(canonicalNameKey("Double Stair"), new CanonicalRoomMetadata("Staircase", RoomType.NORMAL, 3, 2)),
-        Map.entry(canonicalNameKey("Silver Swords"), new CanonicalRoomMetadata("Silvers Sword", RoomType.NORMAL, 1, 0)),
-        Map.entry(canonicalNameKey("Lava Skull"), new CanonicalRoomMetadata("Lava Pit", RoomType.NORMAL, 3, 1)),
-        Map.entry(canonicalNameKey("Lava Tomb"), new CanonicalRoomMetadata("Lava Pit", RoomType.NORMAL, 3, 1)),
-        Map.entry(canonicalNameKey("Draw Bridge"), new CanonicalRoomMetadata("Bridges", RoomType.NORMAL, 6, 6)),
-        Map.entry(canonicalNameKey("Four Banner"), new CanonicalRoomMetadata("Banners", RoomType.NORMAL, 1, 1)),
-        Map.entry(canonicalNameKey("Black Flag"), new CanonicalRoomMetadata("Black Flag", RoomType.NORMAL, 3, 1)),
-        Map.entry(canonicalNameKey("Ritual"), new CanonicalRoomMetadata("Ritual", RoomType.NORMAL, 3, 1)),
-        Map.entry(canonicalNameKey("Three Weirdos"), new CanonicalRoomMetadata("Three Weirdos", RoomType.PUZZLE, 0, 0)),
-        Map.entry(canonicalNameKey("Water Board"), new CanonicalRoomMetadata("Water Board", RoomType.PUZZLE, 0, 0)),
-        Map.entry(canonicalNameKey("Ice Fill"), new CanonicalRoomMetadata("Ice Fill", RoomType.PUZZLE, 0, 0)),
-        Map.entry(canonicalNameKey("Teleport Maze"), new CanonicalRoomMetadata("Teleport Maze", RoomType.PUZZLE, 0, 0)),
-        Map.entry(canonicalNameKey("Boulder"), new CanonicalRoomMetadata("Boulder", RoomType.PUZZLE, 0, 0)),
-        Map.entry(canonicalNameKey("Ice Path"), new CanonicalRoomMetadata("Ice Path", RoomType.PUZZLE, 0, 0))
+        Map.entry(canonicalNameKey("Mini Waterfall"), new CanonicalRoomMetadata("Small Waterfall", RoomType.NORMAL, 2, 5, false)),
+        Map.entry(canonicalNameKey("Withermancers"), new CanonicalRoomMetadata("Withermancer", RoomType.NORMAL, 4, 6, true)),
+        Map.entry(canonicalNameKey("Dino Dig Site"), new CanonicalRoomMetadata("Dino Site", RoomType.NORMAL, 4, 4, false)),
+        Map.entry(canonicalNameKey("Super Tall"), new CanonicalRoomMetadata("Supertall", RoomType.NORMAL, 6, 6, true)),
+        Map.entry(canonicalNameKey("Haning Vines"), new CanonicalRoomMetadata("Hanging Vines", RoomType.NORMAL, 1, 0, false)),
+        Map.entry(canonicalNameKey("Rail Track"), new CanonicalRoomMetadata("Rails", RoomType.NORMAL, 9, 1, false)),
+        Map.entry(canonicalNameKey("Lots of Floors"), new CanonicalRoomMetadata("Lots Of Floors", RoomType.NORMAL, 3, 1, false)),
+        Map.entry(canonicalNameKey("Midas"), new CanonicalRoomMetadata("King Midas", RoomType.YELLOW, 0, 1, false)),
+        Map.entry(canonicalNameKey("Sewer"), new CanonicalRoomMetadata("Pipes", RoomType.NORMAL, 7, 9, false)),
+        Map.entry(canonicalNameKey("Redstone Skull"), new CanonicalRoomMetadata("Redstone Crypt", RoomType.NORMAL, 3, 0, false)),
+        Map.entry(canonicalNameKey("Double Stair"), new CanonicalRoomMetadata("Staircase", RoomType.NORMAL, 3, 2, false)),
+        Map.entry(canonicalNameKey("Silver Swords"), new CanonicalRoomMetadata("Silvers Sword", RoomType.NORMAL, 1, 0, false)),
+        Map.entry(canonicalNameKey("Lava Skull"), new CanonicalRoomMetadata("Lava Pit", RoomType.NORMAL, 3, 1, false)),
+        Map.entry(canonicalNameKey("Lava Tomb"), new CanonicalRoomMetadata("Lava Pit", RoomType.NORMAL, 3, 1, false)),
+        Map.entry(canonicalNameKey("Draw Bridge"), new CanonicalRoomMetadata("Bridges", RoomType.NORMAL, 6, 6, true)),
+        Map.entry(canonicalNameKey("Four Banner"), new CanonicalRoomMetadata("Banners", RoomType.NORMAL, 1, 1, false)),
+        Map.entry(canonicalNameKey("Black Flag"), new CanonicalRoomMetadata("Black Flag", RoomType.NORMAL, 3, 1, false)),
+        Map.entry(canonicalNameKey("Ritual"), new CanonicalRoomMetadata("Ritual", RoomType.NORMAL, 3, 1, false)),
+        Map.entry(canonicalNameKey("Three Weirdos"), new CanonicalRoomMetadata("Three Weirdos", RoomType.PUZZLE, 0, 0, false)),
+        Map.entry(canonicalNameKey("Water Board"), new CanonicalRoomMetadata("Water Board", RoomType.PUZZLE, 0, 0, false)),
+        Map.entry(canonicalNameKey("Ice Fill"), new CanonicalRoomMetadata("Ice Fill", RoomType.PUZZLE, 0, 0, false)),
+        Map.entry(canonicalNameKey("Teleport Maze"), new CanonicalRoomMetadata("Teleport Maze", RoomType.PUZZLE, 0, 0, false)),
+        Map.entry(canonicalNameKey("Boulder"), new CanonicalRoomMetadata("Boulder", RoomType.PUZZLE, 0, 0, false)),
+        Map.entry(canonicalNameKey("Ice Path"), new CanonicalRoomMetadata("Ice Path", RoomType.PUZZLE, 0, 0, false))
     );
-    private static final Set<String> PRINCE_ROOM_NAMES = canonicalNameSet(
+    private static final Set<String> LEGACY_PRINCE_ROOM_NAMES = canonicalNameSet(
         "Big Red Flag",
         "Bridges",
         "Draw Bridge",
@@ -95,7 +97,7 @@ public final class DungeonKnownRoomCatalog {
         "Withermancer",
         "Withermancers"
     );
-    private static final Set<String> NON_PRINCE_ROOM_NAMES = canonicalNameSet(
+    private static final Set<String> LEGACY_NON_PRINCE_ROOM_NAMES = canonicalNameSet(
         "Admin",
         "Altar",
         "Andesite",
@@ -256,7 +258,7 @@ public final class DungeonKnownRoomCatalog {
         List<String> lines = new ArrayList<>(Files.readAllLines(file, StandardCharsets.UTF_8));
         int lastEntryIndex = lastNonBlankLineIndex(lines);
         if (lastEntryIndex < 0) {
-            return UndoResult.nothingToUndo("known-rooms.jsonl ist leer.");
+            return UndoResult.nothingToUndo("known-rooms.jsonl is empty.");
         }
 
         String undoneLine = lines.remove(lastEntryIndex);
@@ -264,31 +266,31 @@ public final class DungeonKnownRoomCatalog {
         appendUndoneLine(undoneLine);
         invalidateTemplateCache();
 
-        return UndoResult.undone("Letzter Room-Learn-Eintrag wurde entfernt: " + shortLine(undoneLine));
+        return UndoResult.undone("Removed the last learned room entry: " + shortLine(undoneLine));
     }
 
     private static UndoResult undoLastJsonLearn() throws IOException {
         Path file = knownRoomsFile();
         if (!Files.exists(file)) {
-            return UndoResult.nothingToUndo("Es gibt noch keine known-rooms.json.");
+            return UndoResult.nothingToUndo("known-rooms.json does not exist yet.");
         }
 
         JsonObject root = JsonParser.parseString(stripBom(Files.readString(file, StandardCharsets.UTF_8).trim()))
             .getAsJsonObject();
         JsonArray rooms = root.getAsJsonArray("rooms");
         if (rooms == null || rooms.isEmpty()) {
-            return UndoResult.nothingToUndo("known-rooms.json ist leer.");
+            return UndoResult.nothingToUndo("known-rooms.json is empty.");
         }
 
         LatestJsonLearn latest = latestJsonLearn(rooms);
         if (latest == null) {
-            return UndoResult.nothingToUndo("Kein lokaler JSON-Room-Learn zum Rueckgaengigmachen gefunden.");
+            return UndoResult.nothingToUndo("No local learned JSON room entry was found to undo.");
         }
 
         int removedHashes = removeJsonLearnBurst(rooms, latest);
         Files.writeString(file, PRETTY_GSON.toJson(root) + "\n", StandardCharsets.UTF_8);
         return UndoResult.undone(
-            "Letzter JSON-Room-Learn wurde entfernt: "
+            "Removed the last learned JSON room entry: "
                 + latest.name()
                 + " "
                 + latest.type()
@@ -391,8 +393,16 @@ public final class DungeonKnownRoomCatalog {
 
     public static List<MatchedRoom> matchKnownRooms(DungeonMapSnapshot snapshot) {
         TemplateCache templateCache = templateCache();
+        return matchKnownRooms(snapshot, templateCache.templates(), templateCache.knownCoreHints());
+    }
+
+    static List<MatchedRoom> matchKnownRooms(
+        DungeonMapSnapshot snapshot,
+        List<RoomTemplate> templates,
+        Map<Integer, KnownCoreHint> knownCoreHints
+    ) {
         List<RoomTemplateVariant> variants = new ArrayList<>();
-        for (RoomTemplate template : templateCache.templates()) {
+        for (RoomTemplate template : templates) {
             variants.addAll(template.variants());
         }
 
@@ -419,9 +429,9 @@ public final class DungeonKnownRoomCatalog {
             }
         }
 
-        addCoreHintMatches(snapshot, templateCache.knownCoreHints(), occupiedCells, matches);
-        addSoftMatches(snapshot, variants, templateCache.knownCoreHints(), occupiedCells, matches);
-        expandAdjacentKnownRoomHints(snapshot, templateCache.knownCoreHints(), variants, occupiedCells, matches);
+        addCoreHintMatches(snapshot, knownCoreHints, occupiedCells, matches);
+        addSoftMatches(snapshot, variants, knownCoreHints, occupiedCells, matches);
+        expandAdjacentKnownRoomHints(snapshot, knownCoreHints, variants, occupiedCells, matches);
 
         return matches;
     }
@@ -455,7 +465,8 @@ public final class DungeonKnownRoomCatalog {
                 template.name(),
                 template.type(),
                 template.secrets(),
-                template.crypts()
+                template.crypts(),
+                template.prince()
             ));
         }
         for (KnownCoreHint hint : templateCache.knownCoreHints().values()) {
@@ -466,7 +477,8 @@ public final class DungeonKnownRoomCatalog {
                 hint.name(),
                 hint.type(),
                 hint.secrets(),
-                hint.crypts()
+                hint.crypts(),
+                hint.prince()
             ));
         }
         return List.copyOf(infos.values());
@@ -483,7 +495,8 @@ public final class DungeonKnownRoomCatalog {
                 template.name(),
                 template.type(),
                 template.secrets(),
-                template.crypts()
+                template.crypts(),
+                template.prince()
             ));
         }
         for (Map.Entry<Integer, KnownCoreHint> entry : templateCache.knownCoreHints().entrySet()) {
@@ -496,7 +509,8 @@ public final class DungeonKnownRoomCatalog {
                 hint.name(),
                 hint.type(),
                 hint.secrets(),
-                hint.crypts()
+                hint.crypts(),
+                hint.prince()
             ));
         }
         return List.copyOf(infos.values());
@@ -546,7 +560,7 @@ public final class DungeonKnownRoomCatalog {
         MatchedRoom match,
         DungeonMapSnapshot snapshot
     ) throws IOException {
-        if (!DungeonMapOverlayConfig.INSTANCE.localRoomDataEnabled()) {
+        if (!KungConfig.get().dungeon.localRoomDataEnabled()) {
             return AutoLearnResult.none();
         }
         if (match == null || snapshot == null || match.components().isEmpty()) {
@@ -595,7 +609,7 @@ public final class DungeonKnownRoomCatalog {
     }
 
     public static void recordObservedCoreTransition(int previousCoreHash, int knownCoreHash, int knownStableCoreHash) {
-        if (!DungeonMapOverlayConfig.INSTANCE.localRoomDataEnabled()) {
+        if (!KungConfig.get().dungeon.localRoomDataEnabled()) {
             return;
         }
         int trustedKnownHash = knownCoreHash;
@@ -721,22 +735,24 @@ public final class DungeonKnownRoomCatalog {
             readRoomDatabase(bundledJson, database);
         }
 
-        try {
-            Path legacyFile = legacyKnownRoomsFile();
-            if (Files.exists(legacyFile)) {
-                order = readLearnedRooms(Files.readAllLines(legacyFile, StandardCharsets.UTF_8), learnedRooms, order);
+        if (KungConfig.get().dungeon.localRoomDataEnabled()) {
+            try {
+                Path legacyFile = legacyKnownRoomsFile();
+                if (Files.exists(legacyFile)) {
+                    order = readLearnedRooms(Files.readAllLines(legacyFile, StandardCharsets.UTF_8), learnedRooms, order);
+                }
+            } catch (IOException | RuntimeException exception) {
+                KungMod.LOGGER.warn("Failed to load legacy dungeon room data.", exception);
             }
-        } catch (IOException | RuntimeException exception) {
-            KungMod.LOGGER.warn("Failed to load legacy dungeon room data.", exception);
-        }
 
-        learnedRooms = deduplicateByLatestCoreHash(learnedRooms);
-        for (RoomTemplate template : templatesFromLearnBursts(learnedRooms)) {
-            database.merge(template);
+            learnedRooms = deduplicateByLatestCoreHash(learnedRooms);
+            for (RoomTemplate template : templatesFromLearnBursts(learnedRooms)) {
+                database.merge(template);
+            }
         }
 
         Path remoteFile = remoteKnownRoomsFile();
-        if (DungeonMapOverlayConfig.INSTANCE.roomSyncEnabled() && Files.exists(remoteFile)) {
+        if (KungConfig.get().dungeon.roomSyncEnabled() && Files.exists(remoteFile)) {
             try {
                 readRoomDatabase(Files.readString(remoteFile, StandardCharsets.UTF_8), database);
             } catch (IOException | RuntimeException exception) {
@@ -744,7 +760,7 @@ public final class DungeonKnownRoomCatalog {
             }
         }
 
-        if (Files.exists(file)) {
+        if (KungConfig.get().dungeon.localRoomDataEnabled() && Files.exists(file)) {
             try {
                 readRoomDatabase(Files.readString(file, StandardCharsets.UTF_8), database);
             } catch (IOException | RuntimeException exception) {
@@ -842,10 +858,14 @@ public final class DungeonKnownRoomCatalog {
                 roomObject.get("secrets").getAsInt()
             );
             int crypts = roomObject.has("crypts") ? roomObject.get("crypts").getAsInt() : 0;
-            CanonicalRoomMetadata metadata = canonicalMetadata(rawKey.name(), rawKey.type(), rawKey.secrets(), crypts);
+            boolean prince = roomObject.has("prince")
+                ? roomObject.get("prince").getAsBoolean()
+                : legacyHasPrince(rawKey.name());
+            CanonicalRoomMetadata metadata = canonicalMetadata(rawKey.name(), rawKey.type(), rawKey.secrets(), crypts, prince);
             TemplateKey key = new TemplateKey(metadata.name(), metadata.type(), metadata.secrets());
             crypts = metadata.crypts();
-            database.ensureRoom(key, crypts);
+            prince = metadata.prince();
+            database.ensureRoom(key, crypts, prince);
             JsonArray variants = roomObject.getAsJsonArray("variants");
             if (variants == null) {
                 continue;
@@ -872,6 +892,7 @@ public final class DungeonKnownRoomCatalog {
                         key.type(),
                         key.secrets(),
                         crypts,
+                        prince,
                         variantNumber++,
                         List.copyOf(templateComponents)
                     ));
@@ -1011,6 +1032,7 @@ public final class DungeonKnownRoomCatalog {
             key.type(),
             key.secrets(),
             maxCrypts(burst),
+            legacyHasPrince(key.name()),
             templates.size(),
             componentsByCell.values().stream().map(ComponentBuilder::build).toList()
         ));
@@ -1299,6 +1321,7 @@ public final class DungeonKnownRoomCatalog {
             hint.type(),
             hint.secrets(),
             hint.crypts(),
+            hint.prince(),
             -1,
             List.of()
         );
@@ -1330,7 +1353,8 @@ public final class DungeonKnownRoomCatalog {
                     template.name(),
                     template.type(),
                     template.secrets(),
-                    template.crypts()
+                    template.crypts(),
+                    template.prince()
                 );
                 for (int coreHash : component.coreHashes()) {
                     hints.putIfAbsent(
@@ -1440,7 +1464,7 @@ public final class DungeonKnownRoomCatalog {
             MIN_DYNAMIC_PRELOAD_OBSERVATIONS
         );
         Path file = knownRoomPreloadsFile();
-        if (Files.exists(file)) {
+        if (KungConfig.get().dungeon.localRoomDataEnabled() && Files.exists(file)) {
             try {
                 readPreloadObservations(Files.readAllLines(file, StandardCharsets.UTF_8), observations, 1);
             } catch (IOException | RuntimeException exception) {
@@ -1614,6 +1638,7 @@ public final class DungeonKnownRoomCatalog {
             key.type(),
             key.secrets(),
             maxCrypts(group),
+            legacyHasPrince(key.name()),
             variantNumber++,
             componentsByCell.values().stream().map(ComponentBuilder::build).toList()
         ));
@@ -1692,7 +1717,10 @@ public final class DungeonKnownRoomCatalog {
         RoomType type = RoomType.valueOf(object.get("type").getAsString());
         int secrets = object.get("secrets").getAsInt();
         int crypts = object.has("crypts") ? object.get("crypts").getAsInt() : 0;
-        CanonicalRoomMetadata metadata = canonicalMetadata(name, type, secrets, crypts);
+        boolean prince = object.has("prince")
+            ? object.get("prince").getAsBoolean()
+            : legacyHasPrince(name);
+        CanonicalRoomMetadata metadata = canonicalMetadata(name, type, secrets, crypts, prince);
         return new LearnedRoom(
             order,
             metadata.name(),
@@ -1707,9 +1735,19 @@ public final class DungeonKnownRoomCatalog {
     }
 
     private static CanonicalRoomMetadata canonicalMetadata(String name, RoomType type, int secrets, int crypts) {
+        return canonicalMetadata(name, type, secrets, crypts, legacyHasPrince(name));
+    }
+
+    private static CanonicalRoomMetadata canonicalMetadata(
+        String name,
+        RoomType type,
+        int secrets,
+        int crypts,
+        boolean prince
+    ) {
         CanonicalRoomMetadata override = CANONICAL_METADATA_OVERRIDES.get(canonicalNameKey(name));
         return override == null
-            ? new CanonicalRoomMetadata(name, type, secrets, Math.max(0, crypts))
+            ? new CanonicalRoomMetadata(name, type, secrets, Math.max(0, crypts), prince)
             : override;
     }
 
@@ -1733,13 +1771,15 @@ public final class DungeonKnownRoomCatalog {
             template.name(),
             template.type(),
             template.secrets(),
-            template.crypts()
+            template.crypts(),
+            template.prince()
         );
         return new RoomTemplate(
             metadata.name(),
             metadata.type(),
             metadata.secrets(),
             metadata.crypts(),
+            metadata.prince(),
             template.variantNumber(),
             template.components()
         );
@@ -1747,7 +1787,27 @@ public final class DungeonKnownRoomCatalog {
 
     public static boolean hasPrince(String name) {
         String key = canonicalNameKey(name);
-        return PRINCE_ROOM_NAMES.contains(key) && !NON_PRINCE_ROOM_NAMES.contains(key);
+        TemplateCache templateCache = templateCache();
+        boolean found = false;
+        boolean prince = false;
+        for (RoomTemplate template : templateCache.templates()) {
+            if (canonicalNameKey(template.name()).equals(key)) {
+                found = true;
+                prince |= template.prince();
+            }
+        }
+        for (KnownCoreHint hint : templateCache.knownCoreHints().values()) {
+            if (canonicalNameKey(hint.name()).equals(key)) {
+                found = true;
+                prince |= hint.prince();
+            }
+        }
+        return found ? prince : legacyHasPrince(name);
+    }
+
+    private static boolean legacyHasPrince(String name) {
+        String key = canonicalNameKey(name);
+        return LEGACY_PRINCE_ROOM_NAMES.contains(key) && !LEGACY_NON_PRINCE_ROOM_NAMES.contains(key);
     }
 
     private static Set<String> canonicalNameSet(String... names) {
@@ -1844,38 +1904,23 @@ public final class DungeonKnownRoomCatalog {
     }
 
     private static Path knownRoomsFile() {
-        return FabricLoader.getInstance()
-            .getGameDir()
-            .resolve("kung-dungeon-scans")
-            .resolve("known-rooms.json");
+        return KungPaths.dungeonDataDirectory().resolve("known-rooms.json");
     }
 
     static Path remoteKnownRoomsFile() {
-        return FabricLoader.getInstance()
-            .getGameDir()
-            .resolve("kung-dungeon-scans")
-            .resolve("known-rooms-remote.json");
+        return KungPaths.dungeonDataDirectory().resolve("known-rooms-remote.json");
     }
 
     private static Path legacyKnownRoomsFile() {
-        return FabricLoader.getInstance()
-            .getGameDir()
-            .resolve("kung-dungeon-scans")
-            .resolve("known-rooms.jsonl");
+        return KungPaths.dungeonDataDirectory().resolve("known-rooms.jsonl");
     }
 
     private static Path knownRoomPreloadsFile() {
-        return FabricLoader.getInstance()
-            .getGameDir()
-            .resolve("kung-dungeon-scans")
-            .resolve("known-room-preloads.jsonl");
+        return KungPaths.dungeonDataDirectory().resolve("known-room-preloads.jsonl");
     }
 
     private static Path undoneRoomsFile() {
-        return FabricLoader.getInstance()
-            .getGameDir()
-            .resolve("kung-dungeon-scans")
-            .resolve("known-rooms-undone.jsonl");
+        return KungPaths.dungeonDataDirectory().resolve("known-rooms-undone.jsonl");
     }
 
     private static final class RoomDatabase {
@@ -1896,11 +1941,14 @@ public final class DungeonKnownRoomCatalog {
             rooms.computeIfAbsent(key, RoomData::new).merge(template);
         }
 
-        void ensureRoom(TemplateKey key, int crypts) {
-            CanonicalRoomMetadata metadata = canonicalMetadata(key.name(), key.type(), key.secrets(), crypts);
+        void ensureRoom(TemplateKey key, int crypts, boolean prince) {
+            CanonicalRoomMetadata metadata = canonicalMetadata(key.name(), key.type(), key.secrets(), crypts, prince);
             key = new TemplateKey(metadata.name(), metadata.type(), metadata.secrets());
             crypts = metadata.crypts();
-            rooms.computeIfAbsent(key, RoomData::new).updateCrypts(crypts);
+            prince = metadata.prince();
+            RoomData room = rooms.computeIfAbsent(key, RoomData::new);
+            room.updateCrypts(crypts);
+            room.updatePrince(prince);
         }
 
         void upsert(LearnedRoom room) {
@@ -2037,6 +2085,7 @@ public final class DungeonKnownRoomCatalog {
         private final TemplateKey key;
         private final List<VariantData> variants = new ArrayList<>();
         private int crypts;
+        private boolean prince;
 
         RoomData(TemplateKey key) {
             this.key = key;
@@ -2044,6 +2093,7 @@ public final class DungeonKnownRoomCatalog {
 
         void merge(RoomTemplate template) {
             crypts = Math.max(crypts, template.crypts());
+            prince |= template.prince();
             VariantData incoming = VariantData.from(template.components());
             for (VariantData variant : variants) {
                 if (variant.sameShape(incoming)) {
@@ -2071,6 +2121,10 @@ public final class DungeonKnownRoomCatalog {
             this.crypts = Math.max(0, crypts);
         }
 
+        void updatePrince(boolean prince) {
+            this.prince = prince;
+        }
+
         int variantCount() {
             return variants.size();
         }
@@ -2092,6 +2146,7 @@ public final class DungeonKnownRoomCatalog {
                     key.type(),
                     key.secrets(),
                     crypts,
+                    prince,
                     variantNumber++,
                     variant.components()
                 ));
@@ -2109,6 +2164,8 @@ public final class DungeonKnownRoomCatalog {
                 .append(key.secrets())
                 .append(",\"crypts\":")
                 .append(crypts)
+                .append(",\"prince\":")
+                .append(prince)
                 .append(",\"variants\":[");
             for (int index = 0; index < variants.size(); index++) {
                 if (index > 0) {
@@ -2355,7 +2412,7 @@ public final class DungeonKnownRoomCatalog {
         ) {
             return new DeleteRoomResult(
                 true,
-                "Raumdaten geloescht: "
+                "Room data deleted: "
                     + name
                     + (type == null ? "" : " " + type.name() + " secrets=" + secrets)
                     + " rooms=" + roomCount
@@ -2373,7 +2430,7 @@ public final class DungeonKnownRoomCatalog {
         static DeleteRoomResult nothingDeleted(String name, RoomType type, Integer secrets) {
             return new DeleteRoomResult(
                 false,
-                "Keine Raumdaten gefunden fuer: "
+                "No room data found for: "
                     + name
                     + (type == null ? "" : " " + type.name() + " secrets=" + secrets),
                 name,
@@ -2399,6 +2456,7 @@ public final class DungeonKnownRoomCatalog {
         RoomType type,
         int secrets,
         int crypts,
+        boolean prince,
         int variantNumber,
         List<TemplateComponent> components
     ) {
@@ -2579,13 +2637,17 @@ public final class DungeonKnownRoomCatalog {
         }
     }
 
-    public record KnownCoreHint(String name, RoomType type, int secrets, int crypts) {
+    public record KnownCoreHint(String name, RoomType type, int secrets, int crypts, boolean prince) {
         public KnownCoreHint(String name, RoomType type, int secrets) {
-            this(name, type, secrets, 0);
+            this(name, type, secrets, 0, false);
+        }
+
+        public KnownCoreHint(String name, RoomType type, int secrets, int crypts) {
+            this(name, type, secrets, crypts, false);
         }
     }
 
-    public record KnownRoomInfo(String name, RoomType type, int secrets, int crypts) {
+    public record KnownRoomInfo(String name, RoomType type, int secrets, int crypts, boolean prince) {
     }
 
     private record TemplateCache(
@@ -2601,7 +2663,7 @@ public final class DungeonKnownRoomCatalog {
     private record TemplateKey(String name, RoomType type, int secrets) {
     }
 
-    private record CanonicalRoomMetadata(String name, RoomType type, int secrets, int crypts) {
+    private record CanonicalRoomMetadata(String name, RoomType type, int secrets, int crypts, boolean prince) {
     }
 
     private record CellKey(int x, int z) {

@@ -1,6 +1,8 @@
 package com.github.beng420.kung.feature.misc;
 
-import com.github.beng420.kung.feature.dungeon.DungeonMapOverlayConfig;
+import com.github.beng420.kung.config.category.MiscConfig;
+import com.github.beng420.kung.feature.ConfigurableFeature;
+import com.github.beng420.kung.feature.Feature;
 import com.github.beng420.kung.skyblock.HypixelInstanceTracker;
 import java.util.LinkedHashSet;
 import java.util.Set;
@@ -9,7 +11,8 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
 import net.minecraft.sounds.SoundEvents;
 
-public final class LobbyHopHelperFeature {
+public final class LobbyHopHelperFeature extends ConfigurableFeature<MiscConfig> implements Feature {
+    public static final LobbyHopHelperFeature INSTANCE = new LobbyHopHelperFeature();
     private static final int MAX_HISTORY_SIZE = 128;
 
     private static final Set<String> seenLobbyIds = new LinkedHashSet<>();
@@ -17,14 +20,21 @@ public final class LobbyHopHelperFeature {
     private static boolean wasEnabled;
 
     private LobbyHopHelperFeature() {
+        super(config -> config.misc);
     }
 
-    public static void initializeClient() {
+    @Override
+    protected void onInitialize() {
         ClientTickEvents.END_CLIENT_TICK.register(LobbyHopHelperFeature::tick);
     }
 
+    @Override
+    public boolean isEnabled() {
+        return config().lobbyHopHelperEnabled();
+    }
+
     private static void tick(Minecraft client) {
-        boolean enabled = DungeonMapOverlayConfig.INSTANCE.lobbyHopHelperEnabled();
+        boolean enabled = INSTANCE.isEnabled();
         if (!enabled) {
             if (wasEnabled) {
                 clearHistory();

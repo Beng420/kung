@@ -9,10 +9,13 @@ import com.github.beng420.kung.feature.dungeon.room.RoomType;
 import com.github.beng420.kung.util.KungDebugRecorder;
 
 public final class DungeonMapSnapshot {
+    private static final int UNCLASSIFIED_DOOR_BLOCK_ID = 15292;
+
     private final Map<GridKey, ObservedPoint> points = new HashMap<>();
     private final Map<GridKey, ObservedPoint> initialRoomPoints = new HashMap<>();
     private final Set<GridKey> traversedDoors = new HashSet<>();
     private final Set<GridKey> openedLockedDoors = new HashSet<>();
+    private final Set<GridKey> observedLockedDoors = new HashSet<>();
     private final Set<GridKey> visitedRooms = new HashSet<>();
     private final Set<GridKey> clearedRooms = new HashSet<>();
     private final Set<GridKey> completedRooms = new HashSet<>();
@@ -35,6 +38,7 @@ public final class DungeonMapSnapshot {
         initialRoomPoints.clear();
         traversedDoors.clear();
         openedLockedDoors.clear();
+        observedLockedDoors.clear();
         visitedRooms.clear();
         clearedRooms.clear();
         completedRooms.clear();
@@ -299,6 +303,10 @@ public final class DungeonMapSnapshot {
 
     public Set<GridKey> openedLockedDoors() {
         return Set.copyOf(openedLockedDoors);
+    }
+
+    public Set<GridKey> observedLockedDoors() {
+        return Set.copyOf(observedLockedDoors);
     }
 
     public List<RemoteRoom> remoteRooms() {
@@ -619,8 +627,9 @@ public final class DungeonMapSnapshot {
 
         boolean previousVisible = previousKind.visible();
         boolean nextVisible = nextKind.visible();
-        if (lockedDoor(previousKind) && nextKind == DungeonDoorKind.OPEN) {
-            return true;
+        if (lockedDoor(previousKind) && !lockedDoor(nextKind)) {
+            return nextKind == DungeonDoorKind.OPEN
+                || nextDoorBlockId != UNCLASSIFIED_DOOR_BLOCK_ID;
         }
         if (previousVisible && !nextVisible) {
             return false;
@@ -644,14 +653,22 @@ public final class DungeonMapSnapshot {
     }
 
     private void recordDoorTransition(ObservedPoint previous, DungeonScanPoint next) {
-        if (previous == null || next.kind() != DungeonScanPointKind.DOOR) {
+        if (next.kind() != DungeonScanPointKind.DOOR) {
+            return;
+        }
+        GridKey door = new GridKey(next.gridX(), next.gridZ());
+        if (lockedDoor(next.doorKind())) {
+            observedLockedDoors.add(door);
+        }
+        if (previous == null) {
             return;
         }
         DungeonDoorKind previousKind = previous.point().doorKind();
-        if ((previousKind == DungeonDoorKind.WITHER || previousKind == DungeonDoorKind.BLOOD)
-            && next.doorKind() == DungeonDoorKind.OPEN
-            && openedLockedDoors.add(new GridKey(next.gridX(), next.gridZ()))) {
-            logMapChange("opened-locked-door grid=" + gridText(new GridKey(next.gridX(), next.gridZ()))
+        if (lockedDoor(previousKind)
+            && !lockedDoor(next.doorKind())
+            && confirmsOpenedLockedDoor(next)
+            && openedLockedDoors.add(door)) {
+            logMapChange("opened-locked-door grid=" + gridText(door)
                 + " previous=" + previousKind
                 + " next=" + next.doorKind());
         }
@@ -659,6 +676,11 @@ public final class DungeonMapSnapshot {
 
     private static boolean lockedDoor(DungeonDoorKind kind) {
         return kind == DungeonDoorKind.WITHER || kind == DungeonDoorKind.BLOOD;
+    }
+
+    private static boolean confirmsOpenedLockedDoor(DungeonScanPoint point) {
+        return point.doorKind() == DungeonDoorKind.OPEN
+            || point.doorBlockId() != UNCLASSIFIED_DOOR_BLOCK_ID;
     }
 
     private static void logMapChange(String message) {

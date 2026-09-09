@@ -1,21 +1,21 @@
 package com.github.beng420.kung.feature.dungeon;
 
-import com.github.beng420.kung.feature.Feature;
+import com.github.beng420.kung.config.category.BRHelperConfig;
+import com.github.beng420.kung.feature.ConfigurableFeature;
+import com.github.beng420.kung.runtime.ClientService;
 import com.github.beng420.kung.feature.dungeon.room.RoomType;
-import com.github.beng420.kung.util.KungChat;
+import com.github.beng420.kung.message.KungMessages;
 import com.github.beng420.kung.util.KungDebugRecorder;
 import java.util.HashSet;
 import java.util.Locale;
 import java.util.Set;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
-import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 
-public final class BloodRushHelperFeature {
+public final class BloodRushHelperFeature extends ConfigurableFeature<BRHelperConfig> implements ClientService {
+    public static final BloodRushHelperFeature INSTANCE = new BloodRushHelperFeature();
     private static final long DOOR_TITLE_STABLE_TICKS = 1;
-    private static final long DOOR_CLICK_FAST_SCAN_TICKS = 10;
-    private static final int DOOR_CLICK_MAX_BLOCK_DISTANCE = 6;
 
     private boolean initialTitleScheduled;
     private boolean initialTitleShown;
@@ -24,23 +24,26 @@ public final class BloodRushHelperFeature {
     private int initialTitleCandidateCount = -1;
     private String initialTitleCandidateText = "";
     private Integer forcedDoorTitleCount;
-    private final Set<String> observedOpenedDoorKeys = new HashSet<>();
+    private final Set<DungeonLiveMapWriter.CellKey> observedOpenedDoorCells = new HashSet<>();
     private boolean progressBaselineReady;
     private int lastRemainingDoorCount = -1;
-    private long doorClickFastScanUntilTick = Long.MIN_VALUE;
     private String lastLoggedDoorTitleState = "";
     private String lastLoggedDoorProgressState = "";
     private long serverTicksSinceRunStart;
     private int maxObservedBloodRushDoors;
     private boolean bloodRushDoneShown;
 
-    public static Feature definition() {
-        return new Feature(
-            "blood-rush-helper",
-            "Blood rush helper",
-            false,
-            "Shows door-count titles while rushing blood."
-        );
+    private BloodRushHelperFeature() {
+        super(config -> config.bloodRush);
+    }
+
+    @Override
+    protected void onInitialize() {
+    }
+
+    @Override
+    public boolean isEnabled() {
+        return config().enabled();
     }
 
     boolean doorTitlePending(long dungeonTick) {
@@ -51,7 +54,7 @@ public final class BloodRushHelperFeature {
     }
 
     boolean shouldFastScanDoors(long dungeonTick) {
-        return doorTitlePending(dungeonTick) || dungeonTick <= doorClickFastScanUntilTick;
+        return doorTitlePending(dungeonTick);
     }
 
     void debugShowDoorTitle(Minecraft client, int doorCount) {
@@ -94,10 +97,9 @@ public final class BloodRushHelperFeature {
         initialTitleCandidateCount = -1;
         initialTitleCandidateText = "";
         forcedDoorTitleCount = null;
-        observedOpenedDoorKeys.clear();
+        observedOpenedDoorCells.clear();
         progressBaselineReady = false;
         lastRemainingDoorCount = -1;
-        doorClickFastScanUntilTick = Long.MIN_VALUE;
         lastLoggedDoorTitleState = "";
         lastLoggedDoorProgressState = "";
         serverTicksSinceRunStart = 0L;
@@ -112,7 +114,7 @@ public final class BloodRushHelperFeature {
         }
     }
 
-    void observeMessage(Minecraft client, String message, boolean realRunStarted) {
+    void observeMessage(Minecraft client, String message, boolean realRunStarted, DungeonStateTracker tracker) {
         if (!enabled() || !realRunStarted || message == null) {
             return;
         }
@@ -121,6 +123,7 @@ public final class BloodRushHelperFeature {
             .trim()
             .toLowerCase(Locale.ROOT);
         if ("the blood door has been opened!".equals(clean)) {
+            recordBloodRushDoorObservation(tracker.renderPlan(), tracker.mapSnapshot());
             showBloodRushDone(client);
         }
     }
@@ -143,13 +146,18 @@ public final class BloodRushHelperFeature {
             return;
         }
 
-        Set<String> openedDoors = keyed(plan.minimumVisibleOpenedSpecialDoorCells(snapshot));
+        Set<DungeonLiveMapWriter.CellKey> openedDoors = plan.minimumVisibleOpenedSpecialDoorCells(snapshot);
         int remainingDoors = estimate.count();
         if (!progressBaselineReady) {
             progressBaselineReady = true;
-            observedOpenedDoorKeys.clear();
-            observedOpenedDoorKeys.addAll(openedDoors);
+            observedOpenedDoorCells.clear();
+            observedOpenedDoorCells.addAll(openedDoors);
             lastRemainingDoorCount = remainingDoors;
+            if (!openedDoors.isEmpty() && initialTitleScheduled && !initialTitleShown && remainingDoors > 0) {
+                initialTitleScheduled = false;
+                initialTitleShown = true;
+                displayDoorTitle(client, remainingDoorTitleText(plan, estimate));
+            }
             logDoorProgressState("baseline opened="
                 + openedDoors.size()
                 + " remaining="
@@ -159,14 +167,14 @@ public final class BloodRushHelperFeature {
             return;
         }
 
-        Set<String> newlyOpenedDoors = new HashSet<>(openedDoors);
-        newlyOpenedDoors.removeAll(observedOpenedDoorKeys);
+        Set<DungeonLiveMapWriter.CellKey> newlyOpenedDoors = new HashSet<>(openedDoors);
+        newlyOpenedDoors.removeAll(observedOpenedDoorCells);
 
         int previousRemainingDoors = lastRemainingDoorCount;
         boolean remainingDropped = previousRemainingDoors < 0 || remainingDoors < previousRemainingDoors;
         if (newlyOpenedDoors.isEmpty() && !remainingDropped) {
             lastRemainingDoorCount = remainingDoors;
-            observedOpenedDoorKeys.addAll(openedDoors);
+            observedOpenedDoorCells.addAll(openedDoors);
             logDoorProgressState("steady opened="
                 + openedDoors.size()
                 + " remaining="
@@ -186,10 +194,10 @@ public final class BloodRushHelperFeature {
             return;
         }
 
-        observedOpenedDoorKeys.addAll(openedDoors);
+        observedOpenedDoorCells.addAll(openedDoors);
         lastRemainingDoorCount = remainingDoors;
         logDoorProgressState("door-fell opened="
-            + newlyOpenedDoors
+            + cellKeysText(newlyOpenedDoors)
             + " remaining="
             + remainingDoors
             + " dropped="
@@ -197,7 +205,10 @@ public final class BloodRushHelperFeature {
             + " "
             + doorTitleDiagnostics(tracker));
 
-        if (!remainingDropped || remainingDoors <= 0) {
+        if (remainingDoors <= 0) {
+            if (!bloodRushDoneShown && !openedBloodDoor(plan, newlyOpenedDoors)) {
+                displayDoorTitle(client, "Blood next");
+            }
             return;
         }
         initialTitleScheduled = false;
@@ -206,46 +217,6 @@ public final class BloodRushHelperFeature {
         initialTitleCandidateText = "";
         initialTitleStableSinceTick = Long.MIN_VALUE;
         displayDoorTitle(client, remainingDoorTitleText(plan, estimate));
-    }
-
-    void observeDoorBlockUse(Minecraft client, DungeonStateTracker tracker, BlockPos clickedPos) {
-        if (!enabled()
-            || client == null
-            || client.level == null
-            || client.player == null
-            || clickedPos == null
-            || !tracker.realRunStarted()
-            || !tracker.state().isInDungeon()) {
-            return;
-        }
-
-        DungeonScanUtils.GridPosition grid = DungeonScanUtils.nearestScanGridPosition(clickedPos);
-        int scanGridX = grid.gridX();
-        int scanGridZ = grid.gridZ();
-        if (scanGridX < 0
-            || scanGridZ < 0
-            || scanGridX >= DungeonScanUtils.SCAN_GRID_SIZE
-            || scanGridZ >= DungeonScanUtils.SCAN_GRID_SIZE
-            || !DungeonScanUtils.isDoorScanPoint(scanGridX, scanGridZ)) {
-            return;
-        }
-
-        int doorWorldX = DungeonScanUtils.worldXForScanGrid(scanGridX);
-        int doorWorldZ = DungeonScanUtils.worldZForScanGrid(scanGridZ);
-        if (Math.abs(clickedPos.getX() - doorWorldX) > DOOR_CLICK_MAX_BLOCK_DISTANCE
-            || Math.abs(clickedPos.getZ() - doorWorldZ) > DOOR_CLICK_MAX_BLOCK_DISTANCE) {
-            return;
-        }
-
-        long dungeonTick = tracker.dungeonTick();
-        doorClickFastScanUntilTick = Math.max(doorClickFastScanUntilTick, dungeonTick + DOOR_CLICK_FAST_SCAN_TICKS);
-        tracker.scanDungeonNow(client);
-        KungDebugRecorder.event("door-title", "click fast-scan only door="
-            + scanGridX
-            + ","
-            + scanGridZ
-            + " until="
-            + doorClickFastScanUntilTick);
     }
 
     void maybeShowDoorTitle(Minecraft client, DungeonStateTracker tracker) {
@@ -321,8 +292,8 @@ public final class BloodRushHelperFeature {
         initialTitleCandidateText = "";
         initialTitleStableSinceTick = Long.MIN_VALUE;
         progressBaselineReady = true;
-        observedOpenedDoorKeys.clear();
-        observedOpenedDoorKeys.addAll(keyed(plan.minimumVisibleOpenedSpecialDoorCells(snapshot)));
+        observedOpenedDoorCells.clear();
+        observedOpenedDoorCells.addAll(plan.minimumVisibleOpenedSpecialDoorCells(snapshot));
         lastRemainingDoorCount = remainingDoorEstimate(plan, snapshot).count();
         logDoorTitleState("show initial count="
             + estimate.count()
@@ -336,33 +307,59 @@ public final class BloodRushHelperFeature {
             + doorTitleDiagnostics(tracker));
     }
 
-    private static Set<String> keyed(Set<DungeonLiveMapWriter.CellKey> cells) {
-        Set<String> keys = new HashSet<>();
+    private static String cellKeysText(Set<DungeonLiveMapWriter.CellKey> cells) {
+        if (cells.isEmpty()) {
+            return "[]";
+        }
+        java.util.List<String> keys = new java.util.ArrayList<>();
         for (DungeonLiveMapWriter.CellKey cell : cells) {
             keys.add(cell.x() + "," + cell.z());
         }
-        return keys;
+        keys.sort(String::compareTo);
+        return "[" + String.join("|", keys) + "]";
+    }
+
+    private static boolean openedBloodDoor(
+        DungeonLiveMapWriter.MatchRenderPlan plan,
+        Set<DungeonLiveMapWriter.CellKey> openedDoors
+    ) {
+        for (DungeonLiveMapWriter.CellKey openedDoor : openedDoors) {
+            DungeonLiveMapWriter.DoorRenderInfo door = plan.doorAt(openedDoor.x(), openedDoor.z());
+            if (door != null && door.targetType() == RoomType.BLOOD) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private DoorEstimate initialDoorEstimate(DungeonLiveMapWriter.MatchRenderPlan plan, DungeonMapSnapshot snapshot) {
         boolean exact = doorEstimateExact(plan, snapshot);
-        int count = exact
-            ? plan.bloodRushTotalSpecialDoorCount()
-            : plan.minimumVisibleBloodRushSpecialDoorCount(snapshot);
-        return new DoorEstimate(count, exact);
+        int count = totalKnownDoorCount(plan, snapshot);
+        return new DoorEstimate(count, exact, count);
     }
 
     private DoorEstimate remainingDoorEstimate(DungeonLiveMapWriter.MatchRenderPlan plan, DungeonMapSnapshot snapshot) {
         boolean exact = doorEstimateExact(plan, snapshot);
-        int count = exact
-            ? plan.bloodRushLockedSpecialDoorCount()
-            : plan.minimumVisibleBloodRushLockedSpecialDoorCount(snapshot);
-        return new DoorEstimate(count, exact);
+        int total = totalKnownDoorCount(plan, snapshot);
+        int opened = openedKnownDoorCount(plan, snapshot);
+        return new DoorEstimate(Math.max(0, total - opened), exact, total);
     }
 
     private boolean doorEstimateExact(DungeonLiveMapWriter.MatchRenderPlan plan, DungeonMapSnapshot snapshot) {
-        return plan.hasRoomType(RoomType.BLOOD)
-            && Math.max(plan.bloodRushTotalSpecialDoorCount(), plan.totalSpecialDoorCount(snapshot)) > 0;
+        return totalKnownDoorCount(plan, snapshot) > 0
+            && (plan.bloodRushDoorEstimateExact(snapshot)
+                || plan.rawNonStartSpecialDoorEstimateExact(snapshot));
+    }
+
+    private int totalKnownDoorCount(DungeonLiveMapWriter.MatchRenderPlan plan, DungeonMapSnapshot snapshot) {
+        return Math.max(
+            Math.max(plan.bloodRushTotalSpecialDoorCount(), plan.rawNonStartSpecialDoorCount(snapshot)),
+            plan.knownNonStartSpecialDoorCount()
+        );
+    }
+
+    private int openedKnownDoorCount(DungeonLiveMapWriter.MatchRenderPlan plan, DungeonMapSnapshot snapshot) {
+        return plan.minimumVisibleOpenedSpecialDoorCells(snapshot).size();
     }
 
     private void recordBloodRushDoorObservation(DungeonLiveMapWriter.MatchRenderPlan plan, DungeonMapSnapshot snapshot) {
@@ -370,7 +367,7 @@ public final class BloodRushHelperFeature {
             return;
         }
         int observedTotal = Math.max(
-            Math.max(plan.bloodRushTotalSpecialDoorCount(), plan.totalSpecialDoorCount(snapshot)),
+            Math.max(plan.bloodRushTotalSpecialDoorCount(), plan.knownNonStartSpecialDoorCount()),
             Math.max(plan.knownNonStartSpecialDoorCount(), plan.rawNonStartSpecialDoorCount(snapshot))
         );
         observedTotal = Math.max(observedTotal, plan.openedRawNonStartSpecialDoorCount(snapshot));
@@ -414,6 +411,10 @@ public final class BloodRushHelperFeature {
             + plan.bloodRushTotalSpecialDoorCount()
             + " bloodRushLocked="
             + plan.bloodRushLockedSpecialDoorCount()
+            + " knownTotal="
+            + totalKnownDoorCount(plan, snapshot)
+            + " knownOpened="
+            + openedKnownDoorCount(plan, snapshot)
             + " bloodRushOpened="
             + plan.bloodRushOpenedSpecialDoorCells().size()
             + " minimumTotal="
@@ -432,13 +433,15 @@ public final class BloodRushHelperFeature {
             + plan.matches().size()
             + " hasBlood="
             + plan.hasRoomType(RoomType.BLOOD)
+            + " exact="
+            + doorEstimateExact(plan, snapshot)
             + " bloodRushDoors="
             + plan.bloodRushSpecialDoorSummary();
     }
 
-    private record DoorEstimate(int count, boolean exact) {
+    private record DoorEstimate(int count, boolean exact, int total) {
         boolean available() {
-            return count > 0;
+            return total > 0;
         }
     }
 
@@ -474,7 +477,7 @@ public final class BloodRushHelperFeature {
             + " doors";
         showDoorTitle(client, "Blood rush done", subtitle, ChatFormatting.RED, Math.max(20, doorTitleStayTicks()));
         if (client != null && client.player != null) {
-            client.player.sendSystemMessage(KungChat.message("BR", "Blood rush done - " + subtitle));
+            client.player.sendSystemMessage(KungMessages.info("BR", "Blood rush done - " + subtitle));
         }
         KungDebugRecorder.event("door-title", "blood done subtitle=\"" + subtitle + "\" serverTicks=" + serverTicksSinceRunStart);
     }
@@ -507,14 +510,14 @@ public final class BloodRushHelperFeature {
         if (client == null || client.player == null) {
             return;
         }
-        client.player.sendSystemMessage(KungChat.message("BR", text));
+        client.player.sendSystemMessage(KungMessages.info("BR", text));
     }
 
     private static boolean enabled() {
-        return DungeonMapOverlayConfig.INSTANCE.bloodRushHelperEnabled();
+        return INSTANCE.isEnabled();
     }
 
     private static int doorTitleStayTicks() {
-        return Math.max(1, DungeonMapOverlayConfig.INSTANCE.bloodRushHelperTitleDurationTenths() * 2);
+        return Math.max(1, INSTANCE.config().titleDurationTenths() * 2);
     }
 }

@@ -1,12 +1,13 @@
 package com.github.beng420.kung.mixin;
 
 import com.github.beng420.kung.feature.dungeon.DungeonServerTickEvents;
-import com.github.beng420.kung.feature.dungeon.DungeonStateTracker;
+import com.github.beng420.kung.feature.dungeon.DungeonEventRouter;
 import com.github.beng420.kung.feature.misc.CustomSoundsFeature;
 import com.github.beng420.kung.feature.misc.LoadoutsAutoCloseFeature;
 import com.github.beng420.kung.feature.misc.SuperpairsHelperFeature;
 import com.github.beng420.kung.skyblock.HypixelInstanceTracker;
 import com.github.beng420.kung.util.KungDebugRecorder;
+import com.github.beng420.kung.util.ServerTpsTracker;
 import io.netty.channel.ChannelHandlerContext;
 import net.minecraft.network.Connection;
 import net.minecraft.network.protocol.Packet;
@@ -42,6 +43,7 @@ public abstract class ConnectionMixin {
         }
         if (packet instanceof ClientboundPingPacket pingPacket && pingPacket.getId() != 0) {
             DungeonServerTickEvents.post();
+            ServerTpsTracker.INSTANCE.observeServerTick();
         }
         if (packet instanceof ClientboundSoundPacket soundPacket) {
             CustomSoundsFeature.observeSoundEvent(soundPacket.getSound().value());
@@ -76,7 +78,7 @@ public abstract class ConnectionMixin {
         if (packet instanceof ClientboundLoginPacket || packet instanceof ClientboundRespawnPacket) {
             KungDebugRecorder.event("packet", packet.getClass().getSimpleName());
             HypixelInstanceTracker.INSTANCE.observeWorldChangePacket();
-            DungeonStateTracker.observeWorldChangePacket();
+            DungeonEventRouter.observeWorldChangePacket();
         }
         if (packet instanceof ClientboundTabListPacket tabListPacket) {
             KungDebugRecorder.event("packet", "ClientboundTabListPacket");

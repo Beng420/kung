@@ -1,6 +1,7 @@
 package com.github.beng420.kung.feature.dungeon;
 
 import com.github.beng420.kung.KungMod;
+import com.github.beng420.kung.config.KungConfig;
 import com.github.beng420.kung.feature.dungeon.room.RoomType;
 import java.io.IOException;
 import java.io.InputStream;
@@ -14,7 +15,7 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
-import net.fabricmc.loader.api.FabricLoader;
+import com.github.beng420.kung.runtime.KungPaths;
 
 public final class DungeonRoomClassifier {
     public static final int EMPTY_CORE_HASH = -318865360;
@@ -127,6 +128,9 @@ public final class DungeonRoomClassifier {
     private static Map<Integer, RoomType> loadKnownRoomTypes() {
         Map<Integer, RoomType> roomTypes = new HashMap<>(DEFAULT_ROOM_TYPES);
         loadPropertiesInto(roomTypes, bundledProperties());
+        if (!KungConfig.get().dungeon.localRoomDataEnabled()) {
+            return roomTypes;
+        }
         Path file = knownRoomTypesFile();
 
         try {
@@ -186,9 +190,6 @@ public final class DungeonRoomClassifier {
     }
 
     private static Path knownRoomTypesFile() {
-        return FabricLoader.getInstance()
-            .getGameDir()
-            .resolve("kung-dungeon-scans")
-            .resolve("known-room-types.properties");
+        return KungPaths.dungeonDataDirectory().resolve("known-room-types.properties");
     }
 }

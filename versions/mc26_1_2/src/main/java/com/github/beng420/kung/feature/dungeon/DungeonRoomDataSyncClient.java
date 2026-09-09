@@ -1,7 +1,10 @@
 package com.github.beng420.kung.feature.dungeon;
 
+import com.github.beng420.kung.config.KungConfig;
+
 import com.github.beng420.kung.KungMod;
 import com.github.beng420.kung.feature.dungeon.room.RoomType;
+import com.github.beng420.kung.message.KungMessages;
 import com.github.beng420.kung.util.KungDebugRecorder;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
@@ -21,7 +24,6 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
 import net.minecraft.client.Minecraft;
-import net.minecraft.network.chat.Component;
 
 public final class DungeonRoomDataSyncClient {
     public static final DungeonRoomDataSyncClient INSTANCE = new DungeonRoomDataSyncClient();
@@ -40,7 +42,7 @@ public final class DungeonRoomDataSyncClient {
     }
 
     public String menuStatus() {
-        if (!DungeonMapOverlayConfig.INSTANCE.roomSyncEnabled()) {
+        if (!KungConfig.get().dungeon.roomSyncEnabled()) {
             return "Disabled";
         }
         if (!configured()) {
@@ -64,16 +66,17 @@ public final class DungeonRoomDataSyncClient {
     }
 
     public boolean configured() {
-        return !DungeonMapOverlayConfig.INSTANCE.roomSyncServerUrl().isBlank();
+        return !KungConfig.get().dungeon.roomSyncServerUrl().isBlank();
     }
 
     public boolean active() {
-        return DungeonMapOverlayConfig.INSTANCE.roomSyncEnabled() && configured();
+        return KungConfig.get().dungeon.roomSyncEnabled() && configured();
     }
+
 
     public void pullAsync(Minecraft client) {
         if (!active()) {
-            send(client, "Room Sync is not active. Set a server and enable it.");
+            send(client, KungMessages.Type.WARNING, "Room Sync is not active. Set a server and enable it.");
             return;
         }
 
@@ -89,7 +92,7 @@ public final class DungeonRoomDataSyncClient {
                 DungeonKnownRoomCatalog.RemoteCacheResult result =
                     DungeonKnownRoomCatalog.updateRemoteCache(response.body());
                 statusMessage = "Pulled " + result.roomCount() + " rooms";
-                send(client, "Room Sync Pull ok: rooms=" + result.roomCount()
+                send(client, KungMessages.Type.SUCCESS, "Pull ok: rooms=" + result.roomCount()
                     + " variants=" + result.variantCount()
                     + " cells=" + result.componentCount());
             } catch (IOException | InterruptedException | RuntimeException exception) {
@@ -98,14 +101,66 @@ public final class DungeonRoomDataSyncClient {
                 }
                 statusMessage = "Pull failed";
                 KungMod.LOGGER.warn("Failed to pull dungeon room sync data.", exception);
-                send(client, "Room Sync pull failed. See latest.log.");
+                send(client, KungMessages.Type.ERROR, "Pull failed. See latest.log.");
             }
         });
     }
 
+    public void pushRoomReportAsync(String roomReportJson) {
+        if (!active() || !KungConfig.get().dungeon.roomSyncUploadEnabled()) {
+            return;
+        }
+
+        CompletableFuture.runAsync(() -> {
+            try {
+                pushRoomReport(roomReportJson);
+            } catch (IOException | InterruptedException | RuntimeException exception) {
+                if (exception instanceof InterruptedException) {
+                    Thread.currentThread().interrupt();
+                }
+                statusMessage = "Push failed";
+                KungMod.LOGGER.warn("Failed to push dungeon room report.", exception);
+            }
+        });
+    }
+
+    public void pushRoomReportAsync(Minecraft client, String roomReportJson) {
+        if (!active()) {
+            send(client, KungMessages.Type.WARNING, "Room Sync is not active. Set a server and enable it.");
+            return;
+        }
+
+        statusMessage = "Pushing...";
+        CompletableFuture.runAsync(() -> {
+            try {
+                PushResult result = pushRoomReport(roomReportJson);
+                statusMessage = "Pushed";
+                send(client, KungMessages.Type.SUCCESS, "Push ok: " + result.message());
+            } catch (IOException | InterruptedException | RuntimeException exception) {
+                if (exception instanceof InterruptedException) {
+                    Thread.currentThread().interrupt();
+                }
+                statusMessage = "Push failed";
+                KungMod.LOGGER.warn("Failed to push dungeon room report.", exception);
+                send(client, KungMessages.Type.ERROR, "Push failed. See latest.log.");
+            }
+        });
+    }
+
+    private PushResult pushRoomReport(String roomReportJson) throws IOException, InterruptedException {
+        HttpRequest request = requestBuilder(endpoint("rooms/report"))
+            .header("Accept", "application/json")
+            .header("Content-Type", "application/json")
+            .POST(HttpRequest.BodyPublishers.ofString(roomReportJson))
+            .build();
+        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+        ensureSuccess(response, "Push");
+        return new PushResult(response.body().isBlank() ? "gesendet" : response.body());
+    }
+
     public void pingAsync(Minecraft client) {
         if (!configured()) {
-            send(client, "Room Sync ping failed: no server set.");
+            send(client, KungMessages.Type.ERROR, "Ping failed: no server set.");
             return;
         }
 
@@ -126,21 +181,21 @@ public final class DungeonRoomDataSyncClient {
                 long durationMillis = Math.max(1L, (System.nanoTime() - startedAt) / 1_000_000L);
                 if (response.statusCode() == 401 || response.statusCode() == 403) {
                     statusMessage = "Ping unauthorized";
-                    send(client, "Room Sync ping failed: token is wrong or missing (HTTP "
+                    send(client, KungMessages.Type.ERROR, "Ping failed: token is wrong or missing (HTTP "
                         + response.statusCode() + ", " + durationMillis + "ms).");
                     return;
                 }
                 ensureSuccess(response, "Ping");
                 int liveClientCount = liveClientCount(response.body());
                 statusMessage = "Ping ok";
-                send(client, "Room Sync ping ok: HTTP "
+                send(client, KungMessages.Type.SUCCESS, "Ping ok: HTTP "
                     + response.statusCode()
                     + " in "
                     + durationMillis
                     + "ms, liveClients="
                     + liveClientCount
                     + ", token="
-                    + (!DungeonMapOverlayConfig.INSTANCE.roomSyncToken().isBlank())
+                    + (!KungConfig.get().dungeon.roomSyncToken().isBlank())
                     + ".");
             } catch (IOException | InterruptedException | RuntimeException exception) {
                 if (exception instanceof InterruptedException) {
@@ -148,48 +203,7 @@ public final class DungeonRoomDataSyncClient {
                 }
                 statusMessage = "Ping failed";
                 KungMod.LOGGER.warn("Failed to ping dungeon room sync server.", exception);
-                send(client, "Room Sync ping failed: " + shortError(exception) + ".");
-            }
-        });
-    }
-
-    public void pushRoomReportAsync(String roomReportJson) {
-        if (!active() || !DungeonMapOverlayConfig.INSTANCE.roomSyncUploadEnabled()) {
-            return;
-        }
-
-        CompletableFuture.runAsync(() -> {
-            try {
-                pushRoomReport(roomReportJson);
-            } catch (IOException | InterruptedException | RuntimeException exception) {
-                if (exception instanceof InterruptedException) {
-                    Thread.currentThread().interrupt();
-                }
-                statusMessage = "Push failed";
-                KungMod.LOGGER.warn("Failed to push dungeon room report.", exception);
-            }
-        });
-    }
-
-    public void pushRoomReportAsync(Minecraft client, String roomReportJson) {
-        if (!active()) {
-            send(client, "Room Sync is not active. Set a server and enable it.");
-            return;
-        }
-
-        statusMessage = "Pushing...";
-        CompletableFuture.runAsync(() -> {
-            try {
-                PushResult result = pushRoomReport(roomReportJson);
-                statusMessage = "Pushed";
-                send(client, "Room Sync Push ok: " + result.message());
-            } catch (IOException | InterruptedException | RuntimeException exception) {
-                if (exception instanceof InterruptedException) {
-                    Thread.currentThread().interrupt();
-                }
-                statusMessage = "Push failed";
-                KungMod.LOGGER.warn("Failed to push dungeon room report.", exception);
-                send(client, "Room Sync push failed. See latest.log.");
+                send(client, KungMessages.Type.ERROR, "Ping failed: " + shortError(exception) + ".");
             }
         });
     }
@@ -227,7 +241,7 @@ public final class DungeonRoomDataSyncClient {
         List<LivePlayerReport> localPlayers = players == null ? List.of() : List.copyOf(players);
         CompletableFuture.runAsync(() -> {
             try {
-                if (DungeonMapOverlayConfig.INSTANCE.roomSyncUploadEnabled()
+                if (KungConfig.get().dungeon.roomSyncUploadEnabled()
                     && (!localRooms.isEmpty() || !localDoors.isEmpty() || !localPlayers.isEmpty())) {
                     pushLiveSnapshot(runKey, playerName, localRooms, localDoors, localPlayers);
                     KungDebugRecorder.event("room-sync", "live push ok runKey="
@@ -244,7 +258,7 @@ public final class DungeonRoomDataSyncClient {
                     KungDebugRecorder.event("room-sync", "live push skipped runKey="
                         + runKey
                         + " upload="
-                        + DungeonMapOverlayConfig.INSTANCE.roomSyncUploadEnabled()
+                        + KungConfig.get().dungeon.roomSyncUploadEnabled()
                         + " rooms="
                         + localRooms.size()
                         + " doors="
@@ -283,17 +297,6 @@ public final class DungeonRoomDataSyncClient {
                 liveSyncInFlight = false;
             }
         });
-    }
-
-    private PushResult pushRoomReport(String roomReportJson) throws IOException, InterruptedException {
-        HttpRequest request = requestBuilder(endpoint("rooms/report"))
-            .header("Accept", "application/json")
-            .header("Content-Type", "application/json")
-            .POST(HttpRequest.BodyPublishers.ofString(roomReportJson))
-            .build();
-        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-        ensureSuccess(response, "Push");
-        return new PushResult(response.body().isBlank() ? "gesendet" : response.body());
     }
 
     private void pushLiveSnapshot(
@@ -389,7 +392,7 @@ public final class DungeonRoomDataSyncClient {
         HttpRequest.Builder builder = HttpRequest.newBuilder(uri)
             .timeout(Duration.ofSeconds(20))
             .header("User-Agent", "Kung-RoomSync");
-        String token = DungeonMapOverlayConfig.INSTANCE.roomSyncToken();
+        String token = KungConfig.get().dungeon.roomSyncToken();
         if (!token.isBlank()) {
             builder.header("Authorization", "Bearer " + token);
         }
@@ -403,7 +406,7 @@ public final class DungeonRoomDataSyncClient {
     }
 
     private static URI endpoint(String path) {
-        String base = DungeonMapOverlayConfig.INSTANCE.roomSyncServerUrl();
+        String base = KungConfig.get().dungeon.roomSyncServerUrl();
         while (base.endsWith("/")) {
             base = base.substring(0, base.length() - 1);
         }
@@ -507,15 +510,8 @@ public final class DungeonRoomDataSyncClient {
         return new LiveSyncSnapshot(List.copyOf(rooms), List.copyOf(doors), List.copyOf(players));
     }
 
-    private static void send(Minecraft client, String message) {
-        if (client == null || client.player == null) {
-            return;
-        }
-        client.execute(() -> {
-            if (client.player != null) {
-                client.player.sendSystemMessage(Component.literal(message));
-            }
-        });
+    private static void send(Minecraft client, KungMessages.Type type, String message) {
+        KungMessages.send(client, type, "Room Sync", message);
     }
 
     private static String string(JsonObject object, String name, String fallback) {
