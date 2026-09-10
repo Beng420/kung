@@ -28,7 +28,7 @@ public final class SuperpairsHelperFeature extends ConfigurableFeature<MiscConfi
     private static final int PLAYER_INVENTORY_SLOT_COUNT = 36;
     private static final int MAX_PLAYABLE_FIELDS = 28;
     private static final int ASSUMED_BONUS_FIELDS = 2;
-    private static final int MAX_VISIBLE_CARD_LINES = 8;
+    private static final int MAX_CARD_LINES = MAX_PLAYABLE_FIELDS / 2;
     private static final int SUPERPAIRS_LEAVE_GRACE_TICKS = 5;
     private static final int DEBUG_LINE_COUNT = 6;
     private static final int SAMPLE_WIDTH = 170;
@@ -111,11 +111,11 @@ public final class SuperpairsHelperFeature extends ConfigurableFeature<MiscConfi
         int bonusFields = discoveredBonusSlots.size();
         int totalPairs = Math.max(0, (boardSlotCount - bonusFields) / 2);
 
-        int discoveredPairTypes = discoveredCounts().size();
-        int unseenPairs = totalPairs > 0 ? Math.max(0, totalPairs - discoveredPairTypes) : 0;
+        List<CardCount> cards = discoveredCounts();
+        PairStats pairStats = PairStats.of(totalPairs, cards);
 
         // Keep rendering while totalPairs is still 0 during the first few milliseconds.
-        drawPanel(graphics, client, unseenPairs, discoveredCounts(), config, snapshot, totalPairs);
+        drawPanel(graphics, client, pairStats, cards, config, snapshot);
     }
 
     public static synchronized void observeSlotUpdate(int containerId, int slot, ItemStack stack) {
@@ -282,13 +282,15 @@ public final class SuperpairsHelperFeature extends ConfigurableFeature<MiscConfi
         }
 
         return counts.values().stream()
-            .sorted(Comparator.comparing(CardCount::label, String.CASE_INSENSITIVE_ORDER))
+            .sorted(Comparator
+                .comparingInt((CardCount card) -> card.complete() ? 1 : 0)
+                .thenComparing(CardCount::label, String.CASE_INSENSITIVE_ORDER))
             .toList();
     }
 
     public static OverlayBounds overlayBounds(MiscConfig config) {
         float scale = config.superpairsHelperScale() / 100.0F;
-        int sampleLines = 1 + MAX_VISIBLE_CARD_LINES + (config.superpairsHelperDebugEnabled() ? DEBUG_LINE_COUNT : 0);
+        int sampleLines = 3 + MAX_CARD_LINES + (config.superpairsHelperDebugEnabled() ? DEBUG_LINE_COUNT : 0);
         int sampleHeight = PADDING_Y * 2 + sampleLines * ROW_HEIGHT;
         return new OverlayBounds(
             Math.round(config.superpairsHelperX() - scale),
@@ -301,21 +303,26 @@ public final class SuperpairsHelperFeature extends ConfigurableFeature<MiscConfi
     private static void drawPanel(
         GuiGraphicsExtractor graphics,
         Minecraft client,
-        int unseenPairs,
+        PairStats pairStats,
         List<CardCount> cards,
         MiscConfig config,
-        SuperpairsSnapshot snapshot,
-        int totalPairs
+        SuperpairsSnapshot snapshot
     ) {
         List<String> lines = new ArrayList<>();
-        lines.add(totalPairs > 0 ? "Unseen Pairs: " + unseenPairs + " / " + totalPairs : "Superpairs (Scanning...)");
-        int visibleCards = Math.min(cards.size(), MAX_VISIBLE_CARD_LINES);
+        if (pairStats.totalPairs() > 0) {
+            lines.add("Pairs: " + pairStats.solvedPairs() + " / " + pairStats.totalPairs()
+                + " found | " + pairStats.unsolvedPairs() + " open");
+            lines.add("Hidden Pairs: " + pairStats.hiddenPairs()
+                + " | Singles: " + pairStats.singleCards());
+        } else {
+            lines.add("Superpairs (Scanning...)");
+            lines.add("Hidden Pairs: ?");
+        }
+
+        int visibleCards = Math.min(cards.size(), MAX_CARD_LINES);
         for (int index = 0; index < visibleCards; index++) {
             CardCount card = cards.get(index);
-            lines.add(card.label() + " (" + card.count() + "/2)");
-        }
-        if (cards.size() > visibleCards) {
-            lines.add("+" + (cards.size() - visibleCards) + " more");
+            lines.add((card.complete() ? "Done: " : "Need: ") + card.label() + " (" + card.count() + "/2)");
         }
         if (config.superpairsHelperDebugEnabled()) {
             Screen screen = client.screen;
@@ -327,7 +334,7 @@ public final class SuperpairsHelperFeature extends ConfigurableFeature<MiscConfi
             lines.add("scan: glass " + snapshot.markerSlots() + " cards " + snapshot.visibleCardSlots()
                 + " bonus " + snapshot.bonusSlots() + " ignored " + snapshot.ignoredSlots());
             lines.add("state: active " + superpairsSessionActive + " grace " + screenLeaveGraceTicks
-                + " pairs " + totalPairs);
+                + " pairs " + pairStats.totalPairs());
             lines.add("packets: " + observedSlotUpdates + "/" + slotUpdatePackets + " last " + lastObservedSlot);
         }
 
@@ -349,7 +356,7 @@ public final class SuperpairsHelperFeature extends ConfigurableFeature<MiscConfi
             fill(graphics, -PADDING_X - 1, -PADDING_Y - 1, textWidth + PADDING_X + 1, panelHeight + 1, BORDER);
             fill(graphics, -PADDING_X, -PADDING_Y, textWidth + PADDING_X, panelHeight, PANEL);
             for (int index = 0; index < lines.size(); index++) {
-                int color = index == 0 && unseenPairs <= 0 ? MUTED_TEXT : TEXT;
+                int color = index == 0 && pairStats.unsolvedPairs() <= 0 ? MUTED_TEXT : TEXT;
                 graphics.text(client.font, trimToWidth(client, lines.get(index), textWidth), 0, index * ROW_HEIGHT, color, true);
             }
         } finally {
@@ -403,7 +410,30 @@ public final class SuperpairsHelperFeature extends ConfigurableFeature<MiscConfi
     private record CardInfo(String key, String label) {
     }
 
+    private record PairStats(int totalPairs, int solvedPairs, int singleCards, int hiddenPairs) {
+        static PairStats of(int totalPairs, List<CardCount> cards) {
+            int solvedPairs = 0;
+            int singleCards = 0;
+            for (CardCount card : cards) {
+                if (card.complete()) {
+                    solvedPairs++;
+                } else if (card.count() == 1) {
+                    singleCards++;
+                }
+            }
+            int hiddenPairs = Math.max(0, totalPairs - cards.size());
+            return new PairStats(totalPairs, solvedPairs, singleCards, hiddenPairs);
+        }
+
+        int unsolvedPairs() {
+            return Math.max(0, totalPairs - solvedPairs);
+        }
+    }
+
     private record CardCount(String label, int count) {
+        boolean complete() {
+            return count >= 2;
+        }
     }
 
     public record OverlayBounds(int x, int y, int width, int height) {

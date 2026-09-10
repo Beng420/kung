@@ -148,6 +148,14 @@ public final class HypixelInstanceTracker {
             && pendingInstanceServerReady();
     }
 
+    public boolean pendingNonDungeon() {
+        return tracking
+            && !pendingInstanceLine.isBlank()
+            && !isCatacombsInstance(pendingInstanceLine)
+            && recentlyObservedPendingInstance()
+            && isKnownNonDungeonDestination(pendingInstanceLine);
+    }
+
     public boolean dungeonRunContext() {
         return tracking && !dungeonHub && dungeonRunContext;
     }
@@ -497,6 +505,20 @@ public final class HypixelInstanceTracker {
 
     private static boolean isCatacombsInstance(String value) {
         return value != null && value.toLowerCase(Locale.ROOT).contains("catacombs");
+    }
+
+    private static boolean isKnownNonDungeonDestination(String value) {
+        if (value == null || value.isBlank()) {
+            return false;
+        }
+        String lower = value.toLowerCase(Locale.ROOT);
+        return lower.contains("dungeon hub")
+            || lower.contains("private island")
+            || lower.contains("your island")
+            || lower.equals("hub")
+            || lower.contains("the garden")
+            || lower.contains("crimson isle")
+            || lower.contains("dwarven mines");
     }
 
     private static String serverIdFrom(String line) {

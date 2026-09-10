@@ -23,6 +23,7 @@ public final class DungeonMapSnapshot {
     private final Set<GridKey> mapVisibleRooms = new HashSet<>();
     private final Set<GridKey> mapOpenDoors = new HashSet<>();
     private final Set<GridKey> mapRoomConnections = new HashSet<>();
+    private final Set<GridKey> mimicRooms = new HashSet<>();
     private final Map<GridKey, RemoteRoom> remoteRooms = new HashMap<>();
     private final Map<GridKey, RemoteDoor> remoteDoors = new HashMap<>();
     private int lastScanNumber = -1;
@@ -46,6 +47,7 @@ public final class DungeonMapSnapshot {
         mapVisibleRooms.clear();
         mapOpenDoors.clear();
         mapRoomConnections.clear();
+        mimicRooms.clear();
         remoteRooms.clear();
         remoteDoors.clear();
         lastScanNumber = -1;
@@ -196,6 +198,41 @@ public final class DungeonMapSnapshot {
         }
     }
 
+    public void observeMimicRoom(int roomGridX, int roomGridZ, String source) {
+        if (!isValidRoomGrid(roomGridX, roomGridZ)) {
+            return;
+        }
+        GridKey room = new GridKey(roomGridX, roomGridZ);
+        if (mimicRooms.add(room)) {
+            revision++;
+            logMapChange("mimic-room source=" + (source == null ? "unknown" : source)
+                + " room=" + gridText(room)
+                + " revision=" + revision);
+        }
+    }
+
+    public void forgetMimicRoom(int roomGridX, int roomGridZ, String source) {
+        GridKey room = new GridKey(roomGridX, roomGridZ);
+        if (mimicRooms.remove(room)) {
+            revision++;
+            logMapChange("mimic-room-removed source=" + (source == null ? "unknown" : source)
+                + " room=" + gridText(room)
+                + " revision=" + revision);
+        }
+    }
+
+    public void clearMimicRooms(String source) {
+        if (mimicRooms.isEmpty()) {
+            return;
+        }
+        int count = mimicRooms.size();
+        mimicRooms.clear();
+        revision++;
+        logMapChange("mimic-rooms-cleared source=" + (source == null ? "unknown" : source)
+            + " count=" + count
+            + " revision=" + revision);
+    }
+
     private void observeVisitedRoom(GridKey roomGrid) {
         if (visitedRooms.add(roomGrid)) {
             revision++;
@@ -291,6 +328,10 @@ public final class DungeonMapSnapshot {
 
     public Set<GridKey> mapRoomConnections() {
         return Set.copyOf(mapRoomConnections);
+    }
+
+    public Set<GridKey> mimicRooms() {
+        return Set.copyOf(mimicRooms);
     }
 
     public GridKey startRoom() {

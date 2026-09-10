@@ -503,7 +503,11 @@ public final class DungeonLiveMapWriter {
 
                 DungeonDoorKind renderKind = observedLocked ? observedKind : DungeonDoorKind.OPEN;
                 internalDoors.remove(doorCell);
-                externalDoors.put(doorCell, doorInfoFor(renderKind, roomTypes, visitedRooms, gridX, gridZ));
+                externalDoors.merge(
+                    doorCell,
+                    doorInfoFor(renderKind, roomTypes, visitedRooms, gridX, gridZ),
+                    MatchRenderPlan::mergeDoorInfo
+                );
                 if (openedLocked) {
                     openedSpecialDoorCells.add(doorCell);
                 }
@@ -1478,6 +1482,7 @@ public final class DungeonLiveMapWriter {
             return door == null
                 || door.targetType() == RoomType.START
                 || touchesRoomType(doorCell, RoomType.START)
+                || isFairyTargetDoor(doorCell, door)
                 || doorCell.equals(fairyEntranceDoor);
         }
 
@@ -1530,13 +1535,20 @@ public final class DungeonLiveMapWriter {
         }
 
         private boolean isRawExcludedBloodRushDoor(CellKey doorCell, DungeonDoorKind doorKind) {
+            DoorRenderInfo door = externalDoors.get(doorCell);
             return touchesRoomType(doorCell, RoomType.START)
+                || (door != null && isFairyTargetDoor(doorCell, door))
                 || doorCell.equals(fairyEntranceDoor);
         }
 
         private boolean touchesRoomType(CellKey doorCell, RoomType roomType) {
             return firstDoorSideType(roomTypes, doorCell.x(), doorCell.z()) == roomType
                 || secondDoorSideType(roomTypes, doorCell.x(), doorCell.z()) == roomType;
+        }
+
+        private boolean isFairyTargetDoor(CellKey doorCell, DoorRenderInfo door) {
+            return door.targetType() == RoomType.FAIRY
+                && touchesRoomType(doorCell, RoomType.FAIRY);
         }
 
         private record DoorPathEdge(String toOwner, CellKey doorCell) {
@@ -1581,7 +1593,13 @@ public final class DungeonLiveMapWriter {
 
         private static DoorRenderInfo mergeDoorInfo(DoorRenderInfo previous, DoorRenderInfo next) {
             RoomType targetType = previous.targetType();
-            if (!isSpecialDoorTarget(targetType) && isSpecialDoorTarget(next.targetType())) {
+            if (targetType == RoomType.FAIRY
+                && next.targetType() != RoomType.UNKNOWN
+                && next.targetType() != RoomType.FAIRY) {
+                targetType = next.targetType();
+            } else if (!isSpecialDoorTarget(targetType)
+                && isSpecialDoorTarget(next.targetType())
+                && next.targetType() != RoomType.FAIRY) {
                 targetType = next.targetType();
             }
             DungeonDoorKind kind = previous.kind() == DungeonDoorKind.NONE ? next.kind() : previous.kind();

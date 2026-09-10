@@ -6,14 +6,7 @@ import com.github.beng420.kung.skyblock.SkyBlockMayorTracker;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
-import java.net.URI;
-import java.net.URLEncoder;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.nio.charset.StandardCharsets;
 import java.text.NumberFormat;
-import java.time.Duration;
 import java.time.Instant;
 import java.util.EnumMap;
 import java.util.List;
@@ -22,11 +15,8 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
 public final class CatacombsAverageCalculator {
-    private static final URI PIXELSTATS_DUNGEON_API =
-        URI.create("https://www.pixelstats.net/api/calc/dungeon");
     private static final NumberFormat INTEGER_FORMAT = NumberFormat.getIntegerInstance(Locale.US);
     private static final DungeonClass[] CLASSES = DungeonClass.values();
-    private static final int API_ATTEMPTS = 3;
     private static final double[] HECATOMB_BONUSES = {
         0.0, 0.0056, 0.0072, 0.0088, 0.0104, 0.012, 0.0136, 0.0152, 0.0168, 0.0184, 0.02
     };
@@ -39,10 +29,6 @@ public final class CatacombsAverageCalculator {
         85_559_640L, 109_559_640L, 139_559_640L, 177_559_640L, 225_559_640L, 285_559_640L,
         360_559_640L, 453_559_640L, 569_809_640L
     };
-
-    private final HttpClient httpClient = HttpClient.newBuilder()
-        .connectTimeout(Duration.ofSeconds(5))
-        .build();
 
     public CompletableFuture<Result> calculateAsync(String username) {
         return calculateAsync(username, Goal.CLASS_AVERAGE_50);
@@ -70,85 +56,32 @@ public final class CatacombsAverageCalculator {
                             useLocalObservedXp
                         ));
                     }
-                    return loadPixelStats(normalized, goal, useLocalObservedXp, "hypixelError=" + result.error());
+                    return loadAdjectils(normalized, goal, useLocalObservedXp, "hypixelError=" + result.error());
                 });
         }
 
-        return loadPixelStats(normalized, goal, useLocalObservedXp, "hypixel=not-configured");
+        return loadAdjectils(normalized, goal, useLocalObservedXp, "hypixel=not-configured");
     }
 
-    private CompletableFuture<Result> loadPixelStats(
+    private CompletableFuture<Result> loadAdjectils(
         String normalized,
         Goal goal,
         boolean useLocalObservedXp,
         String fallbackDebug
     ) {
-        return loadPixelStats(normalized, goal, useLocalObservedXp, fallbackDebug, 1);
-    }
-
-    private CompletableFuture<Result> loadPixelStats(
-        String normalized,
-        Goal goal,
-        boolean useLocalObservedXp,
-        String fallbackDebug,
-        int attempt
-    ) {
-        long started = System.currentTimeMillis();
-        URI requestUri = URI.create(PIXELSTATS_DUNGEON_API
-            + "?username="
-            + URLEncoder.encode(normalized, StandardCharsets.UTF_8)
-            + "&_kungFresh="
-            + started);
-        HttpRequest request = HttpRequest.newBuilder(requestUri)
-            .timeout(Duration.ofSeconds(12))
-            .header("Accept", "application/json")
-            .header("Cache-Control", "no-cache, no-store, max-age=0")
-            .header("Pragma", "no-cache")
-            .header("User-Agent", "Kung-CA50-ChatCommand")
-            .GET()
-            .build();
-        return httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString())
-            .handle((response, throwable) -> {
-                long elapsed = System.currentTimeMillis() - started;
-                if (throwable != null) {
-                    if (attempt < API_ATTEMPTS) {
-                        return retryPixelStats(normalized, goal, useLocalObservedXp, fallbackDebug, attempt);
-                    }
-                    return CompletableFuture.completedFuture(Result.error(shortError(throwable)));
+        return HypixelSkyBlockProfileClient.INSTANCE.loadPlayerFromAdjectils(normalized)
+            .thenApply(result -> {
+                if (result.success()) {
+                    return calculate(
+                        result.player(),
+                        fallbackDebug + " source=adjectils secrets=" + result.secretsFound(),
+                        normalized,
+                        goal,
+                        useLocalObservedXp
+                    );
                 }
-                if (response.statusCode() < 200 || response.statusCode() >= 300) {
-                    String debug = httpDebug(response, elapsed, normalized) + " attempt=" + attempt;
-                    if (shouldRetry(response.statusCode()) && attempt < API_ATTEMPTS) {
-                        return retryPixelStats(normalized, goal, useLocalObservedXp, fallbackDebug + " " + debug, attempt);
-                    }
-                    return CompletableFuture.completedFuture(Result.error("api returned HTTP " + response.statusCode(), debug));
-                }
-                return CompletableFuture.completedFuture(calculate(parsePlayer(response.body()),
-                    fallbackDebug + " " + httpDebug(response, elapsed, normalized),
-                    normalized,
-                    goal,
-                    useLocalObservedXp));
-            })
-            .thenCompose(future -> future);
-    }
-
-    private CompletableFuture<Result> retryPixelStats(
-        String normalized,
-        Goal goal,
-        boolean useLocalObservedXp,
-        String fallbackDebug,
-        int previousAttempt
-    ) {
-        long delayMillis = 300L * previousAttempt;
-        return CompletableFuture.supplyAsync(
-                () -> null,
-                CompletableFuture.delayedExecutor(delayMillis, java.util.concurrent.TimeUnit.MILLISECONDS)
-            )
-            .thenCompose(ignored -> loadPixelStats(normalized, goal, useLocalObservedXp, fallbackDebug, previousAttempt + 1));
-    }
-
-    private static boolean shouldRetry(int statusCode) {
-        return statusCode == 429 || statusCode == 502 || statusCode == 503 || statusCode == 504 || statusCode >= 500;
+                return Result.error(externalProfileError(result.error()), fallbackDebug + " adjectilsError=" + result.error());
+            });
     }
 
     public Result calculate(PlayerData player) {
@@ -409,25 +342,6 @@ public final class CatacombsAverageCalculator {
         return bestIndex;
     }
 
-    private static String httpDebug(HttpResponse<?> response, long elapsedMillis, String requestedName) {
-        return "requested="
-            + requestedName
-            + " status="
-            + response.statusCode()
-            + " ms="
-            + elapsedMillis
-            + " age="
-            + header(response, "age")
-            + " cache="
-            + header(response, "cache-control")
-            + " cf="
-            + header(response, "cf-cache-status");
-    }
-
-    private static String header(HttpResponse<?> response, String name) {
-        return response.headers().firstValue(name).orElse("-");
-    }
-
     private static String resultDebug(
         PlayerData player,
         ProfileData profile,
@@ -523,6 +437,20 @@ public final class CatacombsAverageCalculator {
         Throwable cause = throwable.getCause() != null ? throwable.getCause() : throwable;
         String message = cause.getMessage();
         return message == null || message.isBlank() ? cause.getClass().getSimpleName() : message;
+    }
+
+    private static String externalProfileError(String error) {
+        String lower = error == null ? "" : error.toLowerCase(Locale.ROOT);
+        if (lower.contains("http 403")) {
+            return "CA data service blocked the request";
+        }
+        if (lower.contains("http 429")) {
+            return "CA data service is rate limited";
+        }
+        if (lower.contains("timed out") || lower.contains("timeout")) {
+            return "CA data service timed out";
+        }
+        return "CA data service unavailable";
     }
 
     public enum DungeonClass {

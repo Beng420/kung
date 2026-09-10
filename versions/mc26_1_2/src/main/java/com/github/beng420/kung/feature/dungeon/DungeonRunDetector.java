@@ -79,6 +79,9 @@ public final class DungeonRunDetector {
         if (tracker.catacombs()) {
             return false;
         }
+        if (tracker.pendingNonDungeon()) {
+            return true;
+        }
 
         String instance = tracker.instanceLine().toLowerCase(java.util.Locale.ROOT);
         if (instance.isBlank()) {

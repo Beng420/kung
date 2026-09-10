@@ -904,6 +904,11 @@ public final class DungeonRunStats {
         }
     }
 
+    public void observeMimicEspKill(Minecraft client) {
+        markMimicKilled(client, true);
+        updateEstimatedScore();
+    }
+
     private void observePlayer(Minecraft client, AbstractClientPlayer player, long nowTick) {
         boolean self = player == client.player || player.getUUID().equals(client.player.getUUID());
         if (!self) {
@@ -2473,6 +2478,9 @@ public final class DungeonRunStats {
             return;
         }
         mimicKilled = true;
+        if (announce && client != null && client.player != null) {
+            client.player.sendSystemMessage(KungMessages.info("Dungeon", "mimic killed"));
+        }
         if (announce && !mimicMessageSent) {
             announcements.sendPartyAfterCooldown(client, "Mimic dead!");
             mimicMessageSent = true;

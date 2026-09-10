@@ -97,6 +97,8 @@ public final class DungeonLifecycleTest {
     public void recognizesKuudraAsKnownNonDungeonInstance() {
         assertTrue(DungeonRunDetector.isKnownNonDungeonInstanceLine("Location: Kuudra's Hollow"));
         assertTrue(DungeonRunDetector.isKnownNonDungeonInstanceLine("Kuudra"));
+        assertTrue(DungeonRunDetector.isKnownNonDungeonInstanceLine("Private Island"));
+        assertTrue(DungeonRunDetector.isKnownNonDungeonInstanceLine("Hub"));
         assertFalse(DungeonRunDetector.isKnownNonDungeonInstanceLine("The Catacombs"));
     }
 

@@ -2,6 +2,7 @@ package com.github.beng420.kung.feature;
 
 import com.github.beng420.kung.feature.dungeon.DungeonChatFilterFeature;
 import com.github.beng420.kung.feature.dungeon.DungeonMapFeature;
+import com.github.beng420.kung.feature.dungeon.DungeonMimicEspFeature;
 import com.github.beng420.kung.feature.dungeon.DungeonSplitsOverlayFeature;
 import com.github.beng420.kung.feature.dungeon.DungeonStateTracker;
 import com.github.beng420.kung.feature.misc.ChatCommandsFeature;
@@ -29,6 +30,7 @@ public final class FeatureRegistry {
 
         DungeonStateTracker tracker = services.dungeonStateTracker();
         register(new DungeonMapFeature(tracker));
+        register(new DungeonMimicEspFeature(tracker));
         register(new DungeonChatFilterFeature(tracker));
         register(new DungeonSplitsOverlayFeature(tracker));
         register(ChatCommandsFeature.INSTANCE);

@@ -663,6 +663,11 @@ public final class KungConfigScreen extends Screen {
                         () -> config.dungeon.setPrinceIconsEnabled(!config.dungeon.princeIconsEnabled())
                     ),
                     SettingEntry.toggle(
+                        "Mimic ESP",
+                        config.dungeon::mimicEspEnabled,
+                        () -> config.dungeon.setMimicEspEnabled(!config.dungeon.mimicEspEnabled())
+                    ),
+                    SettingEntry.toggle(
                         "Force Paul",
                         config.dungeon::forcePaulScoreEnabled,
                         () -> config.dungeon.setForcePaulScoreEnabled(!config.dungeon.forcePaulScoreEnabled())

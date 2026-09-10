@@ -21,6 +21,7 @@ public final class ConfigRegressionTest {
     public void defaultsAndLegacySettings() {
         KungConfig defaults = read("{}");
         equal(100, defaults.dungeon.scale(), "missing map uses defaults");
+        equal(false, defaults.dungeon.mimicEspEnabled(), "mimic esp defaults off");
         equal(85, defaults.splits.scale(), "missing splits use defaults");
         equal(true, defaults.misc.cataPartyCommandsEnabled(), "missing command channels use defaults");
         equal(true, defaults.misc.c50ChatCommandEnabled(), "c50 command defaults on");
@@ -109,6 +110,7 @@ public final class ConfigRegressionTest {
             KungConfig config = new KungConfig(file);
             config.load();
             config.dungeon.setX(77);
+            config.dungeon.setMimicEspEnabled(true);
             config.bloodRush.setEnabled(true);
             config.chatFilter.setNecron(false);
             config.splits.setY(123);
@@ -119,6 +121,7 @@ public final class ConfigRegressionTest {
             String saved = Files.readString(file);
             KungConfig roundTrip = read(saved);
             equal(77, roundTrip.dungeon.x(), "map setter persists");
+            equal(true, roundTrip.dungeon.mimicEspEnabled(), "mimic esp setter persists");
             equal(true, roundTrip.bloodRush.enabled(), "blood rush setter persists");
             equal(false, roundTrip.chatFilter.necron(), "filter setter persists");
             equal(123, roundTrip.splits.y(), "splits setter persists");

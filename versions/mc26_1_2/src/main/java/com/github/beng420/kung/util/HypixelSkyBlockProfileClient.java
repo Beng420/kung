@@ -26,6 +26,10 @@ public final class HypixelSkyBlockProfileClient {
         URI.create("https://api.minecraftservices.com/minecraft/profile/lookup/name/");
     private static final URI HYPIXEL_PLAYER_API = URI.create("https://api.hypixel.net/v2/player");
     private static final URI HYPIXEL_PROFILES_API = URI.create("https://api.hypixel.net/v2/skyblock/profiles");
+    private static final URI ADJECTILS_PLAYER_API =
+        URI.create("https://adjectilsbackend.adjectivenoun3215.workers.dev/player");
+    private static final URI ADJECTILS_PROFILES_API =
+        URI.create("https://adjectilsbackend.adjectivenoun3215.workers.dev/v2/skyblock/profiles");
     private static final int API_ATTEMPTS = 3;
 
     private final HttpClient httpClient = HttpClient.newBuilder()
@@ -69,6 +73,16 @@ public final class HypixelSkyBlockProfileClient {
                 .exceptionally(throwable -> SecretResult.error(shortError(throwable))));
     }
 
+    public CompletableFuture<ProfileResult> loadPlayerFromAdjectils(String username) {
+        String normalized = username == null ? "" : username.trim();
+        if (!validUsername(normalized)) {
+            return CompletableFuture.completedFuture(ProfileResult.error("invalid username"));
+        }
+        return resolveUsername(normalized)
+            .thenCompose(this::loadAdjectils)
+            .exceptionally(throwable -> ProfileResult.error(shortError(throwable)));
+    }
+
     private CompletableFuture<MinecraftProfile> resolveUsername(String username) {
         URI uri = URI.create(MOJANG_PROFILE_API + URLEncoder.encode(username, StandardCharsets.UTF_8));
         HttpRequest request = HttpRequest.newBuilder(uri)
@@ -97,6 +111,73 @@ public final class HypixelSkyBlockProfileClient {
         CompletableFuture<JsonObject> profilesFuture = loadHypixelObject(HYPIXEL_PROFILES_API, "uuid", profile.uuid(), apiKey);
         return playerFuture.thenCombine(profilesFuture, (playerRoot, profilesRoot) -> parse(profile, playerRoot, profilesRoot))
             .exceptionally(throwable -> ProfileResult.error(shortError(throwable)));
+    }
+
+    private CompletableFuture<ProfileResult> loadAdjectils(MinecraftProfile profile) {
+        CompletableFuture<JsonObject> playerFuture = loadAdjectilsObject(ADJECTILS_PLAYER_API, "uuid", profile.uuid());
+        CompletableFuture<JsonObject> profilesFuture = loadAdjectilsObject(ADJECTILS_PROFILES_API, "uuid", profile.uuid());
+        return playerFuture.thenCombine(profilesFuture, (playerRoot, profilesRoot) -> parse(profile, playerRoot, profilesRoot));
+    }
+
+    private CompletableFuture<JsonObject> loadAdjectilsObject(URI baseUri, String parameter, String value) {
+        return loadAdjectilsObject(baseUri, parameter, value, 1);
+    }
+
+    private CompletableFuture<JsonObject> loadAdjectilsObject(
+        URI baseUri,
+        String parameter,
+        String value,
+        int attempt
+    ) {
+        URI uri = URI.create(baseUri + "?" + parameter + "=" + URLEncoder.encode(value, StandardCharsets.UTF_8));
+        HttpRequest request = HttpRequest.newBuilder(uri)
+            .timeout(Duration.ofSeconds(12))
+            .header("Accept", "application/json")
+            .header("X-Timestamp", Long.toString(System.currentTimeMillis()))
+            .header("User-Agent", "Kung-CA50-AdjectilsFallback")
+            .GET()
+            .build();
+        return httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString())
+            .handle((response, throwable) -> {
+                if (throwable != null) {
+                    if (attempt < API_ATTEMPTS) {
+                        return retryAdjectilsObject(baseUri, parameter, value, attempt);
+                    }
+                    return failedFuture(throwable);
+                }
+                if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                    IllegalStateException error =
+                        new IllegalStateException("Adjectils returned HTTP " + response.statusCode());
+                    if (shouldRetry(response.statusCode()) && attempt < API_ATTEMPTS) {
+                        return retryAdjectilsObject(baseUri, parameter, value, attempt);
+                    }
+                    return failedFuture(error);
+                }
+                try {
+                    JsonObject root = JsonParser.parseString(response.body()).getAsJsonObject();
+                    if (!bool(root, "success")) {
+                        throw new IllegalStateException("Adjectils returned success=false");
+                    }
+                    return CompletableFuture.completedFuture(root);
+                } catch (RuntimeException exception) {
+                    return failedFuture(exception);
+                }
+            })
+            .thenCompose(future -> future);
+    }
+
+    private CompletableFuture<JsonObject> retryAdjectilsObject(
+        URI baseUri,
+        String parameter,
+        String value,
+        int previousAttempt
+    ) {
+        long delayMillis = 300L * previousAttempt;
+        return CompletableFuture.supplyAsync(
+                () -> null,
+                CompletableFuture.delayedExecutor(delayMillis, java.util.concurrent.TimeUnit.MILLISECONDS)
+            )
+            .thenCompose(ignored -> loadAdjectilsObject(baseUri, parameter, value, previousAttempt + 1));
     }
 
     private CompletableFuture<JsonObject> loadHypixelObject(URI baseUri, String parameter, String value, String apiKey) {
@@ -227,7 +308,7 @@ public final class HypixelSkyBlockProfileClient {
         for (DungeonClass dungeonClass : DungeonClass.values()) {
             JsonObject classObject = objectMember(playerClasses, classId(dungeonClass));
             classXp.put(dungeonClass, number(classObject, "experience", 0.0));
-            classPerks.put(dungeonClass, 5);
+            classPerks.put(dungeonClass, classPerk(member, dungeonClass));
         }
         return new ProfileData(
             string(profileObject, "profile_id", ""),
@@ -241,6 +322,21 @@ public final class HypixelSkyBlockProfileClient {
 
     private static String classId(DungeonClass dungeonClass) {
         return dungeonClass == DungeonClass.BERSERK ? "berserk" : dungeonClass.id();
+    }
+
+    private static int classPerk(JsonObject member, DungeonClass dungeonClass) {
+        JsonObject perks = objectMember(objectMember(member, "player_data"), "perks");
+        return (int) Math.round(number(perks, classPerkId(dungeonClass), 0.0));
+    }
+
+    private static String classPerkId(DungeonClass dungeonClass) {
+        return switch (dungeonClass) {
+            case ARCHER -> "toxophilite";
+            case BERSERK -> "unbridled_rage";
+            case HEALER -> "heart_of_gold";
+            case MAGE -> "cold_efficiency";
+            case TANK -> "diamond_in_the_rough";
+        };
     }
 
     public String statusMessage() {

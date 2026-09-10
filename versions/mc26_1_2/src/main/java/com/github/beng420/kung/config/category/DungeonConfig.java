@@ -13,6 +13,7 @@ public final class DungeonConfig extends ConfigCategory {
     private boolean showLegend = false;
     private boolean showInBoss = true;
     private boolean princeIconsEnabled = true;
+    private boolean mimicEspEnabled = false;
     private boolean forcePaulScoreEnabled = false;
     private boolean playerTrackingEnabled = false;
     private boolean deathMessagesEnabled = false;
@@ -48,6 +49,8 @@ public final class DungeonConfig extends ConfigCategory {
     public void setShowInBoss(boolean value) { showInBoss = value; save(); }
     public boolean princeIconsEnabled() { return princeIconsEnabled; }
     public void setPrinceIconsEnabled(boolean value) { princeIconsEnabled = value; save(); }
+    public boolean mimicEspEnabled() { return mimicEspEnabled; }
+    public void setMimicEspEnabled(boolean value) { mimicEspEnabled = value; save(); }
     public boolean forcePaulScoreEnabled() { return forcePaulScoreEnabled; }
     public void setForcePaulScoreEnabled(boolean value) { forcePaulScoreEnabled = value; save(); }
     public boolean playerTrackingEnabled() { return playerTrackingEnabled; }

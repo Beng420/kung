@@ -111,7 +111,7 @@ public final class KungDebugRecorder {
         builder.append("entries=").append(snapshot.size() - from).append('/').append(snapshot.size()).append('\n');
         builder.append("storedLimit=").append(MAX_EVENTS).append('\n');
         builder.append("suppressed=").append(suppressedTotal).append('\n');
-        builder.append("focus=door-title,map-change,map-check,map-discovery,map-topology,player-markers,player-slots,dungeon-state,context-state\n");
+        builder.append("focus=door-title,map-change,map-check,map-discovery,map-topology,mimic-esp,player-markers,player-slots,dungeon-state,context-state\n");
         appendAreaSummary(builder);
         builder.append('\n');
         for (int index = from; index < snapshot.size(); index++) {
@@ -213,6 +213,7 @@ public final class KungDebugRecorder {
             case "loadouts-auto-close" -> new AreaPolicy(40, 60_000L, DEFAULT_DEDUPE_MILLIS, true, important);
             case "map-change" -> new AreaPolicy(120, 60_000L, 3_000L, false, important);
             case "map-check" -> new AreaPolicy(30, 60_000L, DEFAULT_DEDUPE_MILLIS, false, important);
+            case "mimic-esp" -> new AreaPolicy(40, 60_000L, DEFAULT_DEDUPE_MILLIS, true, important);
             case "map-discovery", "map-topology" ->
                 new AreaPolicy(80, 60_000L, DEFAULT_DEDUPE_MILLIS, false, important);
             case "player-markers" -> new AreaPolicy(30, 60_000L, DEFAULT_DEDUPE_MILLIS, true, important);
@@ -235,6 +236,7 @@ public final class KungDebugRecorder {
             || haystack.contains("blood")
             || haystack.contains("wither")
             || haystack.contains("secret")
+            || haystack.contains("mimic")
             || haystack.contains("crypt")
             || haystack.contains("death")
             || haystack.contains(" died")

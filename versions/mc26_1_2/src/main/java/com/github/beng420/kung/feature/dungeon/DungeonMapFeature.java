@@ -69,6 +69,8 @@ public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> 
     private static final int COMPLETED_TEXT = 0xFF55FF55;
     private static final int MUTED_TEXT = 0xFF7F8790;
     private static final int OUTLINE_TEXT = 0xFF000000;
+    private static final int MIMIC_ROOM_OUTLINE = 0xFFFF3333;
+    private static final int MIMIC_ROOM_GLOW = 0x44FF3333;
     private static final int UNKNOWN_CLASS_BORDER = 0xFFE9EDF2;
     private static final int MAX_UNOPENED_ALPHA = 28;
     private static final int FOOTER_HEIGHT = 26;
@@ -185,6 +187,7 @@ public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> 
             graphics.pose().scale(viewport.scale(), viewport.scale());
             graphics.pose().translate(-viewport.minPixelX(), -viewport.minPixelY());
             drawGridContent(graphics, snapshot, renderPlan, stats, viewport);
+            drawMimicRoomHighlights(graphics, snapshot, renderPlan, stats, viewport);
             if (!recording) {
                 drawPreRunStartRoom(graphics, 0, 0);
             }
@@ -233,6 +236,164 @@ public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> 
 
         drawMatchedRooms(graphics, 0, 0, renderPlan, viewport);
         drawExternalDoors(graphics, 0, 0, renderPlan.externalDoors(), viewport);
+    }
+
+    private static void drawMimicRoomHighlights(
+        GuiGraphicsExtractor graphics,
+        DungeonMapSnapshot snapshot,
+        DungeonLiveMapWriter.MatchRenderPlan renderPlan,
+        DungeonRunStats stats,
+        GridViewport viewport
+    ) {
+        if (!KungConfig.get().dungeon.mimicEspEnabled()
+            || stats == null
+            || stats.mimicKilled()
+            || snapshot.mimicRooms().isEmpty()) {
+            return;
+        }
+
+        Map<String, Set<DungeonLiveMapWriter.CellKey>> highlightedGroups = new HashMap<>();
+        for (DungeonMapSnapshot.GridKey mimicRoom : snapshot.mimicRooms()) {
+            DungeonLiveMapWriter.CellKey cell = new DungeonLiveMapWriter.CellKey(mimicRoom.gridX(), mimicRoom.gridZ());
+            if (renderPlan.roomTypeAt(cell.x(), cell.z()) == RoomType.TRAP) {
+                continue;
+            }
+            Set<DungeonLiveMapWriter.CellKey> roomCells = sameOwnedRoomCells(renderPlan, cell);
+            String groupKey = renderPlan.roomOwners().getOrDefault(cell, "single:" + cell.x() + "," + cell.z());
+            highlightedGroups.computeIfAbsent(groupKey, ignored -> new HashSet<>()).addAll(roomCells);
+        }
+
+        for (Set<DungeonLiveMapWriter.CellKey> cells : highlightedGroups.values()) {
+            if (containsVisibleRoomCell(cells, viewport)) {
+                drawMimicRoomShape(graphics, cells);
+            }
+        }
+    }
+
+    private static boolean containsVisibleRoomCell(Set<DungeonLiveMapWriter.CellKey> cells, GridViewport viewport) {
+        for (DungeonLiveMapWriter.CellKey cell : cells) {
+            if (viewport.containsScanCell(cell.x() * 2, cell.z() * 2)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static Set<DungeonLiveMapWriter.CellKey> sameOwnedRoomCells(
+        DungeonLiveMapWriter.MatchRenderPlan renderPlan,
+        DungeonLiveMapWriter.CellKey cell
+    ) {
+        String owner = renderPlan.roomOwners().get(cell);
+        if (owner != null) {
+            Set<DungeonLiveMapWriter.CellKey> cells = new HashSet<>();
+            for (Map.Entry<DungeonLiveMapWriter.CellKey, String> entry : renderPlan.roomOwners().entrySet()) {
+                if (owner.equals(entry.getValue())) {
+                    cells.add(entry.getKey());
+                }
+            }
+            return cells;
+        }
+
+        DungeonKnownRoomCatalog.MatchedRoom match = matchContaining(renderPlan, cell.x(), cell.z());
+        if (match == null) {
+            return Set.of(cell);
+        }
+
+        Set<DungeonLiveMapWriter.CellKey> cells = new HashSet<>();
+        for (DungeonKnownRoomCatalog.MatchedComponent component : match.components()) {
+            cells.add(new DungeonLiveMapWriter.CellKey(component.roomGridX(), component.roomGridZ()));
+        }
+        return cells;
+    }
+
+    private static void drawMimicRoomShape(
+        GuiGraphicsExtractor graphics,
+        Set<DungeonLiveMapWriter.CellKey> roomCells
+    ) {
+        Set<DungeonLiveMapWriter.CellKey> occupiedScanCells = occupiedScanCellsForRoomShape(roomCells);
+        for (DungeonLiveMapWriter.CellKey scanCell : occupiedScanCells) {
+            Rect rect = expandedRectForScanCell(scanCell.x(), scanCell.z());
+            fill(graphics, rect.x(), rect.y(), rect.right(), rect.bottom(), MIMIC_ROOM_GLOW);
+        }
+        for (DungeonLiveMapWriter.CellKey scanCell : occupiedScanCells) {
+            drawMimicPerimeterEdges(graphics, occupiedScanCells, scanCell);
+        }
+    }
+
+    private static Set<DungeonLiveMapWriter.CellKey> occupiedScanCellsForRoomShape(
+        Set<DungeonLiveMapWriter.CellKey> roomCells
+    ) {
+        Set<DungeonLiveMapWriter.CellKey> occupied = new HashSet<>();
+        for (DungeonLiveMapWriter.CellKey roomCell : roomCells) {
+            occupied.add(new DungeonLiveMapWriter.CellKey(roomCell.x() * 2, roomCell.z() * 2));
+            DungeonLiveMapWriter.CellKey right = new DungeonLiveMapWriter.CellKey(roomCell.x() + 1, roomCell.z());
+            DungeonLiveMapWriter.CellKey down = new DungeonLiveMapWriter.CellKey(roomCell.x(), roomCell.z() + 1);
+            if (roomCells.contains(right)) {
+                occupied.add(new DungeonLiveMapWriter.CellKey(roomCell.x() * 2 + 1, roomCell.z() * 2));
+            }
+            if (roomCells.contains(down)) {
+                occupied.add(new DungeonLiveMapWriter.CellKey(roomCell.x() * 2, roomCell.z() * 2 + 1));
+            }
+        }
+
+        for (DungeonLiveMapWriter.CellKey roomCell : roomCells) {
+            if (roomCells.contains(new DungeonLiveMapWriter.CellKey(roomCell.x() + 1, roomCell.z()))
+                && roomCells.contains(new DungeonLiveMapWriter.CellKey(roomCell.x(), roomCell.z() + 1))
+                && roomCells.contains(new DungeonLiveMapWriter.CellKey(roomCell.x() + 1, roomCell.z() + 1))) {
+                occupied.add(new DungeonLiveMapWriter.CellKey(roomCell.x() * 2 + 1, roomCell.z() * 2 + 1));
+            }
+        }
+        return occupied;
+    }
+
+    private static void drawMimicPerimeterEdges(
+        GuiGraphicsExtractor graphics,
+        Set<DungeonLiveMapWriter.CellKey> occupiedScanCells,
+        DungeonLiveMapWriter.CellKey scanCell
+    ) {
+        Rect rect = expandedRectForScanCell(scanCell.x(), scanCell.z());
+        if (!occupiedScanCells.contains(new DungeonLiveMapWriter.CellKey(scanCell.x(), scanCell.z() - 1))) {
+            fill(graphics, rect.x(), rect.y() - 1, rect.right(), rect.y() + 1, MIMIC_ROOM_OUTLINE);
+        }
+        if (!occupiedScanCells.contains(new DungeonLiveMapWriter.CellKey(scanCell.x(), scanCell.z() + 1))) {
+            fill(graphics, rect.x(), rect.bottom() - 1, rect.right(), rect.bottom() + 1, MIMIC_ROOM_OUTLINE);
+        }
+        if (!occupiedScanCells.contains(new DungeonLiveMapWriter.CellKey(scanCell.x() - 1, scanCell.z()))) {
+            fill(graphics, rect.x() - 1, rect.y(), rect.x() + 1, rect.bottom(), MIMIC_ROOM_OUTLINE);
+        }
+        if (!occupiedScanCells.contains(new DungeonLiveMapWriter.CellKey(scanCell.x() + 1, scanCell.z()))) {
+            fill(graphics, rect.right() - 1, rect.y(), rect.right() + 1, rect.bottom(), MIMIC_ROOM_OUTLINE);
+        }
+    }
+
+    private static Rect expandedRectForScanCell(int gridX, int gridZ) {
+        int x = scanGridToPixel(gridX);
+        int y = scanGridToPixel(gridZ);
+        int width = sizeFor(gridX, gridZ);
+        int height = sizeFor(gridX, gridZ);
+        if (DungeonScanUtils.isSeparatorScanPoint(gridX, gridZ)) {
+            return new Rect(x - CELL_GAP, y - CELL_GAP, width + CELL_GAP * 2, height + CELL_GAP * 2);
+        }
+        if (DungeonScanUtils.isDoorScanPoint(gridX, gridZ)) {
+            if (isHorizontalDoor(gridX, gridZ)) {
+                return new Rect(x - CELL_GAP, y, DOOR_SIZE + CELL_GAP * 2, ROOM_SIZE);
+            }
+            return new Rect(x, y - CELL_GAP, ROOM_SIZE, DOOR_SIZE + CELL_GAP * 2);
+        }
+        return new Rect(x, y, width, height);
+    }
+
+    private static DungeonKnownRoomCatalog.MatchedRoom matchContaining(
+        DungeonLiveMapWriter.MatchRenderPlan renderPlan,
+        int roomGridX,
+        int roomGridZ
+    ) {
+        for (DungeonKnownRoomCatalog.MatchedRoom match : renderPlan.matches()) {
+            if (match.contains(roomGridX, roomGridZ)) {
+                return match;
+            }
+        }
+        return null;
     }
 
     private static void drawRoomLabels(
@@ -2186,6 +2347,16 @@ public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> 
     }
 
     private record CryptEstimate(int knownTotal, boolean hasUnknownRooms) {
+    }
+
+    private record Rect(int x, int y, int width, int height) {
+        int right() {
+            return x + width;
+        }
+
+        int bottom() {
+            return y + height;
+        }
     }
 
     private static String currentPlayerGridText() {
