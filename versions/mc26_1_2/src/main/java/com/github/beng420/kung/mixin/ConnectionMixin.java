@@ -1,12 +1,9 @@
 package com.github.beng420.kung.mixin;
 
 import com.github.beng420.kung.feature.dungeon.DungeonServerTickEvents;
-import com.github.beng420.kung.feature.dungeon.DungeonEventRouter;
 import com.github.beng420.kung.feature.misc.CustomSoundsFeature;
 import com.github.beng420.kung.feature.misc.LoadoutsAutoCloseFeature;
 import com.github.beng420.kung.feature.misc.SuperpairsHelperFeature;
-import com.github.beng420.kung.skyblock.HypixelInstanceTracker;
-import com.github.beng420.kung.util.KungDebugRecorder;
 import com.github.beng420.kung.util.ServerTpsTracker;
 import io.netty.channel.ChannelHandlerContext;
 import net.minecraft.network.Connection;
@@ -14,12 +11,9 @@ import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.common.ClientboundPingPacket;
 import net.minecraft.network.protocol.game.ClientboundContainerSetContentPacket;
 import net.minecraft.network.protocol.game.ClientboundContainerSetSlotPacket;
-import net.minecraft.network.protocol.game.ClientboundLoginPacket;
 import net.minecraft.network.protocol.game.ClientboundOpenScreenPacket;
-import net.minecraft.network.protocol.game.ClientboundRespawnPacket;
 import net.minecraft.network.protocol.game.ClientboundSoundEntityPacket;
 import net.minecraft.network.protocol.game.ClientboundSoundPacket;
-import net.minecraft.network.protocol.game.ClientboundTabListPacket;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -42,7 +36,7 @@ public abstract class ConnectionMixin {
             return;
         }
         if (packet instanceof ClientboundPingPacket pingPacket && pingPacket.getId() != 0) {
-            DungeonServerTickEvents.post();
+            net.minecraft.client.Minecraft.getInstance().execute(DungeonServerTickEvents::post);
             ServerTpsTracker.INSTANCE.observeServerTick();
         }
         if (packet instanceof ClientboundSoundPacket soundPacket) {
@@ -74,15 +68,6 @@ public abstract class ConnectionMixin {
                     contentPacket.items().get(slot)
                 );
             }
-        }
-        if (packet instanceof ClientboundLoginPacket || packet instanceof ClientboundRespawnPacket) {
-            KungDebugRecorder.event("packet", packet.getClass().getSimpleName());
-            HypixelInstanceTracker.INSTANCE.observeWorldChangePacket();
-            DungeonEventRouter.observeWorldChangePacket();
-        }
-        if (packet instanceof ClientboundTabListPacket tabListPacket) {
-            KungDebugRecorder.event("packet", "ClientboundTabListPacket");
-            HypixelInstanceTracker.INSTANCE.observeTabList(tabListPacket.header(), tabListPacket.footer());
         }
     }
 }

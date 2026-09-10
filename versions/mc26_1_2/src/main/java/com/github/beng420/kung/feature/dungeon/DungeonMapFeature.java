@@ -40,7 +40,7 @@ public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> 
     private static final int GRID_UNITS = DungeonScanUtils.SCAN_GRID_SIZE;
     private static final int GRID_PIXEL_SIZE = scanGridToPixel(GRID_UNITS);
     private static final int HEADER_HEIGHT = 0;
-    private static final int LEGEND_HEIGHT = 14;
+    private static final int LEGEND_HEIGHT = 38;
     private static final int PLAYER_HEAD_SIZE = 10;
     private static final int TEAMMATE_HEAD_SIZE = 8;
     private static final float ROOM_LABEL_SCALE = 0.56F;
@@ -49,7 +49,9 @@ public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> 
     private static final int ROOM_TEXT_LINE_STEP = 5;
     private static final int MAX_ROOM_LABEL_LINES = 3;
     private static final int LONG_WORD_SPLIT_MIN_CHARS = 12;
+    private static final int MAX_LABEL_LINE_CACHE_ENTRIES = 512;
     private static final int MAX_PLAYER_MARKERS = 5;
+    private static final long PLAYER_MARKER_LOG_INTERVAL_MILLIS = 2_000L;
     private static final double PLAYER_MARKER_SMOOTHING = 18.0;
     private static final int PLAYER_MARKER_SNAP_DISTANCE = 18;
 
@@ -68,18 +70,15 @@ public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> 
     private static final int BAD_TEXT = 0xFFFF5555;
     private static final int COMPLETED_TEXT = 0xFF55FF55;
     private static final int MUTED_TEXT = 0xFF7F8790;
-    private static final int OUTLINE_TEXT = 0xFF000000;
     private static final int MIMIC_ROOM_OUTLINE = 0xFFFF3333;
     private static final int MIMIC_ROOM_GLOW = 0x44FF3333;
     private static final int UNKNOWN_CLASS_BORDER = 0xFFE9EDF2;
     private static final int MAX_UNOPENED_ALPHA = 28;
     private static final int FOOTER_HEIGHT = 26;
     private static final float FOOTER_TEXT_SCALE = 0.72F;
-    private static final int MAX_CONFIG_SCALE = 150;
-    private static final float MAX_SCREEN_WIDTH_FRACTION = 0.36F;
-    private static final float MAX_SCREEN_HEIGHT_FRACTION = 0.46F;
     private static final Map<String, SmoothedMarker> SMOOTHED_PLAYER_MARKERS = new HashMap<>();
     private static final Map<UUID, PlayerSkin> LAST_PLAYER_SKINS = new HashMap<>();
+    private static final Map<LabelLineKey, List<String>> LABEL_LINE_CACHE = new HashMap<>();
     private static long playerMarkerFrame;
     private static long lastPlayerMarkerLogMillis;
     private static String lastPlayerMarkerLogState = "";
@@ -109,11 +108,15 @@ public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> 
         DeltaTracker deltaTracker,
         DungeonStateTracker dungeonStateTracker
     ) {
+        if (!config().enabled() || !dungeonStateTracker.isInDungeonArea()) return;
+        long started = System.nanoTime();
         try {
             renderUnsafe(graphics, deltaTracker, dungeonStateTracker);
         } catch (RuntimeException | LinkageError exception) {
             dungeonStateTracker.reportRunError(Minecraft.getInstance(), "Map render", exception);
             KungMod.LOGGER.warn("Failed to render dungeon map overlay.", exception);
+        } finally {
+            DungeonTimings.record("map-render", started);
         }
     }
 
@@ -137,11 +140,6 @@ public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> 
             int left = 0;
             int top = 0;
             int gridTop = top;
-            int height = GRID_PIXEL_SIZE
-                + (config.showLegend() ? LEGEND_HEIGHT : 0)
-                + FOOTER_HEIGHT
-                + 10;
-
             drawGrid(
                 graphics,
                 left,
@@ -153,16 +151,23 @@ public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> 
                 renderPartialTick()
             );
             if (config.showLegend()) {
-                drawLegend(graphics, left, gridTop + GRID_PIXEL_SIZE + 5);
+                graphics.pose().pushMatrix();
+                try {
+                    graphics.pose().translate(left, gridTop + GRID_PIXEL_SIZE + 5);
+                    graphics.pose().scale(textScale(config), textScale(config));
+                    drawLegend(graphics, 0, 0);
+                } finally {
+                    graphics.pose().popMatrix();
+                }
             }
-            drawFooter(
-                graphics,
-                left,
-                gridTop + GRID_PIXEL_SIZE + (config.showLegend() ? LEGEND_HEIGHT + 8 : 6),
-                dungeonStateTracker.runStats(),
-                snapshot,
-                renderPlan
-            );
+            graphics.pose().pushMatrix();
+            try {
+                graphics.pose().translate(left, gridTop + footerTop(config));
+                graphics.pose().scale(textScale(config), textScale(config));
+                drawFooter(graphics, 0, 0, dungeonStateTracker.runStats(), snapshot, renderPlan);
+            } finally {
+                graphics.pose().popMatrix();
+            }
         } finally {
             graphics.pose().popMatrix();
         }
@@ -618,7 +623,7 @@ public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> 
             textState,
             DungeonRoomDebugFormatter.matchOverlayLines(match, renderPlan)
         );
-        drawPrinceIcon(graphics, roomBounds(match), stats, match.template().name());
+        drawPrinceIcon(graphics, roomBounds(match), stats, match.template().prince());
     }
 
     private static int secretsFoundFor(
@@ -917,20 +922,20 @@ public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> 
                 ? List.of()
                 : DungeonRoomDebugFormatter.hintOverlayLines(observedPoint.point(), roomGridX, roomGridZ)
         );
-        drawPrinceIcon(graphics, roomGridX, roomGridZ, stats, hint.name());
+        drawPrinceIcon(graphics, roomGridX, roomGridZ, stats, hint.prince());
     }
 
     private static void drawPrinceIcon(
         GuiGraphicsExtractor graphics,
         RoomBounds bounds,
         DungeonRunStats stats,
-        String roomName
+        boolean hasPrince
     ) {
         int minPixelX = scanGridToPixel(bounds.minX() * 2);
         int maxPixelX = scanGridToPixel(bounds.maxX() * 2) + ROOM_SIZE;
         int minPixelY = scanGridToPixel(bounds.minZ() * 2);
         int maxPixelY = scanGridToPixel(bounds.maxZ() * 2) + ROOM_SIZE;
-        drawPrinceIcon(graphics, minPixelX, minPixelY, maxPixelX, maxPixelY, stats, roomName);
+        drawPrinceIcon(graphics, minPixelX, minPixelY, maxPixelX, maxPixelY, stats, hasPrince);
     }
 
     private static void drawPrinceIcon(
@@ -938,11 +943,11 @@ public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> 
         int roomGridX,
         int roomGridZ,
         DungeonRunStats stats,
-        String roomName
+        boolean hasPrince
     ) {
         int minPixelX = scanGridToPixel(roomGridX * 2);
         int minPixelY = scanGridToPixel(roomGridZ * 2);
-        drawPrinceIcon(graphics, minPixelX, minPixelY, minPixelX + ROOM_SIZE, minPixelY + ROOM_SIZE, stats, roomName);
+        drawPrinceIcon(graphics, minPixelX, minPixelY, minPixelX + ROOM_SIZE, minPixelY + ROOM_SIZE, stats, hasPrince);
     }
 
     private static void drawPrinceIcon(
@@ -952,21 +957,22 @@ public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> 
         int maxPixelX,
         int maxPixelY,
         DungeonRunStats stats,
-        String roomName
+        boolean hasPrince
     ) {
         if (!KungConfig.get().dungeon.princeIconsEnabled()
-            || !KnownDungeonRoomRepository.INSTANCE.hasPrince(roomName)) {
+            || !hasPrince) {
             return;
         }
 
         Minecraft client = Minecraft.getInstance();
         String icon = "P";
-        int width = Math.round(client.font.width(icon) * PRINCE_ICON_SCALE);
-        int height = Math.round(client.font.lineHeight * PRINCE_ICON_SCALE);
+        float iconScale = PRINCE_ICON_SCALE * textScale(KungConfig.get().dungeon);
+        int width = Math.round(client.font.width(icon) * iconScale);
+        int height = Math.round(client.font.lineHeight * iconScale);
         int x = Math.max(minPixelX + 1, maxPixelX - width - 2);
         int y = Math.max(minPixelY + 1, maxPixelY - height - 1);
         boolean done = stats.princeKilled();
-        drawScaledText(graphics, icon, x, y, done ? MUTED_TEXT : SECRET_TARGET_TEXT, PRINCE_ICON_SCALE, true);
+        drawScaledText(graphics, icon, x, y, done ? MUTED_TEXT : SECRET_TARGET_TEXT, iconScale, true);
         if (done) {
             fill(graphics, x - 1, y + height / 2, x + width + 1, y + height / 2 + 1, BAD_TEXT);
         }
@@ -989,7 +995,8 @@ public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> 
             return;
         }
 
-        List<String> labelLines = labelLines(label, Math.round(maxWidth / ROOM_LABEL_SCALE));
+        float textScale = textScale(KungConfig.get().dungeon);
+        List<String> labelLines = labelLines(label, Math.max(1, Math.round(maxWidth / (ROOM_LABEL_SCALE * textScale))));
         List<RoomTextLine> textLines = new ArrayList<>();
         for (String labelLine : labelLines) {
             textLines.add(new RoomTextLine(labelLine, ROOM_LABEL_SCALE));
@@ -1006,16 +1013,17 @@ public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> 
             }
         }
 
-        int y = centerY - ((textLines.size() - 1) * ROOM_TEXT_LINE_STEP) / 2 - 3;
+        int lineStep = Math.max(1, Math.round(ROOM_TEXT_LINE_STEP * textScale));
+        int y = centerY - ((textLines.size() - 1) * lineStep) / 2 - Math.round(3 * textScale);
         for (int index = 0; index < textLines.size(); index++) {
             RoomTextLine line = textLines.get(index);
             drawScaledCenteredText(
                 graphics,
                 line.text(),
                 centerX,
-                y + index * ROOM_TEXT_LINE_STEP,
+                y + index * lineStep,
                 textState.color(),
-                line.scale(),
+                line.scale() * textScale,
                 true
             );
         }
@@ -1043,17 +1051,29 @@ public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> 
     }
 
     private static List<String> labelLines(String value, int maxWidth) {
-        Minecraft client = Minecraft.getInstance();
         String trimmed = value.trim();
         if (trimmed.isEmpty()) {
             return List.of();
         }
-        String[] words = trimmed.split("\\s+");
-        if (words.length == 1) {
-            return labelSingleWord(words[0], maxWidth);
+        LabelLineKey key = new LabelLineKey(trimmed, maxWidth);
+        List<String> cached = LABEL_LINE_CACHE.get(key);
+        if (cached != null) {
+            return cached;
         }
 
-        return clampLabelLines(wrapWordsOnly(words, maxWidth));
+        List<String> lines;
+        String[] words = trimmed.split("\\s+");
+        if (words.length == 1) {
+            lines = labelSingleWord(words[0], maxWidth);
+        } else {
+            lines = clampLabelLines(wrapWordsOnly(words, maxWidth));
+        }
+
+        if (LABEL_LINE_CACHE.size() >= MAX_LABEL_LINE_CACHE_ENTRIES) {
+            LABEL_LINE_CACHE.clear();
+        }
+        LABEL_LINE_CACHE.put(key, lines);
+        return lines;
     }
 
     private static List<String> labelSingleWord(String word, int maxWidth) {
@@ -1127,8 +1147,8 @@ public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> 
         int color,
         boolean shadow
     ) {
-        Minecraft client = Minecraft.getInstance();
-        graphics.text(client.font, text, centerX - client.font.width(text) / 2, y, color, shadow);
+        float textScale = textScale(KungConfig.get().dungeon);
+        drawScaledCenteredText(graphics, text, centerX, y - Math.round(4 * (textScale - 1)), color, textScale, shadow);
     }
 
     private static void drawScaledCenteredText(
@@ -1145,13 +1165,7 @@ public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> 
         graphics.pose().translate(centerX, y);
         graphics.pose().scale(scale, scale);
         int x = -client.font.width(text) / 2;
-        if (shadow) {
-            graphics.text(client.font, text, x - 1, 0, OUTLINE_TEXT, false);
-            graphics.text(client.font, text, x + 1, 0, OUTLINE_TEXT, false);
-            graphics.text(client.font, text, x, -1, OUTLINE_TEXT, false);
-            graphics.text(client.font, text, x, 1, OUTLINE_TEXT, false);
-        }
-        graphics.text(client.font, text, x, 0, color, false);
+        graphics.text(client.font, text, x, 0, color, shadow);
         graphics.pose().popMatrix();
     }
 
@@ -1192,6 +1206,7 @@ public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> 
         long frame = ++playerMarkerFrame;
         List<MarkerCenter> drawnMarkers = new ArrayList<>();
         Set<UUID> drawnPlayerUuids = new HashSet<>();
+        boolean collectDiagnostics = shouldCollectPlayerMarkerDiagnostics();
 
         int loadedCandidates = stats.dungeonPlayerSlots(client).size();
         int loadedDrawn = 0;
@@ -1206,7 +1221,8 @@ public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> 
                 drawnMarkers,
                 drawnPlayerUuids,
                 frame,
-                partialTick
+                partialTick,
+                collectDiagnostics
             );
         if (!drawnPlayerUuids.contains(client.player.getUUID())) {
             ClassRenderInfo classInfo = classRenderInfoFor(
@@ -1230,7 +1246,16 @@ public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> 
             drawnMarkers.add(new MarkerCenter(selfX, selfY));
             drawnPlayerUuids.add(client.player.getUUID());
         }
-        logPlayerMarkerState(client, stats, loadedCandidates, loadedDrawn, decorationStats, drawnMarkers.size(), drawnPlayerUuids);
+        logPlayerMarkerState(
+            client,
+            stats,
+            loadedCandidates,
+            loadedDrawn,
+            decorationStats,
+            drawnMarkers.size(),
+            drawnPlayerUuids,
+            collectDiagnostics
+        );
         forgetOldPlayerMarkers(frame);
     }
 
@@ -1281,7 +1306,8 @@ public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> 
         List<MarkerCenter> drawnMarkers,
         Set<UUID> drawnPlayerUuids,
         long frame,
-        float partialTick
+        float partialTick,
+        boolean collectDiagnostics
     ) {
         MapItemSavedData mapData = dungeonMapData(client);
         if (mapData == null || client.player == null) {
@@ -1302,7 +1328,7 @@ public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> 
         int anonymousDrawn = 0;
         List<DungeonRunStats.DungeonPlayerSlot> playerSlots = stats.dungeonPlayerSlots(client);
         int slotCursor = 1;
-        StringBuilder details = new StringBuilder();
+        StringBuilder details = collectDiagnostics ? new StringBuilder() : null;
         for (MapDecoration decoration : mapData.getDecorations()) {
             int markerIndex = decorationIndex++;
             total++;
@@ -1410,7 +1436,7 @@ public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> 
             rejectedNoPixel,
             rejectedNearLoaded,
             anonymousDrawn,
-            details.toString()
+            details == null ? "" : details.toString()
         );
     }
 
@@ -1433,8 +1459,12 @@ public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> 
         int loadedDrawn,
         DecorationMarkerStats decorations,
         int drawnMarkerCount,
-        Set<UUID> drawnPlayerUuids
+        Set<UUID> drawnPlayerUuids,
+        boolean collectDiagnostics
     ) {
+        if (!collectDiagnostics) {
+            return;
+        }
         long now = System.currentTimeMillis();
         String state = "markers="
             + drawnMarkerCount
@@ -1488,12 +1518,16 @@ public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> 
             + decorations.details()
             + " uuids="
             + shortUuids(drawnPlayerUuids);
-        if (state.equals(lastPlayerMarkerLogState) && now - lastPlayerMarkerLogMillis < 2000L) {
+        if (state.equals(lastPlayerMarkerLogState) && now - lastPlayerMarkerLogMillis < PLAYER_MARKER_LOG_INTERVAL_MILLIS) {
             return;
         }
         lastPlayerMarkerLogState = state;
         lastPlayerMarkerLogMillis = now;
         KungDebugRecorder.event("player-markers", state);
+    }
+
+    private static boolean shouldCollectPlayerMarkerDiagnostics() {
+        return System.currentTimeMillis() - lastPlayerMarkerLogMillis >= PLAYER_MARKER_LOG_INTERVAL_MILLIS;
     }
 
     private static String dungeonPlayerSlotSummary(Minecraft client, DungeonRunStats stats) {
@@ -1546,6 +1580,9 @@ public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> 
         ClassRenderInfo classInfo,
         boolean loadedPlayer
     ) {
+        if (details == null) {
+            return;
+        }
         if (details.length() > 1600) {
             return;
         }
@@ -1879,11 +1916,11 @@ public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> 
         int x = left;
         x = drawLegendItem(graphics, x, top, RoomType.START, "start");
         x = drawLegendItem(graphics, x, top, RoomType.NORMAL, "normal");
-        x = drawLegendItem(graphics, x, top, RoomType.PUZZLE, "puzzle");
-        x = drawLegendItem(graphics, x, top, RoomType.FAIRY, "fairy");
-        x = drawLegendItem(graphics, x, top, RoomType.TRAP, "trap");
-        x = drawLegendItem(graphics, x, top, RoomType.BLOOD, "blood");
-        drawLegendItem(graphics, x, top, RoomType.YELLOW, "yellow");
+        drawLegendItem(graphics, x, top, RoomType.PUZZLE, "puzzle");
+        x = drawLegendItem(graphics, left, top + 12, RoomType.FAIRY, "fairy");
+        x = drawLegendItem(graphics, x, top + 12, RoomType.TRAP, "trap");
+        drawLegendItem(graphics, x, top + 12, RoomType.BLOOD, "blood");
+        drawLegendItem(graphics, left, top + 24, RoomType.YELLOW, "yellow");
     }
 
     private static int drawLegendItem(GuiGraphicsExtractor graphics, int x, int y, RoomType roomType, String label) {
@@ -2016,36 +2053,36 @@ public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> 
         float scale = effectiveScale(config);
         int height = overlayContentHeight(config);
         return new OverlayBounds(
-            Math.round(config.x() - 5 * scale),
+            Math.round(config.x() - overlayLeftMargin(config) * scale),
             Math.round(config.y() - 5 * scale),
-            Math.round(overlayContentWidth() * scale),
+            Math.round(overlayContentWidth(config) * scale),
             Math.round((height + 5) * scale)
         );
     }
 
     private static float effectiveScale(DungeonConfig config) {
-        float requestedScale = Math.clamp(config.scale(), 25, MAX_CONFIG_SCALE) / 100.0F;
-        Minecraft client = Minecraft.getInstance();
-        int screenWidth = client.getWindow().getGuiScaledWidth();
-        int screenHeight = client.getWindow().getGuiScaledHeight();
-        float maxWidthScale = screenWidth <= 0
-            ? requestedScale
-            : (screenWidth * MAX_SCREEN_WIDTH_FRACTION) / overlayContentWidth();
-        float maxHeightScale = screenHeight <= 0
-            ? requestedScale
-            : (screenHeight * MAX_SCREEN_HEIGHT_FRACTION) / (overlayContentHeight(config) + 5);
-        return Math.clamp(Math.min(requestedScale, Math.min(maxWidthScale, maxHeightScale)), 0.25F, MAX_CONFIG_SCALE / 100.0F);
+        // Honor the editor value exactly, independently of resolution and Minecraft GUI scale.
+        return Math.clamp(config.scale(), 25, 300) / 100.0F;
     }
 
-    private static int overlayContentWidth() {
-        return GRID_PIXEL_SIZE + 10;
+    private static float textScale(DungeonConfig config) {
+        return Math.clamp(config.textScale(), 50, 200) / 100.0F;
+    }
+
+    private static int overlayContentWidth(DungeonConfig config) {
+        return Math.round((GRID_PIXEL_SIZE + 3) * Math.max(1, textScale(config))) + overlayLeftMargin(config) + 2;
+    }
+
+    private static int overlayLeftMargin(DungeonConfig config) {
+        return Math.max(5, Math.round(3 * textScale(config)));
+    }
+
+    private static int footerTop(DungeonConfig config) {
+        return GRID_PIXEL_SIZE + (config.showLegend() ? Math.round(LEGEND_HEIGHT * textScale(config)) + 8 : 6);
     }
 
     private static int overlayContentHeight(DungeonConfig config) {
-        return GRID_PIXEL_SIZE
-            + (config.showLegend() ? LEGEND_HEIGHT : 0)
-            + FOOTER_HEIGHT
-            + 10;
+        return footerTop(config) + Math.round(FOOTER_HEIGHT * textScale(config)) + 4;
     }
 
     private record GridViewport(int minPixelX, int minPixelY, int maxPixelX, int maxPixelY, float scale) {
@@ -2415,6 +2452,9 @@ public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> 
     }
 
     private record RoomTextState(int color, boolean showSecrets) {
+    }
+
+    private record LabelLineKey(String label, int maxWidth) {
     }
 
     private record MarkerCenter(int x, int y) {

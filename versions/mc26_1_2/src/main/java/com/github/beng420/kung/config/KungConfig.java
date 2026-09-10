@@ -152,12 +152,14 @@ public final class KungConfig {
     private void normalize() {
         ensureCategories();
         dungeon.setScale(dungeon.scale());
+        dungeon.setTextScale(dungeon.textScale());
         dungeon.setUnopenedRoomAlpha(dungeon.unopenedRoomAlpha());
         dungeon.setFiveCryptPartyMessage(dungeon.fiveCryptPartyMessage());
         dungeon.setRoomSyncServerUrl(dungeon.roomSyncServerUrl());
         dungeon.setRoomSyncToken(dungeon.roomSyncToken());
         bloodRush.setTitleDurationTenths(bloodRush.titleDurationTenths());
         splits.setScale(splits.scale());
+        splits.setFormat(splits.format());
         misc.setHypixelApiKey(misc.hypixelApiKey());
         misc.setSuperpairsHelperScale(misc.superpairsHelperScale());
         misc.setCustomArrowHitSounds(misc.customArrowHitSounds());

@@ -10,23 +10,31 @@ final class DungeonMapItems {
     private static final int DUNGEON_MAP_SLOT = 8;
     private static Object cachedLevel;
     private static MapItemSavedData cachedMapData;
+    private static int cachedLookupTick = Integer.MIN_VALUE;
+    private static MapItemSavedData cachedLookupMapData;
 
     private DungeonMapItems() {
     }
 
     static MapItemSavedData mapData(Minecraft client) {
         if (client.level == null || client.player == null) {
-            cachedLevel = null;
-            cachedMapData = null;
+            clearCache();
             return null;
         }
 
         if (cachedLevel != client.level) {
             cachedLevel = client.level;
-            cachedMapData = null;
+            clearMapDataCache();
+        }
+
+        int tick = client.player.tickCount;
+        if (cachedLookupTick == tick) {
+            return cachedLookupMapData != null ? cachedLookupMapData : cachedMapData;
         }
 
         MapItemSavedData found = findMapData(client);
+        cachedLookupTick = tick;
+        cachedLookupMapData = found;
         if (found != null) {
             cachedMapData = found;
             return found;
@@ -36,21 +44,38 @@ final class DungeonMapItems {
 
     static MapItemSavedData liveMapData(Minecraft client) {
         if (client.level == null || client.player == null) {
-            cachedLevel = null;
-            cachedMapData = null;
+            clearCache();
             return null;
         }
 
         if (cachedLevel != client.level) {
             cachedLevel = client.level;
-            cachedMapData = null;
+            clearMapDataCache();
+        }
+
+        int tick = client.player.tickCount;
+        if (cachedLookupTick == tick) {
+            return cachedLookupMapData;
         }
 
         MapItemSavedData found = findMapData(client);
+        cachedLookupTick = tick;
+        cachedLookupMapData = found;
         if (found != null) {
             cachedMapData = found;
         }
         return found;
+    }
+
+    private static void clearCache() {
+        cachedLevel = null;
+        clearMapDataCache();
+    }
+
+    private static void clearMapDataCache() {
+        cachedMapData = null;
+        cachedLookupTick = Integer.MIN_VALUE;
+        cachedLookupMapData = null;
     }
 
     private static MapItemSavedData findMapData(Minecraft client) {

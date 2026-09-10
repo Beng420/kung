@@ -62,6 +62,15 @@ public final class BloodRushHelperReliabilityTest {
     }
 
     @Test
+    public void arbitraryUnrecognizedSolidBlockDoesNotCountAsAnOpenedDoor() {
+        DungeonMapSnapshot snapshot = new DungeonMapSnapshot();
+        snapshot.addScan(1, 1L, 0, 0, List.of(door(3, 0, DungeonDoorKind.WITHER, 42)));
+        snapshot.addScan(2, 2L, 0, 0, List.of(door(3, 0, DungeonDoorKind.NONE, 1234)));
+        assertFalse(snapshot.isOpenedLockedDoor(new DungeonMapSnapshot.GridKey(3, 0)));
+        assertEquals(DungeonDoorKind.WITHER, snapshot.pointAt(3, 0).point().doorKind());
+    }
+
+    @Test
     public void exactBloodRushDoorEstimateRequiresVisiblePath() {
         DungeonMapSnapshot snapshot = remoteBloodRushSnapshot();
         DungeonLiveMapWriter.MatchRenderPlan plan = DungeonLiveMapWriter.MatchRenderPlan.from(snapshot, EMPTY_REPOSITORY);
@@ -84,7 +93,7 @@ public final class BloodRushHelperReliabilityTest {
     }
 
     @Test
-    public void rawDoorScanCanMakeBloodRushDoorEstimateExactBeforeWholePathIsVisible() {
+    public void matchingRawDoorCountsAloneDoNotProveThePathComplete() {
         DungeonMapSnapshot snapshot = remoteBloodRushSnapshot();
         snapshot.addScan(1, 1L, 0, 0, List.of(
             door(3, 0, DungeonDoorKind.WITHER),
@@ -94,7 +103,51 @@ public final class BloodRushHelperReliabilityTest {
         DungeonLiveMapWriter.MatchRenderPlan plan = DungeonLiveMapWriter.MatchRenderPlan.from(snapshot, EMPTY_REPOSITORY);
 
         assertFalse(plan.bloodRushDoorEstimateExact(snapshot));
-        assertTrue(plan.rawNonStartSpecialDoorEstimateExact(snapshot));
+        assertFalse(plan.rawNonStartSpecialDoorEstimateExact(snapshot));
+    }
+
+    @Test
+    public void unknownMiddleRoomCannotMakeATitleExact() {
+        DungeonMapSnapshot snapshot = new DungeonMapSnapshot();
+        snapshot.replaceRemoteLiveData(List.of(room(0, 0, "Start", RoomType.START),
+            room(1, 0, "", RoomType.UNKNOWN), room(2, 0, "Blood", RoomType.BLOOD)),
+            List.of(remoteDoor(1, 0, DungeonDoorKind.OPEN, RoomType.NORMAL),
+                remoteDoor(3, 0, DungeonDoorKind.BLOOD, RoomType.BLOOD)));
+        snapshot.observeMapVisibleRoom(0, 0);
+        snapshot.observeMapVisibleRoom(2, 0);
+        var plan = DungeonLiveMapWriter.MatchRenderPlan.from(snapshot, EMPTY_REPOSITORY);
+        assertFalse(BloodRushDoorEstimate.initial(plan, snapshot).exact());
+    }
+
+    @Test
+    public void fullyScannedPathCanBeExactBeforeMapItemRevealsIt() {
+        DungeonMapSnapshot snapshot = remoteBloodRushSnapshot();
+        java.util.ArrayList<DungeonScanPoint> points = new java.util.ArrayList<>();
+        for (int x = 0; x < 4; x++) {
+            points.add(new DungeonScanPoint(x * 2, 0, -185 + x * 32, -185,
+                DungeonScanPointKind.ROOM, true, 100 + x, 200 + x, 0, DungeonDoorKind.NONE));
+        }
+        points.add(door(3, 0, DungeonDoorKind.WITHER));
+        points.add(door(5, 0, DungeonDoorKind.BLOOD));
+        snapshot.addScan(0, 0, 0, 0, points);
+        var plan = DungeonLiveMapWriter.MatchRenderPlan.from(snapshot, EMPTY_REPOSITORY);
+        assertTrue(BloodRushDoorEstimate.initial(plan, snapshot).exact());
+        assertEquals("2 doors", BloodRushDoorEstimate.initial(plan, snapshot).initialTitle());
+    }
+
+    @Test
+    public void titleWordingPreservesUncertaintyAndCountsEachOpenedDoorOnce() {
+        assertEquals("2+ doors", new BloodRushDoorEstimate(2, false, 2).initialTitle());
+        assertEquals("1+ door left", new BloodRushDoorEstimate(1, false, 2).remainingTitle(true));
+        assertEquals("Blood next", new BloodRushDoorEstimate(1, true, 2).remainingTitle(true));
+        DungeonMapSnapshot snapshot = remoteBloodRushSnapshot();
+        snapshot.addScan(0, 0, 0, 0, List.of(door(3, 0, DungeonDoorKind.WITHER), door(5, 0, DungeonDoorKind.BLOOD)));
+        snapshot.addScan(1, 1, 0, 0, List.of(door(3, 0, DungeonDoorKind.OPEN)));
+        var plan = DungeonLiveMapWriter.MatchRenderPlan.from(snapshot, EMPTY_REPOSITORY);
+        assertEquals(1, BloodRushDoorEstimate.remaining(plan, snapshot).count());
+        snapshot.addScan(2, 2, 0, 0, List.of(door(3, 0, DungeonDoorKind.OPEN)));
+        plan = DungeonLiveMapWriter.MatchRenderPlan.from(snapshot, EMPTY_REPOSITORY);
+        assertEquals(1, BloodRushDoorEstimate.remaining(plan, snapshot).count());
     }
 
     @Test
@@ -261,7 +314,7 @@ public final class BloodRushHelperReliabilityTest {
     }
 
     @Test
-    public void fairyWitherDoorDoesNotCountOnBloodRushPath() {
+    public void fairyWitherExitCountsRegardlessOfRemoteTargetColor() {
         DungeonMapSnapshot snapshot = new DungeonMapSnapshot();
         snapshot.replaceRemoteLiveData(
             List.of(
@@ -285,10 +338,10 @@ public final class BloodRushHelperReliabilityTest {
 
         DungeonLiveMapWriter.MatchRenderPlan plan = DungeonLiveMapWriter.MatchRenderPlan.from(snapshot, EMPTY_REPOSITORY);
 
-        assertFalse(plan.isBloodRushSpecialDoor(5, 0));
-        assertEquals(1, plan.bloodRushTotalSpecialDoorCount());
-        assertEquals(1, plan.knownNonStartSpecialDoorCount());
-        assertEquals(1, plan.rawNonStartSpecialDoorCount(snapshot));
+        assertTrue(plan.isBloodRushSpecialDoor(5, 0));
+        assertEquals(2, plan.bloodRushTotalSpecialDoorCount());
+        assertEquals(2, plan.knownNonStartSpecialDoorCount());
+        assertEquals(2, plan.rawNonStartSpecialDoorCount(snapshot));
     }
 
     @Test
@@ -323,7 +376,7 @@ public final class BloodRushHelperReliabilityTest {
     }
 
     @Test
-    public void fairyAdjacentDoorsAreIgnoredInRawFallbackEvenBeforePathIsKnown() {
+    public void fairyExitCountsInRawFallbackBeforeBloodPathIsKnown() {
         DungeonMapSnapshot snapshot = new DungeonMapSnapshot();
         snapshot.replaceRemoteLiveData(
             List.of(
@@ -346,8 +399,8 @@ public final class BloodRushHelperReliabilityTest {
 
         DungeonLiveMapWriter.MatchRenderPlan plan = DungeonLiveMapWriter.MatchRenderPlan.from(snapshot, EMPTY_REPOSITORY);
 
-        assertEquals(1, plan.rawNonStartSpecialDoorCount(snapshot));
-        assertEquals(1, plan.visibleRawNonStartSpecialDoorCount(snapshot));
+        assertEquals(2, plan.rawNonStartSpecialDoorCount(snapshot));
+        assertEquals(2, plan.visibleRawNonStartSpecialDoorCount(snapshot));
     }
 
     @Test
@@ -373,7 +426,7 @@ public final class BloodRushHelperReliabilityTest {
 
         assertFalse(plan.doorAt(9, 6).colorAsSpecial());
         assertFalse(plan.doorAt(10, 7).colorAsSpecial());
-        assertEquals(0, plan.rawNonStartSpecialDoorCount(snapshot));
+        assertEquals(2, plan.rawNonStartSpecialDoorCount(snapshot));
     }
 
     @Test
@@ -399,7 +452,7 @@ public final class BloodRushHelperReliabilityTest {
 
         assertTrue(plan.doorAt(9, 6).colorAsSpecial());
         assertFalse(plan.doorAt(10, 7).colorAsSpecial());
-        assertEquals(0, plan.rawNonStartSpecialDoorCount(snapshot));
+        assertEquals(1, plan.rawNonStartSpecialDoorCount(snapshot));
     }
 
     @Test
@@ -453,13 +506,13 @@ public final class BloodRushHelperReliabilityTest {
 
         DungeonLiveMapWriter.MatchRenderPlan plan = DungeonLiveMapWriter.MatchRenderPlan.from(snapshot, EMPTY_REPOSITORY);
 
-        assertEquals(2, plan.rawNonStartSpecialDoorCount(snapshot));
-        assertEquals(1, plan.openedRawNonStartSpecialDoorCount(snapshot));
-        assertEquals(1, plan.minimumVisibleOpenedSpecialDoorCells(snapshot).size());
+        assertEquals(3, plan.rawNonStartSpecialDoorCount(snapshot));
+        assertEquals(2, plan.openedRawNonStartSpecialDoorCount(snapshot));
+        assertEquals(2, plan.minimumVisibleOpenedSpecialDoorCells(snapshot).size());
     }
 
     @Test
-    public void fairyExitFromTraceDoesNotInflateBloodRushCount() {
+    public void fairyExitFromTraceCountsOnceAndOpeningPreservesEntrance() {
         DungeonMapSnapshot snapshot = new DungeonMapSnapshot();
         snapshot.replaceRemoteLiveData(
             List.of(
@@ -495,9 +548,9 @@ public final class BloodRushHelperReliabilityTest {
 
         assertTrue(beforeExit.doorAt(0, 7).colorAsSpecial());
         assertFalse(beforeExit.doorAt(0, 9).colorAsSpecial());
-        assertEquals(4, beforeExit.rawNonStartSpecialDoorCount(snapshot));
-        assertEquals(4, beforeExit.knownNonStartSpecialDoorCount());
-        assertEquals(4, beforeExit.bloodRushTotalSpecialDoorCount());
+        assertEquals(5, beforeExit.rawNonStartSpecialDoorCount(snapshot));
+        assertEquals(5, beforeExit.knownNonStartSpecialDoorCount());
+        assertEquals(5, beforeExit.bloodRushTotalSpecialDoorCount());
 
         snapshot.addScan(2, 2L, 0, 0, List.of(
             door(0, 3, DungeonDoorKind.WITHER),
@@ -510,9 +563,11 @@ public final class BloodRushHelperReliabilityTest {
         DungeonLiveMapWriter.MatchRenderPlan afterExit =
             DungeonLiveMapWriter.MatchRenderPlan.from(snapshot, EMPTY_REPOSITORY);
 
-        assertEquals(4, afterExit.rawNonStartSpecialDoorCount(snapshot));
-        assertEquals(0, afterExit.openedRawNonStartSpecialDoorCount(snapshot));
-        assertFalse(afterExit.minimumVisibleOpenedSpecialDoorCells(snapshot)
+        assertEquals(5, afterExit.rawNonStartSpecialDoorCount(snapshot));
+        assertEquals(1, afterExit.openedRawNonStartSpecialDoorCount(snapshot));
+        assertTrue(afterExit.doorAt(0, 7).colorAsSpecial());
+        assertFalse(afterExit.doorAt(0, 9).colorAsSpecial());
+        assertTrue(afterExit.minimumVisibleOpenedSpecialDoorCells(snapshot)
             .contains(new DungeonLiveMapWriter.CellKey(0, 9)));
     }
 
@@ -563,7 +618,8 @@ public final class BloodRushHelperReliabilityTest {
     }
 
     private static DungeonScanPoint door(int x, int z, DungeonDoorKind kind) {
-        return new DungeonScanPoint(x, z, x * 16, z * 16, DungeonScanPointKind.DOOR, true, 0, 0, 1, kind);
+        return new DungeonScanPoint(x, z, x * 16, z * 16, DungeonScanPointKind.DOOR, true, 0, 0,
+            kind == DungeonDoorKind.NONE || kind == DungeonDoorKind.OPEN ? 0 : 1, kind);
     }
 
     private static DungeonScanPoint door(int x, int z, DungeonDoorKind kind, int blockId) {

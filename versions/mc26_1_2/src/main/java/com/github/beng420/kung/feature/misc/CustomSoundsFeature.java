@@ -267,6 +267,7 @@ public final class CustomSoundsFeature extends ConfigurableFeature<MiscConfig> i
                 sourceFormat.isBigEndian()
             );
             try (SourceDataLine line = AudioSystem.getSourceDataLine(playbackFormat)) {
+                // Direct device playback has no world position, distance attenuation or Doppler shift.
                 line.open(playbackFormat);
                 line.start();
                 byte[] pcm = scaledPcm(sound.pcm(), volume);

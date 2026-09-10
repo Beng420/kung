@@ -20,6 +20,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import com.github.beng420.kung.feature.dungeon.room.RoomType;
 import com.github.beng420.kung.skyblock.HypixelPartyTracker;
+import com.github.beng420.kung.skyblock.HypixelDungeonFloor;
 import com.github.beng420.kung.skyblock.SkyBlockMayorTracker;
 import com.github.beng420.kung.message.KungMessages;
 import com.github.beng420.kung.util.KungDebugRecorder;
@@ -44,12 +45,12 @@ public final class DungeonRunStats {
     private static final int TARGET_CRYPTS = 5;
     private static final long ROOM_CLEAR_PLAYER_STALE_TICKS = 40;
     private static final long RUN_SECRET_FINAL_TIMEOUT_TICKS = 60;
+    private static final long SCORE_CALC_LOG_INTERVAL_MILLIS = 1_000L;
     private static final Pattern FRACTION_PATTERN = Pattern.compile("(\\d+)\\s*/\\s*(\\d+|\\?)");
     private static final Pattern INTEGER_PATTERN = Pattern.compile("(-?\\d+)");
     private static final Pattern CLEARED_PATTERN = Pattern.compile("Cleared:\\s*(\\d+(?:\\.\\d+)?)%", Pattern.CASE_INSENSITIVE);
-    private static final Pattern FLOOR_PATTERN = Pattern.compile("\\b(?:(M)(?:F)?|F)([1-7])\\b", Pattern.CASE_INSENSITIVE);
     private static final Pattern FLOOR_NAME_PATTERN = Pattern.compile(
-        "\\b(The Professor|Bonzo|Scarf|Thorn|Livid|Sadan|Maxor|Storm|Goldor|Necron)\\b",
+        "^\\[BOSS] (The Professor|Bonzo|Scarf|Thorn|Livid|Sadan|Maxor|Storm|Goldor|Necron):",
         Pattern.CASE_INSENSITIVE
     );
     private static final Pattern TIME_PATTERN = Pattern.compile("(?:(\\d+)m)?\\s*(\\d+)s");
@@ -105,7 +106,7 @@ public final class DungeonRunStats {
     private final UUID[] dungeonPlayerSlots = new UUID[MAX_DUNGEON_PLAYERS];
     private final Map<UUID, RoomKey> playerRooms = new HashMap<>();
     private final Map<RoomKey, UUID> lastPlayerInRoom = new HashMap<>();
-    private final Set<String> countedClearedRooms = new HashSet<>();
+    private final DungeonRoomClearAttribution roomClearAttribution = new DungeonRoomClearAttribution();
     private final Map<RoomKey, Integer> roomSecretsFound = new HashMap<>();
     private final Map<RoomKey, Long> lastRoomPresenceTick = new HashMap<>();
     private final Map<Integer, Integer> derivedSecretsTotalHistogram = new HashMap<>();
@@ -154,23 +155,43 @@ public final class DungeonRunStats {
     private int remainingTabStatsLines;
     private String lastLoggedDungeonSlotState = "";
     private String lastLoggedScoreCalcState = "";
+    private long lastLoggedScoreCalcMillis = Long.MIN_VALUE;
+    private UUID selfUuid;
+    private String selfName = "";
 
     public void reset() {
-        players.clear();
-        playerNames.clear();
-        playerClasses.clear();
-        dungeonPlayerNames.clear();
-        dungeonPlayerOrder.clear();
-        Arrays.fill(dungeonPlayerSlots, null);
+        reset(false);
+    }
+
+    /** The countdown starts this already prepared instance; keep its roster and API baselines. */
+    public void resetForCountdown() {
+        reset(true);
+    }
+
+    private void reset(boolean keepPreparation) {
+        if (keepPreparation) {
+            players.values().forEach(DungeonPlayerStats::resetRunCounters);
+            // A genuinely completed run must never donate its final API response to another run.
+            if (apiEnrichment.finalFetchStarted()) apiEnrichment.reset();
+        } else {
+            players.clear();
+            playerNames.clear();
+            playerClasses.clear();
+            dungeonPlayerNames.clear();
+            dungeonPlayerOrder.clear();
+            Arrays.fill(dungeonPlayerSlots, null);
+            selfUuid = null;
+            selfName = "";
+            apiEnrichment.reset();
+        }
         playerRooms.clear();
         lastPlayerInRoom.clear();
-        countedClearedRooms.clear();
+        roomClearAttribution.reset();
         roomSecretsFound.clear();
         lastRoomPresenceTick.clear();
         derivedSecretsTotalHistogram.clear();
         debugClearedRooms.clear();
         debugCompletedRooms.clear();
-        apiEnrichment.reset();
         secretsFound = 0;
         serverSecretsFoundObserved = false;
         secretsAvailable = -1;
@@ -188,8 +209,10 @@ public final class DungeonRunStats {
         serverScore = -1;
         serverScoreSource = "";
         estimatedScore = -1;
-        floor = 0;
-        masterMode = false;
+        if (!keepPreparation) {
+            floor = 0;
+            masterMode = false;
+        }
         runStartTick = 0L;
         elapsedSeconds = -1L;
         mimicKilled = false;
@@ -213,11 +236,30 @@ public final class DungeonRunStats {
         remainingTabStatsLines = 0;
         lastLoggedDungeonSlotState = "";
         lastLoggedScoreCalcState = "";
+        lastLoggedScoreCalcMillis = Long.MIN_VALUE;
     }
 
     public void startRun(long nowTick) {
         runStartTick = nowTick;
         elapsedSeconds = 0L;
+    }
+
+    public void configureForFloor(int floor, boolean masterMode) {
+        if (floor < 0 || floor > 7) return;
+        this.floor = floor;
+        this.masterMode = masterMode;
+    }
+
+    void observeFloorMetadata(String line) {
+        HypixelDungeonFloor metadata = HypixelDungeonFloor.fromLine(line);
+        if (metadata.known()) {
+            configureForFloor(metadata.floor(), metadata.masterMode());
+            return;
+        }
+        if (floor <= 0) {
+            Matcher boss = FLOOR_NAME_PATTERN.matcher(line);
+            if (boss.find()) floor = floorForBossName(boss.group(1));
+        }
     }
 
     public void stopRun(long nowTick) {
@@ -258,6 +300,7 @@ public final class DungeonRunStats {
             return;
         }
 
+        rememberSelf(client.player.getUUID(), client.player.getName().getString());
         currentObserveTick = nowTick;
         announcements.flush(client);
         observeScoreboard(client);
@@ -357,8 +400,20 @@ public final class DungeonRunStats {
         int totalSecrets = bestSecretsAvailable(estimatedSecretsAvailable);
         int found = displayedSecretsFound(totalSecrets);
         int remaining = Math.max(0, target - found);
-        logScoreCalculation(renderPlan, estimatedSecretsAvailable, totalSecrets, found, target, remaining);
+        if (shouldLogScoreCalculation()) {
+            logScoreCalculation(renderPlan, estimatedSecretsAvailable, totalSecrets, found, target, remaining);
+        }
         return remaining;
+    }
+
+    private boolean shouldLogScoreCalculation() {
+        long nowMillis = System.currentTimeMillis();
+        if (lastLoggedScoreCalcMillis != Long.MIN_VALUE
+            && nowMillis - lastLoggedScoreCalcMillis < SCORE_CALC_LOG_INTERVAL_MILLIS) {
+            return false;
+        }
+        lastLoggedScoreCalcMillis = nowMillis;
+        return true;
     }
 
     private void logScoreCalculation(
@@ -507,6 +562,13 @@ public final class DungeonRunStats {
         }
 
         for (DungeonKnownRoomCatalog.MatchedRoom match : renderPlan.matches()) {
+            Set<Integer> roomCells = match.components().stream()
+                .map(component -> clearCell(component.roomGridX(), component.roomGridZ()))
+                .collect(java.util.stream.Collectors.toSet());
+            if (!isClearableRoom(match.template().type())) {
+                if (roomClearAttribution.exclude(roomCells)) updateRoomClearBounds();
+                continue;
+            }
             boolean cleared = false;
             boolean completed = false;
             for (DungeonKnownRoomCatalog.MatchedComponent component : match.components()) {
@@ -516,7 +578,7 @@ public final class DungeonRunStats {
             if (cleared) {
                 String roomKey = roomKeyFor(match);
                 recordClearedRoom(
-                    roomKey,
+                    roomCells,
                     playersForClearedRoom(match.components()),
                     lastPlayerForClearedRoom(match.components())
                 );
@@ -531,6 +593,10 @@ public final class DungeonRunStats {
 
         for (int roomGridZ = 0; roomGridZ <= DungeonScanUtils.SCAN_GRID_SIZE / 2; roomGridZ++) {
             for (int roomGridX = 0; roomGridX <= DungeonScanUtils.SCAN_GRID_SIZE / 2; roomGridX++) {
+                if (!isClearableRoom(renderPlan.roomTypeAt(roomGridX, roomGridZ))) {
+                    if (roomClearAttribution.exclude(Set.of(clearCell(roomGridX, roomGridZ)))) updateRoomClearBounds();
+                    continue;
+                }
                 if (!renderPlan.isClearedRoom(roomGridX, roomGridZ)
                     || renderPlan.isMatchedRoomCell(roomGridX, roomGridZ)) {
                     continue;
@@ -538,7 +604,7 @@ public final class DungeonRunStats {
 
                 RoomKey room = new RoomKey(roomGridX, roomGridZ);
                 String roomKey = "cell:" + roomGridX + "," + roomGridZ;
-                recordClearedRoom(roomKey, playersForClearedCell(room), lastPlayerInRoom.get(room));
+                recordClearedRoom(Set.of(clearCell(roomGridX, roomGridZ)), playersForClearedCell(room), lastPlayerInRoom.get(room));
                 sendRoomDebugOnce(client, debugClearedRooms, roomKey, "Room cleared: " + roomNameFor(room, null));
             }
         }
@@ -585,26 +651,28 @@ public final class DungeonRunStats {
     }
 
     public void sendRunSummary(Minecraft client, DungeonLiveMapWriter.MatchRenderPlan renderPlan) {
-        if (client.player == null) {
+        if (client == null || client.gui == null) {
             return;
         }
 
-        UUID selfUuid = client.player.getUUID();
-        List<DungeonPlayerStats> sortedPlayers = summaryPlayers(client, selfUuid);
+        if (client.player != null) rememberSelf(client.player.getUUID(), client.player.getName().getString());
+        List<DungeonPlayerStats> sortedPlayers = summaryPlayers();
+        int totalFoundSecrets = partySecretsFound(sortedPlayers);
 
         sendingRunSummary = true;
         try {
-            client.player.sendSystemMessage(KungMessages.info("Run Stats"));
-            client.player.sendSystemMessage(KungMessages.detail(roomProgressSummary(renderPlan)));
-            client.player.sendSystemMessage(KungMessages.detail(
+            var chat = client.gui.getChat();
+            chat.addClientSystemMessage(KungMessages.info("Run Stats"));
+            chat.addClientSystemMessage(KungMessages.detail(roomProgressSummary(renderPlan)));
+            chat.addClientSystemMessage(KungMessages.detail(
                 "Score " + score(renderPlan, 0)
-                    + " | Secrets " + displayedSecretsFound(bestSecretsAvailable(0)) + "/" + unknownPositive(bestSecretsAvailable(0))
+                    + " | Secrets " + totalFoundSecrets + "/" + unknownPositive(bestSecretsAvailable(0))
                     + " | Crypts " + cryptsOpened + "/" + unknownDash(cryptsAvailable)
             ));
             if (KungConfig.get().dungeon.playerTrackingEnabled()) {
-                int totalFoundSecrets = displayedSecretsFound(bestSecretsAvailable(0));
+                chat.addClientSystemMessage(KungMessages.detail("Party Secrets: " + totalFoundSecrets));
                 for (DungeonPlayerStats stats : sortedPlayers) {
-                    client.player.sendSystemMessage(KungMessages.detail(playerStatsSummaryLine(stats, totalFoundSecrets)));
+                    chat.addClientSystemMessage(KungMessages.detail(playerStatsSummaryLine(stats, totalFoundSecrets)));
                 }
             }
         } finally {
@@ -612,10 +680,25 @@ public final class DungeonRunStats {
         }
     }
 
+    void rememberSelf(UUID uuid, String name) {
+        if (uuid == null || !isPlayerName(name)) return;
+        selfUuid = uuid;
+        selfName = name;
+        registerPlayerName(name, uuid);
+        dungeonPlayerNames.add(name.toLowerCase(Locale.ROOT));
+        rememberDungeonPlayerOrder(uuid);
+    }
+
+    List<DungeonPlayerStats> summaryPlayers() {
+        return summaryPlayers(null, selfUuid);
+    }
+
     private List<DungeonPlayerStats> summaryPlayers(Minecraft client, UUID selfUuid) {
         Map<UUID, DungeonPlayerStats> result = new LinkedHashMap<>();
         if (client != null && client.player != null) {
             addSummaryPlayer(result, selfUuid, client.player.getName().getString());
+        } else if (selfUuid != null) {
+            addSummaryPlayer(result, selfUuid, selfName);
         }
         for (UUID uuid : dungeonPlayerSlots) {
             addSummaryPlayer(result, uuid, trackedPlayerName(uuid));
@@ -648,7 +731,7 @@ public final class DungeonRunStats {
         playersByUuid.putIfAbsent(uuid, stats);
     }
 
-    private static String playerStatsSummaryLine(DungeonPlayerStats stats, int totalFoundSecrets) {
+    static String playerStatsSummaryLine(DungeonPlayerStats stats, int totalFoundSecrets) {
         return stats.name()
             + " - " + stats.secretsFound()
             + "/" + totalFoundSecrets
@@ -656,9 +739,16 @@ public final class DungeonRunStats {
             + totalSecretsSummary(stats)
             + " | " + stats.soloRoomsCleared()
             + "-" + stats.roomsCleared()
-            + " Rooms | "
+            + " Rooms (estimated min-max) | "
             + stats.deaths()
-            + " Deaths";
+            + " Deaths"
+            + (stats.bonusMarkers().isEmpty() ? "" : " | " + stats.bonusMarkers());
+    }
+
+    int partySecretsFound(List<DungeonPlayerStats> summaryPlayers) {
+        if (serverSecretsFoundObserved) return displayedSecretsFound(bestSecretsAvailable(0));
+        return Math.max(displayedSecretsFound(bestSecretsAvailable(0)),
+            summaryPlayers.stream().mapToInt(DungeonPlayerStats::secretsFound).sum());
     }
 
     private static String totalSecretsSummary(DungeonPlayerStats stats) {
@@ -899,6 +989,11 @@ public final class DungeonRunStats {
             return;
         }
         if (isMimicEntity(entity)) {
+            var damage = ((Zombie) entity).getLastDamageSource();
+            if (damage != null && damage.getEntity() instanceof net.minecraft.world.entity.player.Player killer
+                && isKnownStatsUuid(killer.getUUID())) {
+                recordBonusContributor(killer.getUUID(), DungeonBonusContribution.MIMIC);
+            }
             markMimicKilled(client, true);
             updateEstimatedScore();
         }
@@ -1017,13 +1112,6 @@ public final class DungeonRunStats {
         return ROOM_SIZE + DOOR_SIZE + 2;
     }
 
-    private void clearPositionTrackingData() {
-        playerRooms.clear();
-        lastPlayerInRoom.clear();
-        countedClearedRooms.clear();
-        lastRoomPresenceTick.clear();
-    }
-
     private void observeScoreboard(Minecraft client) {
         for (String line : DungeonSidebarReader.lines(client)) {
             observeScoreboardLine(client, line);
@@ -1074,15 +1162,6 @@ public final class DungeonRunStats {
             mimicKilled = lower.contains("yes") || lower.contains("dead") || lower.contains("done") || lower.contains("killed");
         }
 
-        Matcher floorMatcher = FLOOR_PATTERN.matcher(line);
-        if (floorMatcher.find()) {
-            masterMode = floorMatcher.group(1) != null;
-            floor = Integer.parseInt(floorMatcher.group(2));
-        }
-        Matcher floorNameMatcher = FLOOR_NAME_PATTERN.matcher(line);
-        if (floorNameMatcher.find()) {
-            floor = floorForBossName(floorNameMatcher.group(1));
-        }
         if (lower.contains("time")) {
             long parsedElapsedSeconds = parseElapsedSeconds(line);
             if (parsedElapsedSeconds >= 0L) {
@@ -1251,6 +1330,7 @@ public final class DungeonRunStats {
     }
 
     private void observeStatLine(Minecraft client, String line) {
+        observeFloorMetadata(line);
         observeServerScoreLine(line);
 
         Matcher serverSecretsMatcher = SERVER_SECRETS_PATTERN.matcher(line);
@@ -1732,10 +1812,12 @@ public final class DungeonRunStats {
             stats.setDungeonClass(rememberedClass);
         }
         if (previousUuid != null && !previousUuid.equals(uuid)) {
+            roomClearAttribution.remapPlayer(previousUuid, uuid);
             DungeonPlayerStats previousStats = players.remove(previousUuid);
             if (previousStats != null) {
                 stats.merge(previousStats);
             }
+            updateRoomClearBounds();
             replaceDungeonPlayerOrder(previousUuid, uuid);
             RoomKey previousRoom = playerRooms.remove(previousUuid);
             if (previousRoom != null) {
@@ -1918,28 +2000,30 @@ public final class DungeonRunStats {
         return playerUuids;
     }
 
-    private void recordClearedRoom(String clearKey, Set<UUID> playerUuids, UUID fallbackPlayerUuid) {
-        if (!countedClearedRooms.add(clearKey)) {
-            return;
-        }
+    private void recordClearedRoom(Set<Integer> cells, Set<UUID> playerUuids, UUID fallbackPlayerUuid) {
         Set<UUID> knownPlayers = new HashSet<>();
         for (UUID playerUuid : playerUuids) {
             if (isKnownStatsUuid(playerUuid)) {
                 knownPlayers.add(playerUuid);
             }
         }
-        if (knownPlayers.isEmpty() && isKnownStatsUuid(fallbackPlayerUuid)) {
-            knownPlayers.add(fallbackPlayerUuid);
-        }
-        if (knownPlayers.isEmpty()) {
-            return;
-        }
+        UUID fallback = isKnownStatsUuid(fallbackPlayerUuid) ? fallbackPlayerUuid : null;
+        if (roomClearAttribution.observe(cells, knownPlayers, fallback)) updateRoomClearBounds();
+    }
 
-        boolean solo = knownPlayers.size() == 1 && !playerUuids.isEmpty();
-        for (UUID playerUuid : knownPlayers) {
-            DungeonPlayerStats stats = playerStats(playerUuid, playerName(playerUuid));
-            stats.incrementRoomsCleared(solo);
+    private void updateRoomClearBounds() {
+        Map<UUID, DungeonRoomClearAttribution.Bounds> bounds = roomClearAttribution.bounds();
+        for (DungeonPlayerStats stats : players.values()) {
+            var value = bounds.getOrDefault(stats.uuid(), new DungeonRoomClearAttribution.Bounds(0, 0));
+            stats.setRoomClearBounds(value.minimum(), value.maximum());
         }
+    }
+
+    private static int clearCell(int x, int z) { return z * 6 + x; }
+
+    private static boolean isClearableRoom(RoomType type) {
+        return type == RoomType.NORMAL || type == RoomType.YELLOW || type == RoomType.PUZZLE || type == RoomType.TRAP
+            || type == RoomType.UNKNOWN;
     }
 
     private static String roomKeyFor(DungeonKnownRoomCatalog.MatchedRoom match) {
@@ -2462,6 +2546,18 @@ public final class DungeonRunStats {
     }
 
     private void observeScoreKillMessage(Minecraft client, String message) {
+        var claim = DungeonBonusContribution.namedClaim(message);
+        if (claim != null) {
+            UUID uuid = trackedPlayerUuid(claim.name());
+            if (uuid != null) {
+                recordBonusContributor(uuid, claim.bonus());
+                switch (claim.bonus()) {
+                    case PRINCE -> markPrinceKilled(client, false);
+                    case MIMIC -> markMimicKilled(client, false);
+                    case BAT -> markBatScoreKilled(client, false);
+                }
+            }
+        }
         if (MIMIC_KILL_PATTERN.matcher(message).matches()) {
             markMimicKilled(client, false);
         }
@@ -2471,6 +2567,13 @@ public final class DungeonRunStats {
         if (BAT_KILL_PATTERN.matcher(message).matches() || message.equals(HYPIXEL_BAT_KILL_MESSAGE)) {
             markBatScoreKilled(client, message.equals(HYPIXEL_BAT_KILL_MESSAGE));
         }
+    }
+
+    private void recordBonusContributor(UUID uuid, DungeonBonusContribution bonus) {
+        DungeonPlayerStats stats = playerStats(uuid, playerName(uuid));
+        if (stats.bonusMarkers().contains(bonus.marker())) return;
+        stats.addBonus(bonus);
+        KungDebugRecorder.event("player-stats", "bonus contributor=" + stats.name() + " bonus=" + bonus.marker());
     }
 
     private void markMimicKilled(Minecraft client, boolean announce) {

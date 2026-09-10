@@ -8,6 +8,7 @@ import java.util.LinkedHashSet;
 import java.util.Set;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.resources.sounds.SimpleSoundInstance;
 import net.minecraft.network.chat.Component;
 import net.minecraft.sounds.SoundEvents;
 
@@ -83,6 +84,6 @@ public final class LobbyHopHelperFeature extends ConfigurableFeature<MiscConfig>
 
     private static void alert(Minecraft client) {
         client.gui.setTitle(Component.literal("Swap Lobbies"));
-        client.player.playSound(SoundEvents.NOTE_BLOCK_PLING.value(), 1.0F, 1.35F);
+        client.getSoundManager().play(SimpleSoundInstance.forUI(SoundEvents.NOTE_BLOCK_PLING.value(), 1.35F, 1.0F));
     }
 }

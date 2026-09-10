@@ -25,6 +25,11 @@ final class DungeonMapCheckmarkReader {
     private static final int WHITE_CHECK_COLOR = 34;
     private static final int PLAYER_DECORATION_SEARCH_RADIUS = 3;
     private static String lastObserveDiagnostic = "";
+    private static MapItemSavedData cachedAnchorMap;
+    private static DungeonMapSnapshot.GridKey cachedAnchorEntranceRoom;
+    private static MapAnchor cachedAnchor;
+    private static DungeonMapSnapshot cachedAnchorSnapshot;
+    private static int lastAnchorSearchTick = Integer.MIN_VALUE;
 
     private DungeonMapCheckmarkReader() {
     }
@@ -32,6 +37,7 @@ final class DungeonMapCheckmarkReader {
     static void observe(Minecraft client, DungeonMapSnapshot snapshot) {
         MapItemSavedData map = mapData(client);
         if (map == null) {
+            clearCachedAnchor();
             logObserveDiagnostic("map=null");
             return;
         }
@@ -40,8 +46,7 @@ final class DungeonMapCheckmarkReader {
         if (anchor == null) {
             logObserveDiagnostic("anchor=null decorations=" + decorationCount(map)
                 + " entranceRoom=" + (entranceRoom(snapshot) != null)
-                + " playerMarker=" + (mapPlayerPos(map) != null)
-                + " mapEntrance=" + (mapEntrance(map) != null));
+                + " playerMarker=" + (mapPlayerPos(map) != null));
             return;
         }
 
@@ -178,23 +183,53 @@ final class DungeonMapCheckmarkReader {
     }
 
     private static MapAnchor mapAnchor(MapItemSavedData map, DungeonMapSnapshot snapshot) {
+        Minecraft client = Minecraft.getInstance();
+        int tick = client.player == null ? 0 : client.player.tickCount;
+        if (map == cachedAnchorMap && snapshot == cachedAnchorSnapshot && lastAnchorSearchTick == tick) {
+            return cachedAnchor;
+        }
         DungeonMapSnapshot.GridKey entranceRoom = entranceRoom(snapshot);
         if (entranceRoom == null) {
             return null;
         }
 
+        if (map == cachedAnchorMap && snapshot == cachedAnchorSnapshot
+            && entranceRoom.equals(cachedAnchorEntranceRoom) && cachedAnchor != null
+            && isEntranceColor(map, cachedAnchor.mapEntranceX(), cachedAnchor.mapEntranceZ())
+            && mapRoomSize(map, cachedAnchor.mapEntranceX(), cachedAnchor.mapEntranceZ()) == cachedAnchor.roomSize()) {
+            lastAnchorSearchTick = tick;
+            return cachedAnchor;
+        }
+
         MapEntrance mapEntrance = mapEntrance(map);
+        cachedAnchorMap = map;
+        cachedAnchorSnapshot = snapshot;
+        cachedAnchorEntranceRoom = entranceRoom;
+        lastAnchorSearchTick = tick;
         if (mapEntrance == null) {
+            cachedAnchor = null;
             return null;
         }
 
-        return new MapAnchor(
+        MapAnchor anchor = new MapAnchor(
             mapEntrance.x(),
             mapEntrance.z(),
             mapEntrance.roomSize(),
             physicalRoomX(entranceRoom.gridX()),
             physicalRoomZ(entranceRoom.gridZ())
         );
+        cachedAnchorMap = map;
+        cachedAnchorEntranceRoom = entranceRoom;
+        cachedAnchor = anchor;
+        return anchor;
+    }
+
+    private static void clearCachedAnchor() {
+        cachedAnchorMap = null;
+        cachedAnchorEntranceRoom = null;
+        cachedAnchor = null;
+        cachedAnchorSnapshot = null;
+        lastAnchorSearchTick = Integer.MIN_VALUE;
     }
 
     private static DungeonMapSnapshot.GridKey entranceRoom(DungeonMapSnapshot snapshot) {

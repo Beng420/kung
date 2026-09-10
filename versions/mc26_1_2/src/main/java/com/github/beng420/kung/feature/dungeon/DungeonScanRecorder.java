@@ -19,16 +19,18 @@ import net.minecraft.world.level.saveddata.maps.MapDecorationTypes;
 import net.minecraft.world.level.saveddata.maps.MapItemSavedData;
 
 public final class DungeonScanRecorder {
-    private static final long SCAN_INTERVAL_TICKS = 20;
-    private static final long DOOR_TITLE_SCAN_INTERVAL_TICKS = 2;
+    private static final int NORMAL_BATCH_SIZE = 8;
+    private static final int DISCOVERY_BATCH_SIZE = 24;
     private static final long CHECKMARK_INTERVAL_TICKS = 5;
     private static final int DOOR_SAMPLE_Y = 69;
     private static final DateTimeFormatter FILE_TIMESTAMP =
         DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss");
 
     private final DungeonScan scanner = new DungeonScan();
+    private final DungeonScanSchedule schedule = new DungeonScanSchedule(scanner.scanPointCount());
     private final DungeonMapSnapshot mapSnapshot = new DungeonMapSnapshot();
     private long lastScanTick;
+    private long lastDoorScanTick = Long.MIN_VALUE;
     private String runTimestamp;
     private int scanNumber;
     private boolean recording;
@@ -52,13 +54,16 @@ public final class DungeonScanRecorder {
     }
 
     public void scanNow(Minecraft client, DungeonStateTracker tracker) {
-        if (client.level == null || client.player == null || !tracker.state().isInDungeon()) {
+        if (!DungeonWorkload.current().rooms()
+            || client.level == null || client.player == null || !tracker.state().isInDungeon()) {
             return;
         }
 
         if (!recording) {
             startRecording();
         }
+        if (!com.github.beng420.kung.skyblock.HypixelInstanceTracker.INSTANCE.positionKnown()) return;
+        tracker.seedScanEntrance(mapSnapshot);
 
         PlayerScanContext currentPlayerContext = PlayerScanContext.from(client);
         if (!currentPlayerContext.isInsideDungeonGrid()) {
@@ -69,25 +74,28 @@ public final class DungeonScanRecorder {
         observeVisibleTeammateRooms(client, tracker.runStats());
         observeMapState(client, tracker.runStats(), tracker.dungeonTick());
         lastScanTick = tracker.dungeonTick();
-        recordScan(client, tracker.runStats(), scanner.scan(client.level, mapSnapshot));
+        scanBatch(client, tracker, true);
     }
 
     public void restartRecording() {
+        if (!DungeonWorkload.current().rooms()) {
+            stopRecording();
+            return;
+        }
         recording = false;
         startRecording();
     }
 
     private void tick(Minecraft client, DungeonStateTracker tracker) {
-        if (client.level == null || client.player == null) {
-            return;
-        }
-
-        if (!tracker.state().isInDungeon()) {
+        if (!DungeonWorkload.current().rooms() || client.level == null || client.player == null
+            || !tracker.state().isInDungeon()) {
             stopRecording();
             return;
         }
 
         startRecording();
+        if (!com.github.beng420.kung.skyblock.HypixelInstanceTracker.INSTANCE.positionKnown()) return;
+        tracker.seedScanEntrance(mapSnapshot);
         PlayerScanContext currentPlayerContext = PlayerScanContext.from(client);
         if (!currentPlayerContext.isInsideDungeonGrid()) {
             return;
@@ -98,14 +106,26 @@ public final class DungeonScanRecorder {
         long nowTick = tracker.dungeonTick();
         observeMapState(client, tracker.runStats(), nowTick);
 
-        long scanInterval = tracker.shouldFastScanDoors() ? DOOR_TITLE_SCAN_INTERVAL_TICKS : SCAN_INTERVAL_TICKS;
-        if (nowTick - lastScanTick < scanInterval) {
+        if (nowTick == lastScanTick) {
             return;
         }
 
         lastScanTick = nowTick;
-        List<DungeonScanPoint> points = scanner.scan(client.level, mapSnapshot);
+        if (DungeonScanSchedule.due(nowTick, lastDoorScanTick, 2)) {
+            lastDoorScanTick = nowTick;
+            List<DungeonScanPoint> doors = scanner.scanLockedDoors(client.level, mapSnapshot);
+            if (!doors.isEmpty()) recordScan(client, tracker.runStats(), doors);
+        }
+        scanBatch(client, tracker, tracker.shouldFastScanDoors());
+    }
+
+    private void scanBatch(Minecraft client, DungeonStateTracker tracker, boolean fast) {
+        long started = System.nanoTime();
+        List<DungeonScanPoint> points = scanner.scanBatch(client.level, mapSnapshot, schedule.cursor(),
+            fast ? DISCOVERY_BATCH_SIZE : NORMAL_BATCH_SIZE);
+        schedule.advance(points.size());
         recordScan(client, tracker.runStats(), points);
+        DungeonTimings.record("room-scan", started);
     }
 
     private void startRecording() {
@@ -117,11 +137,13 @@ public final class DungeonScanRecorder {
         runTimestamp = LocalDateTime.now().format(FILE_TIMESTAMP);
         scanNumber = 0;
         lastScanTick = 0;
+        lastDoorScanTick = Long.MIN_VALUE;
+        schedule.reset();
         lastCheckmarkTick = Long.MIN_VALUE;
         mapSnapshot.reset();
     }
 
-    private void stopRecording() {
+    void stopRecording() {
         if (!recording) {
             return;
         }
@@ -145,11 +167,10 @@ public final class DungeonScanRecorder {
     }
 
     private void observeMapState(Minecraft client, DungeonRunStats stats, long nowTick) {
-        if (nowTick - lastCheckmarkTick < CHECKMARK_INTERVAL_TICKS) {
+        if (!DungeonScanSchedule.due(nowTick, lastCheckmarkTick, CHECKMARK_INTERVAL_TICKS)) {
             return;
         }
         lastCheckmarkTick = nowTick;
-        DungeonMapCheckmarkReader.observe(client, mapSnapshot);
         observeMapPlayerRooms(client, stats, nowTick);
     }
 

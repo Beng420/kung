@@ -60,7 +60,8 @@ public final class DungeonLiveMapWriter {
         Set<CellKey> clearedRooms,
         Set<CellKey> completedRooms,
         Set<CellKey> openedSpecialDoorCells,
-        CellKey fairyEntranceDoor
+        CellKey fairyEntranceDoor,
+        List<CellKey> bloodRushPath
     ) {
         static MatchRenderPlan from(DungeonMapSnapshot snapshot) {
             return from(snapshot, KnownDungeonRoomRepository.INSTANCE);
@@ -417,6 +418,7 @@ public final class DungeonLiveMapWriter {
             expandVisitedRoomGroups(clearedRooms, roomOwners);
             expandVisitedRoomGroups(completedRooms, roomOwners);
             CellKey fairyEntranceDoor = fairyEntranceDoor(externalDoors, roomTypes, roomOwners);
+            orientFairyDoors(externalDoors, roomTypes, visitedRooms, fairyEntranceDoor);
             markSpecialDoorEntrances(externalDoors, fairyEntranceDoor);
 
             return new MatchRenderPlan(
@@ -433,7 +435,8 @@ public final class DungeonLiveMapWriter {
                 clearedRooms,
                 completedRooms,
                 openedSpecialDoorCells,
-                fairyEntranceDoor
+                fairyEntranceDoor,
+                findBloodRushDoorPath(externalDoors, roomTypes, roomOwners)
             );
         }
 
@@ -710,7 +713,6 @@ public final class DungeonLiveMapWriter {
             for (CellKey openedDoor : openedSpecialDoorCells) {
                 DoorRenderInfo door = externalDoors.get(openedDoor);
                 if (door != null
-                    && bloodRushDoorPath().contains(openedDoor)
                     && !isExcludedBloodRushDoor(openedDoor, door)) {
                     doors.add(openedDoor);
                 }
@@ -737,6 +739,7 @@ public final class DungeonLiveMapWriter {
             int rawDoorCount = rawNonStartSpecialDoorCount(snapshot);
             int pathDoorCount = bloodRushTotalSpecialDoorCount();
             return hasRoomType(RoomType.BLOOD)
+                && (bloodRushPathVisibleEnough(snapshot) || bloodRushPathScanned(snapshot))
                 && rawDoorCount > 0
                 && pathDoorCount > 0
                 && rawDoorCount == pathDoorCount
@@ -1178,10 +1181,23 @@ public final class DungeonLiveMapWriter {
             Set<String> visibleOwners = ownerSet(mapVisibleRoomCells(snapshot));
             Set<String> requiredOwners = new HashSet<>();
             for (CellKey doorCell : path) {
+                if (firstDoorSideType(roomTypes, doorCell.x(), doorCell.z()) == RoomType.UNKNOWN
+                    || secondDoorSideType(roomTypes, doorCell.x(), doorCell.z()) == RoomType.UNKNOWN) return false;
                 addVisibleRequiredDoorOwner(requiredOwners, doorCell, true);
                 addVisibleRequiredDoorOwner(requiredOwners, doorCell, false);
             }
             return visibleOwners.containsAll(requiredOwners);
+        }
+
+        private boolean bloodRushPathScanned(DungeonMapSnapshot snapshot) {
+            if (bloodRushPath.isEmpty()) return false;
+            for (CellKey door : bloodRushPath) {
+                for (CellKey room : List.of(firstDoorSide(door.x(), door.z()), secondDoorSide(door.x(), door.z()))) {
+                    if (roomTypes.getOrDefault(room, RoomType.UNKNOWN) == RoomType.UNKNOWN
+                        || !isRealRoom(snapshot, room.x() * 2, room.z() * 2)) return false;
+                }
+            }
+            return true;
         }
 
         DungeonKnownRoomCatalog.KnownCoreHint hintAt(int roomGridX, int roomGridZ) {
@@ -1287,23 +1303,7 @@ public final class DungeonLiveMapWriter {
             if (owner == null) {
                 return;
             }
-            RoomType roomType = ownerRoomType(owner);
-            if (roomType == RoomType.START
-                || roomType == RoomType.BLOOD
-                || roomType == RoomType.UNKNOWN) {
-                return;
-            }
             requiredOwners.add(owner);
-        }
-
-        private RoomType ownerRoomType(String owner) {
-            for (Map.Entry<CellKey, String> entry : roomOwners.entrySet()) {
-                if (!entry.getValue().equals(owner)) {
-                    continue;
-                }
-                return roomTypes.getOrDefault(entry.getKey(), RoomType.UNKNOWN);
-            }
-            return RoomType.UNKNOWN;
         }
 
         private String ownerFor(CellKey cell) {
@@ -1382,14 +1382,24 @@ public final class DungeonLiveMapWriter {
         }
 
         private List<CellKey> bloodRushDoorPath() {
-            Set<String> startOwners = ownersWithType(RoomType.START);
-            Set<String> bloodOwners = ownersWithType(RoomType.BLOOD);
+            return bloodRushPath;
+        }
+
+        private static List<CellKey> findBloodRushDoorPath(
+            Map<CellKey, DoorRenderInfo> externalDoors,
+            Map<CellKey, RoomType> roomTypes,
+            Map<CellKey, String> roomOwners
+        ) {
+            Set<String> startOwners = ownersWithType(RoomType.START, roomTypes, roomOwners);
+            Set<String> bloodOwners = ownersWithType(RoomType.BLOOD, roomTypes, roomOwners);
             if (startOwners.isEmpty() || bloodOwners.isEmpty()) {
                 return List.of();
             }
 
             Map<String, List<DoorPathEdge>> graph = new HashMap<>();
-            for (CellKey doorCell : externalDoors.keySet()) {
+            List<CellKey> orderedDoors = new ArrayList<>(externalDoors.keySet());
+            sortCells(orderedDoors);
+            for (CellKey doorCell : orderedDoors) {
                 DoorRenderInfo door = externalDoors.get(doorCell);
                 if (!isBloodRushPathConnectionDoor(doorCell, door)) {
                     continue;
@@ -1449,7 +1459,8 @@ public final class DungeonLiveMapWriter {
             return List.copyOf(path);
         }
 
-        private Set<String> ownersWithType(RoomType roomType) {
+        private static Set<String> ownersWithType(RoomType roomType, Map<CellKey, RoomType> roomTypes,
+            Map<CellKey, String> roomOwners) {
             Set<String> owners = new HashSet<>();
             for (Map.Entry<CellKey, RoomType> entry : roomTypes.entrySet()) {
                 if (entry.getValue() != roomType) {
@@ -1473,16 +1484,14 @@ public final class DungeonLiveMapWriter {
             return includeOpened && openedSpecialDoorCells.contains(doorCell);
         }
 
-        private boolean isBloodRushPathConnectionDoor(CellKey doorCell, DoorRenderInfo door) {
+        private static boolean isBloodRushPathConnectionDoor(CellKey doorCell, DoorRenderInfo door) {
             return door != null
                 && door.kind() != DungeonDoorKind.NONE;
         }
 
         private boolean isExcludedBloodRushDoor(CellKey doorCell, DoorRenderInfo door) {
             return door == null
-                || door.targetType() == RoomType.START
                 || touchesRoomType(doorCell, RoomType.START)
-                || isFairyTargetDoor(doorCell, door)
                 || doorCell.equals(fairyEntranceDoor);
         }
 
@@ -1537,18 +1546,12 @@ public final class DungeonLiveMapWriter {
         private boolean isRawExcludedBloodRushDoor(CellKey doorCell, DungeonDoorKind doorKind) {
             DoorRenderInfo door = externalDoors.get(doorCell);
             return touchesRoomType(doorCell, RoomType.START)
-                || (door != null && isFairyTargetDoor(doorCell, door))
                 || doorCell.equals(fairyEntranceDoor);
         }
 
         private boolean touchesRoomType(CellKey doorCell, RoomType roomType) {
             return firstDoorSideType(roomTypes, doorCell.x(), doorCell.z()) == roomType
                 || secondDoorSideType(roomTypes, doorCell.x(), doorCell.z()) == roomType;
-        }
-
-        private boolean isFairyTargetDoor(CellKey doorCell, DoorRenderInfo door) {
-            return door.targetType() == RoomType.FAIRY
-                && touchesRoomType(doorCell, RoomType.FAIRY);
         }
 
         private record DoorPathEdge(String toOwner, CellKey doorCell) {
@@ -1671,6 +1674,20 @@ public final class DungeonLiveMapWriter {
             }
         }
 
+        private static void orientFairyDoors(Map<CellKey, DoorRenderInfo> doors,
+            Map<CellKey, RoomType> roomTypes, Set<CellKey> visitedRooms, CellKey entrance) {
+            for (Map.Entry<CellKey, DoorRenderInfo> entry : doors.entrySet()) {
+                CellKey cell = entry.getKey();
+                if (!touchesRoomType(roomTypes, cell.x(), cell.z(), RoomType.FAIRY)) continue;
+                CellKey target = cell.equals(entrance)
+                    ? (roomTypes.get(firstDoorSide(cell.x(), cell.z())) == RoomType.FAIRY
+                        ? firstDoorSide(cell.x(), cell.z()) : secondDoorSide(cell.x(), cell.z()))
+                    : outsideFairySide(cell, roomTypes);
+                entry.setValue(new DoorRenderInfo(entry.getValue().kind(),
+                    roomTypes.getOrDefault(target, RoomType.UNKNOWN), false, visitedRooms.contains(target)));
+            }
+        }
+
         private static CellKey fairyEntranceDoor(
             Map<CellKey, DoorRenderInfo> doors,
             Map<CellKey, RoomType> roomTypes,
@@ -1692,13 +1709,6 @@ public final class DungeonLiveMapWriter {
                     openFairyDoors.add(door);
                 }
             }
-            if (openFairyDoors.size() == 1) {
-                return openFairyDoors.getFirst();
-            }
-            if (fairyDoors.size() == 1) {
-                return null;
-            }
-
             Map<CellKey, Integer> distanceFromStart = distanceFromStart(doors.keySet(), roomTypes, roomOwners);
             CellKey bestDoor = null;
             int bestDistance = Integer.MAX_VALUE;
@@ -1710,7 +1720,8 @@ public final class DungeonLiveMapWriter {
                     bestDistance = distance;
                 }
             }
-            return bestDoor;
+            // Prefer the side connected to Start. Opening an exit must not move the entrance.
+            return bestDoor != null ? bestDoor : openFairyDoors.size() == 1 ? openFairyDoors.getFirst() : null;
         }
 
         private static Map<CellKey, Integer> distanceFromStart(

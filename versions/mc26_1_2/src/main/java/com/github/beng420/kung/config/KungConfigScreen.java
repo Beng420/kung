@@ -846,7 +846,11 @@ public final class KungConfigScreen extends Screen {
                 "Splits Overlay",
                 config.splits::enabled,
                 () -> config.splits.setEnabled(!config.splits.enabled()),
-                List.of()
+                List.of(
+                    SettingEntry.choice("Format", config.splits::formatLabel, config.splits::cycleFormat),
+                    SettingEntry.toggle("Time Lost", config.splits::timeLost,
+                        () -> config.splits.setTimeLost(!config.splits.timeLost()))
+                )
             )
         )));
         result.add(new CategoryEntry("Slayer", List.of(

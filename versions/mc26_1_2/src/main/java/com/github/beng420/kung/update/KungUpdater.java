@@ -281,11 +281,31 @@ public enum KungUpdater {
         Files.writeString(script, installerScript(pid, source, target, marker), StandardCharsets.UTF_8);
 
         if (isWindows()) {
-            new ProcessBuilder("cmd.exe", "/c", "start", "", "/min", script.toAbsolutePath().toString()).start();
+            launchWindowsInstaller(script);
         } else {
             script.toFile().setExecutable(true);
             new ProcessBuilder("sh", script.toAbsolutePath().toString()).start();
         }
+    }
+
+    private void launchWindowsInstaller(Path script) throws IOException {
+        Path launcher = updateDirectory().resolve("launch-kung-update-hidden.vbs");
+        Files.writeString(launcher, windowsHiddenLauncherScript(), StandardCharsets.UTF_8);
+        new ProcessBuilder(
+            "wscript.exe",
+            "//B",
+            launcher.toAbsolutePath().toString(),
+            script.toAbsolutePath().toString()
+        ).start();
+    }
+
+    private String windowsHiddenLauncherScript() {
+        return String.join("\r\n",
+            "Set shell = CreateObject(\"WScript.Shell\")",
+            "command = \"\"\"\" & shell.ExpandEnvironmentStrings(\"%ComSpec%\") & \"\"\" /c \"\"\" & WScript.Arguments(0) & \"\"\"\"",
+            "shell.Run command, 0, False",
+            ""
+        );
     }
 
     private String installerScript(long pid, Path source, Path target, Path marker) {

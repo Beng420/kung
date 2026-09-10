@@ -1,6 +1,6 @@
 package com.github.beng420.kung.feature.dungeon;
 
-import com.github.beng420.kung.util.KungDebugRecorder;
+import com.github.beng420.kung.KungMod;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
 import net.minecraft.world.entity.Entity;
@@ -30,11 +30,14 @@ public final class DungeonEventRouter {
         }
     }
 
-    public static void observeWorldChangePacket() {
+    public static void observeInstanceChanged() {
         DungeonEventRouter router = activeRouter;
         if (router != null) {
-            KungDebugRecorder.event("packet", "dungeon world-change packet");
-            router.tracker.handleWorldChangePacket();
+            try {
+                router.tracker.synchronizeInstance(net.minecraft.client.Minecraft.getInstance());
+            } catch (RuntimeException | LinkageError exception) {
+                KungMod.LOGGER.warn("Failed to synchronize dungeon instance; retrying on the next client tick.", exception);
+            }
         }
     }
 }

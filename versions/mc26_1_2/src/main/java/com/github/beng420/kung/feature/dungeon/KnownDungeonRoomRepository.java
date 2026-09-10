@@ -6,6 +6,11 @@ import java.util.List;
 public enum KnownDungeonRoomRepository implements DungeonRoomRepository {
     INSTANCE;
 
+    private DungeonMapSnapshot lastSnapshot;
+    private long lastScanRevision = Long.MIN_VALUE;
+    private long lastCatalogRevision = Long.MIN_VALUE;
+    private List<DungeonKnownRoomCatalog.MatchedRoom> lastMatches = List.of();
+
     @Override
     public long revision() {
         return DungeonKnownRoomCatalog.revision();
@@ -13,7 +18,15 @@ public enum KnownDungeonRoomRepository implements DungeonRoomRepository {
 
     @Override
     public List<DungeonKnownRoomCatalog.MatchedRoom> matchKnownRooms(DungeonMapSnapshot snapshot) {
-        return DungeonKnownRoomCatalog.matchKnownRooms(snapshot);
+        long catalogRevision = revision();
+        if (lastSnapshot != snapshot || lastScanRevision != snapshot.scanRevision()
+            || lastCatalogRevision != catalogRevision) {
+            lastMatches = List.copyOf(DungeonKnownRoomCatalog.matchKnownRooms(snapshot));
+            lastSnapshot = snapshot;
+            lastScanRevision = snapshot.scanRevision();
+            lastCatalogRevision = catalogRevision;
+        }
+        return lastMatches;
     }
 
     @Override

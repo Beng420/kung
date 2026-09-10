@@ -134,6 +134,12 @@ calls for a behavior change.
 
 ## Current Status
 
+The September 10 dungeon hardening pass added bounded room/Mimic scans, consumer
+gates, cached room matching and Blood Rush paths, preload transition tests, and
+pure door-estimate/wording tests. See `docs/DUNGEON_FIXES.md`. The capability queue
+above still needs broader end-to-end activation and lifecycle tests before every
+item can be marked complete.
+
 The original foundation queue is complete for `mc26_1_2`, but the demand-driven runtime work above
 is still required before the foundation should be considered finished. Continue adding features through
 the typed config categories, lifecycle registries, shared message/UI primitives, command groups, and

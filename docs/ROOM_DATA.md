@@ -64,6 +64,7 @@ Canonical metadata rules:
 - Local profile files (`known-rooms.json`, `known-rooms.jsonl`, `known-room-preloads.jsonl`, and `known-room-types.properties`) must not be required for normal users or friends; bake audited data into the Jar before sharing. Enable `Local Data` only while collecting/testing local room-data overrides. The explicit 26.1.2 Gradle task `syncLocalDungeonRoomData` copies local learned data from the active Modrinth profile into bundled resources. Override that profile with `-PkungProfileDir=...` or `KUNG_PROFILE_DIR` if needed.
 - Variants must be contiguous and at most 4 cells. Larger or disconnected shapes are treated as corrupted data.
 - During a run, Kung remembers the first non-empty hash per room cell and stores it together with later manual learns when it differs.
+- Pre-run observations survive the countdown. Matching refreshes when either the raw or stable hash changes. Same-cell transitions into directly known rooms also create session-only preload hints keyed by both hashes; conflicting pairs are rejected. These hints do not change bundled data or bypass the Local Data setting for profile files.
 - Matching is core-first: once a room cell has a known `core` or `stable` hash, Kung can label that cell even when the full multi-cell shape is incomplete.
 - Adjacent known cells are only grouped when they have the same room metadata and no visible door between them; groups over 4 cells are split into one-cell matches instead of drawing a huge fake room.
 

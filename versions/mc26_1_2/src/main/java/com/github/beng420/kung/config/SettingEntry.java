@@ -190,7 +190,9 @@ public record SettingEntry(
         fill(graphics, trackLeft, trackY, knobX, trackY + 2, theme.accent());
         fill(graphics, knobX - 2, y + 3, knobX + 2, y + height - 3, theme.text());
         String lower = label().toLowerCase(Locale.ROOT);
-        String value = lower.contains("volume")
+        String value = lower.contains("scale") || lower.contains("alpha")
+            ? intSupplier.getAsInt() + "%"
+            : lower.contains("volume")
             ? String.format(Locale.ROOT, "x%.1f", intSupplier.getAsInt() / 10.0)
             : lower.contains("pitch")
                 ? String.format(Locale.ROOT, "x%.2f", intSupplier.getAsInt() / 100.0)

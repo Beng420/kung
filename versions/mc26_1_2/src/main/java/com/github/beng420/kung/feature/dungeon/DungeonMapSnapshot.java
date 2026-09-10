@@ -9,7 +9,6 @@ import com.github.beng420.kung.feature.dungeon.room.RoomType;
 import com.github.beng420.kung.util.KungDebugRecorder;
 
 public final class DungeonMapSnapshot {
-    private static final int UNCLASSIFIED_DOOR_BLOCK_ID = 15292;
 
     private final Map<GridKey, ObservedPoint> points = new HashMap<>();
     private final Map<GridKey, ObservedPoint> initialRoomPoints = new HashMap<>();
@@ -31,6 +30,8 @@ public final class DungeonMapSnapshot {
     private int playerGridX;
     private int playerGridZ;
     private long revision;
+    private long scanRevision;
+    private long resetGeneration;
     private GridKey previousPlayerRoom;
     private GridKey startRoom;
 
@@ -55,6 +56,8 @@ public final class DungeonMapSnapshot {
         playerGridX = 0;
         playerGridZ = 0;
         revision++;
+        scanRevision++;
+        resetGeneration++;
         previousPlayerRoom = null;
         startRoom = null;
         logMapChange("reset revision=" + revision);
@@ -81,6 +84,9 @@ public final class DungeonMapSnapshot {
             recordInitialRoomPoint(key, point, scanNumber, timestamp);
             ObservedPoint previous = points.get(key);
             if (previous == null || shouldReplace(previous, point)) {
+                ObservedPoint initial = initialRoomPoints.get(key);
+                if (initial != null) DungeonKnownRoomCatalog.observePreloadTransition(initial.point(), point);
+                if (previous != null) DungeonKnownRoomCatalog.observePreloadTransition(previous.point(), point);
                 recordObservedCoreTransition(previous, point);
                 recordDoorTransition(previous, point);
                 points.put(key, new ObservedPoint(point, scanNumber, timestamp));
@@ -93,6 +99,7 @@ public final class DungeonMapSnapshot {
         }
         if (changed) {
             revision++;
+            scanRevision++;
         }
     }
 
@@ -133,6 +140,16 @@ public final class DungeonMapSnapshot {
         }
 
         previousPlayerRoom = currentPlayerRoom;
+    }
+
+    void observeStartRoom(int roomGridX, int roomGridZ) {
+        if (!isValidRoomGrid(roomGridX, roomGridZ)) return;
+        GridKey entrance = new GridKey(roomGridX * 2, roomGridZ * 2);
+        if (!entrance.equals(startRoom)) {
+            startRoom = entrance;
+            revision++;
+            logMapChange("start-room source=instance scan=" + gridText(entrance) + " revision=" + revision);
+        }
     }
 
     public void observeVisitedRoom(int roomGridX, int roomGridZ) {
@@ -594,8 +611,18 @@ public final class DungeonMapSnapshot {
         return count;
     }
 
+    public long resetGeneration() {
+        return resetGeneration;
+    }
+
     public long revision() {
         return revision;
+    }
+
+    long scanRevision() { return scanRevision; }
+
+    boolean isOpenedLockedDoor(GridKey door) {
+        return openedLockedDoors.contains(door);
     }
 
     private static boolean shouldReplace(ObservedPoint previous, DungeonScanPoint next) {
@@ -604,7 +631,7 @@ public final class DungeonMapSnapshot {
         }
 
         if (next.kind() == DungeonScanPointKind.ROOM) {
-            return shouldReplaceRoom(previous.point().coreHash(), next.coreHash());
+            return shouldReplaceRoom(previous.point(), next);
         }
 
         if (next.kind() == DungeonScanPointKind.DOOR) {
@@ -631,8 +658,10 @@ public final class DungeonMapSnapshot {
             + " point=" + pointText(point));
     }
 
-    private static boolean shouldReplaceRoom(int previousCoreHash, int nextCoreHash) {
-        if (previousCoreHash == nextCoreHash) {
+    private static boolean shouldReplaceRoom(DungeonScanPoint previous, DungeonScanPoint next) {
+        int previousCoreHash = previous.coreHash();
+        int nextCoreHash = next.coreHash();
+        if (previousCoreHash == nextCoreHash && previous.stableCoreHash() == next.stableCoreHash()) {
             return false;
         }
 
@@ -645,8 +674,10 @@ public final class DungeonMapSnapshot {
             return true;
         }
 
-        boolean previousKnownRoom = DungeonKnownRoomCatalog.isKnownCoreHash(previousCoreHash);
-        boolean nextKnownRoom = DungeonKnownRoomCatalog.isKnownCoreHash(nextCoreHash);
+        boolean previousKnownRoom = DungeonKnownRoomCatalog.isKnownCoreHash(previousCoreHash)
+            || DungeonKnownRoomCatalog.isKnownCoreHash(previous.stableCoreHash());
+        boolean nextKnownRoom = DungeonKnownRoomCatalog.isKnownCoreHash(nextCoreHash)
+            || DungeonKnownRoomCatalog.isKnownCoreHash(next.stableCoreHash());
         if (previousKnownRoom != nextKnownRoom) {
             return !previousKnownRoom;
         }
@@ -670,7 +701,7 @@ public final class DungeonMapSnapshot {
         boolean nextVisible = nextKind.visible();
         if (lockedDoor(previousKind) && !lockedDoor(nextKind)) {
             return nextKind == DungeonDoorKind.OPEN
-                || nextDoorBlockId != UNCLASSIFIED_DOOR_BLOCK_ID;
+                || nextDoorBlockId == 0;
         }
         if (previousVisible && !nextVisible) {
             return false;
@@ -721,7 +752,7 @@ public final class DungeonMapSnapshot {
 
     private static boolean confirmsOpenedLockedDoor(DungeonScanPoint point) {
         return point.doorKind() == DungeonDoorKind.OPEN
-            || point.doorBlockId() != UNCLASSIFIED_DOOR_BLOCK_ID;
+            || point.doorBlockId() == 0;
     }
 
     private static void logMapChange(String message) {

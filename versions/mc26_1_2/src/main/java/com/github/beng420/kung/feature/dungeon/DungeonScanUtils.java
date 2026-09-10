@@ -12,6 +12,8 @@ import net.minecraft.world.level.block.state.properties.Property;
 import net.minecraft.world.level.levelgen.Heightmap;
 
 public final class DungeonScanUtils {
+    // BlockState instances are interned by Minecraft; the stable text never changes.
+    private static final java.util.Map<BlockState, String> STABLE_STATE_NAMES = new java.util.IdentityHashMap<>();
     public static final int ROOM_SIZE_BLOCKS = 32;
     public static final int SCAN_GRID_SIZE = 11;
     public static final int SCAN_STEP_BLOCKS = ROOM_SIZE_BLOCKS / 2;
@@ -157,11 +159,12 @@ public final class DungeonScanUtils {
     }
 
     public static DungeonDoorKind detectDoorKind(ClientLevel level, int gridX, int gridZ, int worldX, int worldZ) {
-        if (!isDoorScanPoint(gridX, gridZ)) {
-            return DungeonDoorKind.NONE;
-        }
+        return detectDoorKind(level, gridX, gridZ, worldX, worldZ, DungeonDoorKind.NONE);
+    }
 
-        if (!hasDoorFrame(level, worldX, worldZ)) {
+    static DungeonDoorKind detectDoorKind(ClientLevel level, int gridX, int gridZ, int worldX, int worldZ,
+        DungeonDoorKind previousKind) {
+        if (!isDoorScanPoint(gridX, gridZ)) {
             return DungeonDoorKind.NONE;
         }
 
@@ -189,13 +192,23 @@ public final class DungeonScanUtils {
             return DungeonDoorKind.NONE;
         }
 
+        boolean floor = !isClear(level, new BlockPos(worldX, DOOR_FLOOR_Y, worldZ));
+        return classifyDoorColumn(clearBlocks, witherBlocks, bloodBlocks, floor,
+            clearBlocks == 4 && hasDoorFrame(level, worldX, worldZ), previousKind);
+    }
+
+    static DungeonDoorKind classifyDoorColumn(int clearBlocks, int witherBlocks, int bloodBlocks,
+        boolean floor, boolean frame, DungeonDoorKind previousKind) {
+        if (!floor) return DungeonDoorKind.NONE;
+        // A locked door's center is evidence even if its surrounding room has a taller roof.
         if (bloodBlocks >= 3) {
             return DungeonDoorKind.BLOOD;
         }
         if (witherBlocks >= 3) {
             return DungeonDoorKind.WITHER;
         }
-        if (clearBlocks == 4) {
+        if (clearBlocks == 4 && (frame || previousKind == DungeonDoorKind.WITHER
+            || previousKind == DungeonDoorKind.BLOOD || previousKind == DungeonDoorKind.OPEN)) {
             return DungeonDoorKind.OPEN;
         }
 
@@ -240,6 +253,10 @@ public final class DungeonScanUtils {
     }
 
     private static String stableStateName(BlockState state) {
+        return STABLE_STATE_NAMES.computeIfAbsent(state, DungeonScanUtils::buildStableStateName);
+    }
+
+    private static String buildStableStateName(BlockState state) {
         StringBuilder stableName = new StringBuilder(blockName(state));
         List<String> properties = new ArrayList<>();
         for (Property<?> property : state.getProperties()) {

@@ -2,6 +2,7 @@ package com.github.beng420.kung.config;
 
 import com.github.beng420.kung.config.category.MiscConfig;
 import com.github.beng420.kung.config.category.SlayerConfig;
+import com.github.beng420.kung.config.category.SplitsConfig;
 import com.github.beng420.kung.feature.ConfigurableFeature;
 import com.github.beng420.kung.feature.Feature;
 import com.github.beng420.kung.feature.dungeon.DungeonStateTracker;
@@ -21,8 +22,12 @@ public final class ConfigRegressionTest {
     public void defaultsAndLegacySettings() {
         KungConfig defaults = read("{}");
         equal(100, defaults.dungeon.scale(), "missing map uses defaults");
+        equal(100, defaults.dungeon.textScale(), "existing configs keep their map text size");
         equal(false, defaults.dungeon.mimicEspEnabled(), "mimic esp defaults off");
         equal(85, defaults.splits.scale(), "missing splits use defaults");
+        equal(false, defaults.splits.enabled(), "splits master stays disabled by default");
+        equal(SplitsConfig.TimeFormat.MINUTES, defaults.splits.format(), "existing splits retain minute format");
+        equal(true, defaults.splits.timeLost(), "existing splits retain time loss display");
         equal(true, defaults.misc.cataPartyCommandsEnabled(), "missing command channels use defaults");
         equal(true, defaults.misc.c50ChatCommandEnabled(), "c50 command defaults on");
         equal(true, defaults.misc.ca50ChatCommandEnabled(), "ca50 command defaults on");
@@ -70,7 +75,7 @@ public final class ConfigRegressionTest {
     public void invalidValues() {
         KungConfig config = read("""
             {
-              "dungeonMap":{"scale":0,"unopenedRoomAlpha":900,"roomSyncServerUrl":" localhost/ ",
+              "dungeonMap":{"scale":0,"textScale":900,"unopenedRoomAlpha":900,"roomSyncServerUrl":" localhost/ ",
                             "roomSyncToken":null,"fiveCryptPartyMessage":null},
               "bloodRushHelper":{"titleDurationTenths":100},
               "splitsOverlay":{"scale":900},
@@ -84,6 +89,7 @@ public final class ConfigRegressionTest {
             }
             """);
         equal(25, config.dungeon.scale(), "map scale clamped");
+        equal(200, config.dungeon.textScale(), "map text scale clamped");
         equal(28, config.dungeon.unopenedRoomAlpha(), "alpha clamped");
         equal("http://localhost:8765", config.dungeon.roomSyncServerUrl(), "server normalized");
         equal("", config.dungeon.roomSyncToken(), "null token normalized");
@@ -103,6 +109,22 @@ public final class ConfigRegressionTest {
     }
 
     @Test
+    public void splitTimeFormatHandlesInvalidSettings() {
+        for (String value : new String[] {"null", "\"unknown\""}) {
+            KungConfig config = read("{\"splitsOverlay\":{\"format\":" + value + "}}");
+            equal(SplitsConfig.TimeFormat.MINUTES, config.splits.format(), "invalid format falls back to Minutes");
+            equal("Minutes", config.splits.formatLabel(), "invalid format has a safe UI label");
+        }
+        SplitsConfig splits = new SplitsConfig();
+        splits.cycleFormat();
+        equal(SplitsConfig.TimeFormat.SECONDS, splits.format(), "choice selects Seconds");
+        splits.cycleFormat();
+        equal(SplitsConfig.TimeFormat.MINUTES, splits.format(), "choice returns to Minutes");
+        splits.setFormat(null);
+        equal(SplitsConfig.TimeFormat.MINUTES, splits.format(), "null setter uses Minutes");
+    }
+
+    @Test
     public void persistence() throws Exception {
         Path directory = Files.createTempDirectory("kung-config-test-");
         Path file = directory.resolve("kung.json");
@@ -110,10 +132,14 @@ public final class ConfigRegressionTest {
             KungConfig config = new KungConfig(file);
             config.load();
             config.dungeon.setX(77);
+            config.dungeon.setScale(250);
+            config.dungeon.setTextScale(175);
             config.dungeon.setMimicEspEnabled(true);
             config.bloodRush.setEnabled(true);
             config.chatFilter.setNecron(false);
             config.splits.setY(123);
+            config.splits.setFormat(SplitsConfig.TimeFormat.SECONDS);
+            config.splits.setTimeLost(false);
             config.debug.setTarantulaMessages(false);
             config.slayer.setEggSacPredictionEnabled(true);
             config.misc.setLoadoutKeybind(2, "mouse:3");
@@ -121,10 +147,14 @@ public final class ConfigRegressionTest {
             String saved = Files.readString(file);
             KungConfig roundTrip = read(saved);
             equal(77, roundTrip.dungeon.x(), "map setter persists");
+            equal(250, roundTrip.dungeon.scale(), "map enlargement beyond old cap persists");
+            equal(175, roundTrip.dungeon.textScale(), "map text size persists independently");
             equal(true, roundTrip.dungeon.mimicEspEnabled(), "mimic esp setter persists");
             equal(true, roundTrip.bloodRush.enabled(), "blood rush setter persists");
             equal(false, roundTrip.chatFilter.necron(), "filter setter persists");
             equal(123, roundTrip.splits.y(), "splits setter persists");
+            equal(SplitsConfig.TimeFormat.SECONDS, roundTrip.splits.format(), "splits Seconds format persists");
+            equal(false, roundTrip.splits.timeLost(), "hidden split time loss persists");
             equal(false, roundTrip.debug.tarantulaMessages(), "debug setter persists");
             equal(true, roundTrip.slayer.eggSacPredictionEnabled(), "slayer setter persists");
             equal("mouse:3", roundTrip.misc.loadoutKeybind(2), "keybind setter persists");

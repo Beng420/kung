@@ -19,8 +19,10 @@ public final class DungeonApiEnrichment {
     private boolean finalFetchStarted;
     private long finalFetchStartTick = Long.MIN_VALUE;
     private int pendingFinalFetches;
+    private long generation;
 
     public void reset() {
+        generation++;
         requestedTotals.clear();
         requestedBaselines.clear();
         requestedFinals.clear();
@@ -96,15 +98,17 @@ public final class DungeonApiEnrichment {
         }, () -> pendingFinalFetches = Math.max(0, pendingFinalFetches - 1));
     }
 
-    private static void request(
+    private void request(
         Minecraft client,
         String name,
         String operation,
         Consumer<HypixelSkyBlockProfileClient.SecretResult> onSuccess,
         Runnable onComplete
     ) {
+        long requestedGeneration = generation;
         HypixelSkyBlockProfileClient.INSTANCE.loadTotalSecrets(name).whenComplete((result, throwable) ->
             client.execute(() -> {
+                if (requestedGeneration != generation) return;
                 try {
                     if (throwable != null) {
                         KungDebugRecorder.event("player-stats", operation + " failed player=" + name

@@ -7,6 +7,7 @@ public final class DungeonLifecycleSignals {
     private static final Pattern RUN_FINISHED = Pattern.compile(
         "^\\s*(?:\\S\\s+)?Defeated\\s+(.+?)\\s+in\\s+0?([\\dhms ]+?)\\s*(?:\\(NEW RECORD!\\))?$"
     );
+    private static final Pattern TEAM_SCORE = Pattern.compile("^Team Score: \\d{1,3} \\([SABCDUF][+]?\\)$");
 
     private DungeonLifecycleSignals() {
     }
@@ -16,7 +17,9 @@ public final class DungeonLifecycleSignals {
     }
 
     public static boolean isRunFinished(String message) {
-        return message != null && RUN_FINISHED.matcher(clean(message)).matches();
+        if (message == null) return false;
+        String text = clean(message);
+        return RUN_FINISHED.matcher(text).matches() || TEAM_SCORE.matcher(text).matches();
     }
 
     public static String clean(String message) {

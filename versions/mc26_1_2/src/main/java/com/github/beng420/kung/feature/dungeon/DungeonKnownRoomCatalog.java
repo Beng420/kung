@@ -226,6 +226,7 @@ public final class DungeonKnownRoomCatalog {
 
     private static TemplateCache cachedTemplateCache;
     private static long revision;
+    private static final DungeonPreloadHints SESSION_PRELOAD_HINTS = new DungeonPreloadHints();
 
     private DungeonKnownRoomCatalog() {
     }
@@ -553,7 +554,25 @@ public final class DungeonKnownRoomCatalog {
     }
 
     public static void reload() {
+        SESSION_PRELOAD_HINTS.clear();
         invalidateTemplateCache();
+    }
+
+    static void observePreloadTransition(DungeonScanPoint previous, DungeonScanPoint next) {
+        if (previous == null || previous.kind() != DungeonScanPointKind.ROOM
+            || next.kind() != DungeonScanPointKind.ROOM || previous.equals(next)) return;
+        TemplateCache cache = templateCache();
+        KnownCoreHint trusted = isStableKnownCoreHash(next.stableCoreHash())
+            ? cache.knownCoreHints().get(next.stableCoreHash())
+            : isStableKnownCoreHash(next.coreHash()) ? cache.knownCoreHints().get(next.coreHash()) : null;
+        if (trusted != null && SESSION_PRELOAD_HINTS.observe(previous.coreHash(), previous.stableCoreHash(), trusted)) {
+            synchronized (TEMPLATE_CACHE_LOCK) { revision++; }
+            com.github.beng420.kung.util.KungDebugRecorder.event("room-preload",
+                "cell=" + next.gridX() + "," + next.gridZ() + " before=" + previous.coreHash()
+                    + "/" + previous.stableCoreHash() + " after=" + next.coreHash() + "/" + next.stableCoreHash()
+                    + " room=" + trusted.name() + " ambiguous="
+                    + (SESSION_PRELOAD_HINTS.get(previous.coreHash(), previous.stableCoreHash()) == null));
+        }
     }
 
     public static AutoLearnResult autoLearnStableHashes(
@@ -675,38 +694,29 @@ public final class DungeonKnownRoomCatalog {
     }
 
     private static TemplateCache templateCache() {
-        Path file = knownRoomsFile();
-        long modifiedMillis = -1;
-        long size = -1;
-        if (Files.exists(file)) {
-            try {
-                modifiedMillis = Files.getLastModifiedTime(file).toMillis();
-                size = Files.size(file);
-            } catch (IOException exception) {
-                modifiedMillis = -2;
-                size = -2;
-            }
-        }
-
         synchronized (TEMPLATE_CACHE_LOCK) {
-            if (cachedTemplateCache != null
-                && cachedTemplateCache.file().equals(file)
-                && cachedTemplateCache.modifiedMillis() == modifiedMillis
-                && cachedTemplateCache.size() == size) {
+            // Learning, sync, config changes and /kung roomdata explicitly invalidate this cache.
+            // Never stat profile files from room matching or the per-frame HUD path.
+            if (cachedTemplateCache != null) {
                 return cachedTemplateCache;
             }
 
-            List<RoomTemplate> templates = loadTemplatesUncached(file);
+            List<RoomTemplate> templates = loadTemplatesUncached(knownRoomsFile());
             Map<Integer, KnownCoreHint> preloadCoreHints = preloadCoreHints();
             Map<Integer, KnownCoreHint> knownCoreHints = knownHintsByCoreHash(templates);
-            knownCoreHints.putAll(preloadCoreHints);
+            preloadCoreHints.forEach(knownCoreHints::putIfAbsent);
+            Map<String, Boolean> princeByName = new HashMap<>();
+            for (RoomTemplate template : templates) {
+                princeByName.merge(canonicalNameKey(template.name()), template.prince(), Boolean::logicalOr);
+            }
+            for (KnownCoreHint hint : knownCoreHints.values()) {
+                princeByName.merge(canonicalNameKey(hint.name()), hint.prince(), Boolean::logicalOr);
+            }
             cachedTemplateCache = new TemplateCache(
-                file,
-                modifiedMillis,
-                size,
                 templates,
                 knownCoreHints,
-                preloadCoreHints
+                preloadCoreHints,
+                Map.copyOf(princeByName)
             );
             return cachedTemplateCache;
         }
@@ -1070,7 +1080,7 @@ public final class DungeonKnownRoomCatalog {
             components.add(new MatchedComponent(roomGridX, roomGridZ, observedPoint.point().coreHash()));
         }
 
-        return new MatchedRoom(variant.template(), components);
+        return crossesVisibleDoor(snapshot, components) ? null : new MatchedRoom(variant.template(), components);
     }
 
     private static void addSoftMatches(
@@ -1177,11 +1187,24 @@ public final class DungeonKnownRoomCatalog {
             MIN_SOFT_MATCHED_COMPONENTS,
             variant.componentCount() - 1
         );
-        if (exactComponentCount < requiredExactComponents) {
+        if (exactComponentCount < requiredExactComponents || crossesVisibleDoor(snapshot, components)) {
             return null;
         }
 
         return new SoftMatchedRoom(new MatchedRoom(variant.template(), components), exactComponentCount);
+    }
+
+    private static boolean crossesVisibleDoor(DungeonMapSnapshot snapshot, List<MatchedComponent> components) {
+        for (int i = 0; i < components.size(); i++) {
+            MatchedComponent first = components.get(i);
+            for (int j = i + 1; j < components.size(); j++) {
+                MatchedComponent second = components.get(j);
+                if (Math.abs(first.roomGridX() - second.roomGridX()) + Math.abs(first.roomGridZ() - second.roomGridZ()) != 1) continue;
+                if (hasVisibleDoorBetween(snapshot, new CellKey(first.roomGridX(), first.roomGridZ()),
+                    new CellKey(second.roomGridX(), second.roomGridZ()))) return true;
+            }
+        }
+        return false;
     }
 
     private static void addCoreHintMatches(
@@ -1335,7 +1358,7 @@ public final class DungeonKnownRoomCatalog {
         if (hint == null && point.stableCoreHash() != 0) {
             hint = knownHintsByCoreHash.get(point.stableCoreHash());
         }
-        return hint;
+        return hint != null ? hint : SESSION_PRELOAD_HINTS.get(point.coreHash(), point.stableCoreHash());
     }
 
     private static boolean matchesTemplateHint(KnownCoreHint hint, RoomTemplate template) {
@@ -1787,22 +1810,8 @@ public final class DungeonKnownRoomCatalog {
 
     public static boolean hasPrince(String name) {
         String key = canonicalNameKey(name);
-        TemplateCache templateCache = templateCache();
-        boolean found = false;
-        boolean prince = false;
-        for (RoomTemplate template : templateCache.templates()) {
-            if (canonicalNameKey(template.name()).equals(key)) {
-                found = true;
-                prince |= template.prince();
-            }
-        }
-        for (KnownCoreHint hint : templateCache.knownCoreHints().values()) {
-            if (canonicalNameKey(hint.name()).equals(key)) {
-                found = true;
-                prince |= hint.prince();
-            }
-        }
-        return found ? prince : legacyHasPrince(name);
+        Boolean prince = templateCache().princeByName().get(key);
+        return prince != null ? prince : legacyHasPrince(name);
     }
 
     private static boolean legacyHasPrince(String name) {
@@ -1819,7 +1828,15 @@ public final class DungeonKnownRoomCatalog {
     }
 
     private static String canonicalNameKey(String name) {
-        return name.toLowerCase().replaceAll("[^a-z0-9]", "");
+        String lower = name.toLowerCase(java.util.Locale.ROOT);
+        StringBuilder key = new StringBuilder(lower.length());
+        for (int i = 0; i < lower.length(); i++) {
+            char value = lower.charAt(i);
+            if ((value >= 'a' && value <= 'z') || (value >= '0' && value <= '9')) {
+                key.append(value);
+            }
+        }
+        return key.toString();
     }
 
     private static String stripBom(String line) {
@@ -2651,12 +2668,10 @@ public final class DungeonKnownRoomCatalog {
     }
 
     private record TemplateCache(
-        Path file,
-        long modifiedMillis,
-        long size,
         List<RoomTemplate> templates,
         Map<Integer, KnownCoreHint> knownCoreHints,
-        Map<Integer, KnownCoreHint> preloadCoreHints
+        Map<Integer, KnownCoreHint> preloadCoreHints,
+        Map<String, Boolean> princeByName
     ) {
     }
 

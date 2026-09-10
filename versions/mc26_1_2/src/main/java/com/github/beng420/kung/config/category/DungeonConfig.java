@@ -8,6 +8,7 @@ public final class DungeonConfig extends ConfigCategory {
     private int x = 8;
     private int y = 8;
     private int scale = 100;
+    private int textScale = 100;
     private int unopenedRoomAlpha = 12;
     private boolean showHeader = true;
     private boolean showLegend = false;
@@ -40,6 +41,7 @@ public final class DungeonConfig extends ConfigCategory {
     public int y() { return y; }
     public void setY(int value) { y = value; save(); }
     public int scale() { return scale; }
+    public int textScale() { return textScale; }
     public int unopenedRoomAlpha() { return unopenedRoomAlpha; }
     public boolean showHeader() { return showHeader; }
     public void setShowHeader(boolean value) { showHeader = value; save(); }
@@ -82,7 +84,12 @@ public final class DungeonConfig extends ConfigCategory {
     public String roomSyncToken() { return roomSyncToken == null ? "" : roomSyncToken; }
 
     public void setScale(int scale) {
-        this.scale = Math.clamp(scale, 25, 150);
+        this.scale = Math.clamp(scale, 25, 300);
+        save();
+    }
+
+    public void setTextScale(int textScale) {
+        this.textScale = Math.clamp(textScale, 50, 200);
         save();
     }
 

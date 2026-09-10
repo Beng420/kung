@@ -29,6 +29,7 @@ public final class DungeonScan {
     }
 
     public List<DungeonScanPoint> scanBatch(ClientLevel level, DungeonMapSnapshot snapshot, int startIndex, int limit) {
+        long deadline = System.nanoTime() + 2_000_000L;
         int total = scanPointCount();
         int count = Math.clamp(limit, 1, total);
         List<DungeonScanPoint> points = new ArrayList<>(count);
@@ -37,6 +38,19 @@ public final class DungeonScan {
             int gridX = index / DungeonScanUtils.SCAN_GRID_SIZE;
             int gridZ = index % DungeonScanUtils.SCAN_GRID_SIZE;
             points.add(scanPoint(level, snapshot, gridX, gridZ));
+            if (System.nanoTime() >= deadline) {
+                break;
+            }
+        }
+        return points;
+    }
+
+    public List<DungeonScanPoint> scanLockedDoors(ClientLevel level, DungeonMapSnapshot snapshot) {
+        List<DungeonScanPoint> points = new ArrayList<>();
+        for (DungeonMapSnapshot.GridKey door : snapshot.observedLockedDoors()) {
+            if (!snapshot.isOpenedLockedDoor(door)) {
+                points.add(scanPoint(level, snapshot, door.gridX(), door.gridZ()));
+            }
         }
         return points;
     }
@@ -51,33 +65,16 @@ public final class DungeonScan {
         int stableCoreHash = NO_CORE_HASH;
         int doorBlockId = NO_DOOR_BLOCK;
         DungeonDoorKind doorKind = DungeonDoorKind.NONE;
-        DungeonMapSnapshot.ObservedPoint previous = snapshot == null
-            ? null
-            : snapshot.pointAt(gridX, gridZ);
-
+        DungeonMapSnapshot.ObservedPoint previous = snapshot == null ? null : snapshot.pointAt(gridX, gridZ);
         if (loaded && kind == DungeonScanPointKind.ROOM) {
-            if (canReuseRoomCore(previous)) {
-                coreHash = previous.point().coreHash();
-                stableCoreHash = previous.point().stableCoreHash();
-            } else {
-                coreHash = DungeonScanUtils.getCoreHash(level, worldX, worldZ);
-                stableCoreHash = DungeonScanUtils.getStableCoreHash(level, worldX, worldZ);
-            }
+            coreHash = DungeonScanUtils.getCoreHash(level, worldX, worldZ);
+            stableCoreHash = DungeonScanUtils.getStableCoreHash(level, worldX, worldZ);
         }
 
         if (loaded && kind == DungeonScanPointKind.DOOR) {
-            if (canReuseDoor(previous)) {
-                doorBlockId = previous.point().doorBlockId();
-                doorKind = previous.point().doorKind();
-            } else {
-                doorBlockId = DungeonScanUtils.getBlockId(
-                    level,
-                    worldX,
-                    DungeonScanRecorder.doorSampleY(),
-                    worldZ
-                );
-                doorKind = DungeonScanUtils.detectDoorKind(level, gridX, gridZ, worldX, worldZ);
-            }
+            doorBlockId = DungeonScanUtils.getBlockId(level, worldX, DungeonScanRecorder.doorSampleY(), worldZ);
+            doorKind = DungeonScanUtils.detectDoorKind(level, gridX, gridZ, worldX, worldZ,
+                previous == null ? DungeonDoorKind.NONE : previous.point().doorKind());
         }
 
         return new DungeonScanPoint(
@@ -92,24 +89,6 @@ public final class DungeonScan {
             doorBlockId,
             doorKind
         );
-    }
-
-    private static boolean canReuseRoomCore(DungeonMapSnapshot.ObservedPoint previous) {
-        if (previous == null || previous.point().kind() != DungeonScanPointKind.ROOM) {
-            return false;
-        }
-
-        int previousCoreHash = previous.point().coreHash();
-        int previousStableCoreHash = previous.point().stableCoreHash();
-        return !DungeonRoomClassifier.isEmptyCore(previousCoreHash)
-            && previousStableCoreHash != 0
-            && DungeonKnownRoomCatalog.isStableKnownCoreHash(previousStableCoreHash);
-    }
-
-    private static boolean canReuseDoor(DungeonMapSnapshot.ObservedPoint previous) {
-        return previous != null
-            && previous.point().kind() == DungeonScanPointKind.DOOR
-            && previous.point().doorKind() == DungeonDoorKind.OPEN;
     }
 
     private static DungeonScanPointKind kindFor(int gridX, int gridZ) {

@@ -1,34 +1,29 @@
 package com.github.beng420.kung.feature.dungeon;
 
-import static com.github.beng420.kung.util.GuiDraw.fill;
-
 import com.github.beng420.kung.KungMod;
+import com.github.beng420.kung.config.KungHudEditorScreen;
 import com.github.beng420.kung.config.category.SplitsConfig;
 import com.github.beng420.kung.feature.ConfigurableFeature;
 import com.github.beng420.kung.feature.Feature;
-import com.github.beng420.kung.ui.HudTextBlockRenderer;
 import java.util.List;
-import java.util.Locale;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
-import net.minecraft.client.DeltaTracker;
+import net.fabricmc.fabric.api.client.rendering.v1.hud.VanillaHudElements;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.resources.Identifier;
 
+/** Compact colored phase labels and aligned times, following Odin's splits HUD. */
 public final class DungeonSplitsOverlayFeature extends ConfigurableFeature<SplitsConfig> implements Feature {
     private static final Identifier HUD_ID = Identifier.fromNamespaceAndPath(KungMod.MOD_ID, "dungeon_splits_overlay");
-    private static final int WIDTH = 184;
-    private static final int HEADER_HEIGHT = 20;
-    private static final int ROW_HEIGHT = 12;
-    private static final int PADDING = 6;
-    private static final int BACKGROUND = 0x00000000;
-    private static final int PANEL = 0x00000000;
+    private static final int WIDTH = 300;
+    private static final int LOSS_COLUMN_WIDTH = 60;
+    private static final int ROW_HEIGHT = 10;
+    private static final int PADDING = 2;
     private static final int TEXT = 0xFFE9EDF2;
-    private static final int MUTED_TEXT = 0xFF99A1AD;
-    private static final int ACTIVE_TEXT = 0xFFFFF176;
-    private static final int BORDER = 0x00000000;
+    private static final int MUTED = 0xFF858B95;
+    private static final int ACTIVE = 0xFFFFF176;
+    private static final int LOST_TIME = 0xFFFF5555;
     private final DungeonStateTracker dungeonStateTracker;
-    private final HudTextBlockRenderer textBlockRenderer = new HudTextBlockRenderer();
 
     public DungeonSplitsOverlayFeature(DungeonStateTracker dungeonStateTracker) {
         super(config -> config.splits);
@@ -37,10 +32,9 @@ public final class DungeonSplitsOverlayFeature extends ConfigurableFeature<Split
 
     @Override
     protected void onInitialize() {
-        HudElementRegistry.addLast(
-            HUD_ID,
-            (graphics, deltaTracker) -> render(graphics, deltaTracker, dungeonStateTracker)
-        );
+        // Match the map's layer: container backgrounds dim both HUDs, and F1 hides both.
+        HudElementRegistry.attachElementBefore(VanillaHudElements.PLAYER_LIST, HUD_ID,
+            (graphics, deltaTracker) -> render(graphics));
     }
 
     @Override
@@ -48,104 +42,61 @@ public final class DungeonSplitsOverlayFeature extends ConfigurableFeature<Split
         return config().enabled();
     }
 
-    private void render(
-        GuiGraphicsExtractor graphics,
-        DeltaTracker deltaTracker,
-        DungeonStateTracker dungeonStateTracker
-    ) {
+    private void render(GuiGraphicsExtractor graphics) {
         SplitsConfig config = config();
         DungeonSplitTracker tracker = dungeonStateTracker.splitTracker();
-        if (!config.enabled()
-            || (!dungeonStateTracker.isInDungeonArea() && !tracker.running())) {
-            return;
-        }
+        boolean editing = Minecraft.getInstance().screen instanceof KungHudEditorScreen;
+        if (!config.enabled() || !isVisible(editing, dungeonStateTracker.isInDungeonArea(), tracker)) return;
 
-        List<DungeonSplitTracker.CompletedSplit> completedSplits = tracker.completedSplits();
-        String[] splitNames = tracker.splitNames();
-        int visibleRows = splitNames.length + (hasBossEntryRow(splitNames) ? 1 : 0);
-        int height = HEADER_HEIGHT + PADDING + visibleRows * ROW_HEIGHT + PADDING;
+        boolean example = editing && !tracker.started();
+        String[] names = displayedNames(tracker);
+        List<DungeonSplitTracker.CompletedSplit> completed = tracker.completedSplits();
         float scale = config.scale() / 100.0F;
         graphics.pose().pushMatrix();
         try {
             graphics.pose().translate(config.x(), config.y());
             graphics.pose().scale(scale, scale);
-            int left = 0;
-            int top = 0;
-
-            if (BORDER != 0) {
-                fill(graphics, left - 1, top - 1, left + WIDTH + 1, top + height + 1, BORDER);
-            }
-            if (BACKGROUND != 0) {
-                fill(graphics, left, top, left + WIDTH, top + height, BACKGROUND);
-            }
-            if (PANEL != 0) {
-                fill(graphics, left + 3, top + HEADER_HEIGHT, left + WIDTH - 3, top + height - 3, PANEL);
-            }
-
-            Minecraft client = Minecraft.getInstance();
-            graphics.text(client.font, "Kung Splits", left + PADDING, top + 6, TEXT, true);
-
-            int rowY = top + HEADER_HEIGHT + PADDING;
-            if (completedSplits.isEmpty() && !tracker.running()) {
-                textBlockRenderer.render(
-                    graphics,
-                    client.font,
-                    List.of(new HudTextBlockRenderer.Line("waiting for run", MUTED_TEXT, true)),
-                    new HudTextBlockRenderer.Options(
-                        left + PADDING,
-                        rowY,
-                        1.0F,
-                        HudTextBlockRenderer.Alignment.LEFT,
-                        0,
-                        0,
-                        ROW_HEIGHT
-                    )
-                );
-                return;
-            }
-
-            for (String splitName : splitNames) {
-                DungeonSplitTracker.CompletedSplit completed = completedSplit(splitName, completedSplits);
-                if (completed != null) {
-                    drawSplitRow(
-                        graphics,
-                        left,
-                        rowY,
-                        completed.name(),
-                        formatDurationMillis(completed.splitDurationMillis()),
-                        formatDurationMillis(completed.totalDurationMillis()),
-                        TEXT
-                    );
-                } else if (tracker.running() && splitName.equals(tracker.currentSplitName())) {
-                    drawSplitRow(
-                        graphics,
-                        left,
-                        rowY,
-                        splitName,
-                        formatDurationMillis(tracker.currentSplitDurationMillis()),
-                        formatDurationMillis(tracker.currentTotalDurationMillis()),
-                        ACTIVE_TEXT
-                    );
-                } else {
-                    drawSplitRow(graphics, left, rowY, splitName, "--", "--", MUTED_TEXT);
+            int y = PADDING;
+            for (int index = 0; index < names.length; index++) {
+                String name = names[index];
+                DungeonSplitTracker.CompletedSplit split = phaseSnapshot(tracker, name);
+                boolean current = tracker.hasCurrentSplit() && name.equals(tracker.currentSplitName());
+                long wall = -1L;
+                long server = -1L;
+                if (example) {
+                    wall = 12_340L + index * 731L;
+                    server = 12_000L + index * 700L;
+                } else if (split != null) {
+                    wall = split.splitDurationMillis();
+                    server = split.serverSplitDurationMillis();
+                } else if (current) {
+                    wall = tracker.currentSplitDurationMillis();
+                    server = tracker.currentSplitServerDurationMillis();
                 }
-                rowY += ROW_HEIGHT;
-                if ("Portal Entry".equals(splitName)) {
-                    DungeonSplitTracker.CompletedSplit portalEntry = completedSplit("Portal Entry", completedSplits);
-                    if (portalEntry != null) {
-                        drawCumulativeSplitRow(
-                            graphics,
-                            left,
-                            rowY,
-                            "Boss Entry",
-                            formatDurationMillis(portalEntry.totalDurationMillis()),
-                            TEXT
-                        );
-                    } else {
-                        drawCumulativeSplitRow(graphics, left, rowY, "Boss Entry", "--", MUTED_TEXT);
-                    }
-                    rowY += ROW_HEIGHT;
-                }
+                drawRow(graphics, y, name, wall, server, current ? ACTIVE : TEXT,
+                    wall >= 0L ? phaseColor(name) : MUTED, config, example || split != null);
+                y += ROW_HEIGHT;
+            }
+            y += 2;
+            DungeonSplitTracker.CompletedSplit portal = completedSplit("Portal Entry", completed);
+            boolean inClear = tracker.started() && isClearSplit(tracker.currentSplitName());
+            drawRow(graphics, y, "Boss Entry",
+                example ? 110_000L : portal != null ? portal.totalDurationMillis() : inClear ? tracker.currentTotalDurationMillis() : -1L,
+                example ? 107_000L : portal != null ? portal.serverTotalDurationMillis() : inClear ? tracker.currentTotalServerDurationMillis() : -1L,
+                TEXT, 0xFF7777FF, config, false);
+            y += ROW_HEIGHT;
+            long totalWall = example ? 360_000L : tracker.started() ? tracker.currentTotalDurationMillis() : -1L;
+            long totalServer = example ? 352_000L : tracker.started() ? tracker.currentTotalServerDurationMillis() : -1L;
+            drawRow(graphics, y, "Total", totalWall, totalServer,
+                tracker.running() ? ACTIVE : TEXT, 0xFF55FFFF, config, false);
+            if (config.timeLost()) {
+                y += ROW_HEIGHT;
+                Minecraft client = Minecraft.getInstance();
+                graphics.text(client.font, "Time Lost", PADDING, y, TEXT, true);
+                long loss = example ? lostTimeMillis(totalWall, totalServer) : settledTotalLostTimeMillis(tracker);
+                String lossText = formatLostTimeMillis(loss);
+                graphics.text(client.font, lossText, WIDTH - PADDING - LOSS_COLUMN_WIDTH - client.font.width(lossText),
+                    y, loss < 0L ? MUTED : LOST_TIME, true);
             }
         } finally {
             graphics.pose().popMatrix();
@@ -154,96 +105,114 @@ public final class DungeonSplitsOverlayFeature extends ConfigurableFeature<Split
 
     public static OverlayBounds overlayBounds(SplitsConfig config, DungeonSplitTracker tracker) {
         float scale = config.scale() / 100.0F;
-        int visibleRows = tracker.splitNames().length + (hasBossEntryRow(tracker.splitNames()) ? 1 : 0);
-        int height = HEADER_HEIGHT + PADDING + visibleRows * ROW_HEIGHT + PADDING;
-        return new OverlayBounds(
-            Math.round(config.x() - scale),
-            Math.round(config.y() - scale),
-            Math.round((WIDTH + 2) * scale),
-            Math.round((height + 2) * scale)
-        );
+        int height = PADDING * 2 + (displayedNames(tracker).length + (config.timeLost() ? 3 : 2)) * ROW_HEIGHT + 2;
+        int width = config.timeLost() ? WIDTH : WIDTH - LOSS_COLUMN_WIDTH;
+        return new OverlayBounds(config.x(), config.y(), Math.round(width * scale), Math.round(height * scale));
+    }
+
+    static boolean isVisible(boolean editing, boolean inDungeon, DungeonSplitTracker tracker) {
+        return editing || inDungeon && tracker.started();
+    }
+
+    static String[] displayedNames(DungeonSplitTracker tracker) {
+        return tracker.started() || tracker.hasKnownFloor()
+            ? tracker.splitNames() : DungeonSplitTracker.defaultSplitNames();
+    }
+
+    static DungeonSplitTracker.CompletedSplit phaseSnapshot(DungeonSplitTracker tracker, String name) {
+        var completed = completedSplit(name, tracker.completedSplits());
+        if (completed != null) return completed;
+        var stopped = tracker.stoppedCurrentSplit();
+        return stopped != null && name.equals(stopped.name()) ? stopped : null;
+    }
+
+    private static boolean isClearSplit(String name) {
+        return name.equals("Blood Open") || name.equals("Blood Clear") || name.equals("Portal Entry");
     }
 
     private static DungeonSplitTracker.CompletedSplit completedSplit(
-        String name,
-        List<DungeonSplitTracker.CompletedSplit> completedSplits
+        String name, List<DungeonSplitTracker.CompletedSplit> completed
     ) {
-        for (DungeonSplitTracker.CompletedSplit split : completedSplits) {
-            if (split.name().equals(name)) {
-                return split;
-            }
+        for (DungeonSplitTracker.CompletedSplit split : completed) {
+            if (split.name().equals(name)) return split;
         }
         return null;
     }
 
-    private static boolean hasBossEntryRow(String[] splitNames) {
-        for (String splitName : splitNames) {
-            if ("Portal Entry".equals(splitName)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private static void drawSplitRow(
-        GuiGraphicsExtractor graphics,
-        int left,
-        int y,
-        String name,
-        String splitDuration,
-        String totalDuration,
-        int color
+    private static void drawRow(
+        GuiGraphicsExtractor graphics, int y, String name, long wallMillis, long serverMillis,
+        int timeColor, int labelColor, SplitsConfig config, boolean settled
     ) {
         Minecraft client = Minecraft.getInstance();
-        String time = splitDuration + " (" + totalDuration + ")";
-        int timeWidth = client.font.width(time);
-        int nameMaxWidth = WIDTH - PADDING * 3 - timeWidth;
-        graphics.text(client.font, trimToWidth(name, Math.max(32, nameMaxWidth)), left + PADDING, y, color, true);
-        graphics.text(client.font, time, left + WIDTH - PADDING - timeWidth, y, color, true);
+        graphics.text(client.font, name, PADDING, y, labelColor, true);
+        String realTime = formatDurationMillis(wallMillis, config.format());
+        String tickTime = " (" + formatDurationMillis(serverMillis, config.format()) + ")";
+        int ticksWidth = client.font.width(tickTime);
+        int timeRight = WIDTH - PADDING - LOSS_COLUMN_WIDTH;
+        int wallX = timeRight - ticksWidth - client.font.width(realTime);
+        graphics.text(client.font, realTime, wallX, y, wallMillis < 0L ? MUTED : timeColor, true);
+        graphics.text(client.font, tickTime, timeRight - ticksWidth, y, MUTED, true);
+        String loss = config.timeLost() && settled ? lostTimeSuffix(wallMillis, serverMillis) : "";
+        if (!loss.isEmpty()) graphics.text(client.font, loss, timeRight + 6, y, LOST_TIME, true);
     }
 
-    private static void drawCumulativeSplitRow(
-        GuiGraphicsExtractor graphics,
-        int left,
-        int y,
-        String name,
-        String duration,
-        int color
-    ) {
-        Minecraft client = Minecraft.getInstance();
-        int timeWidth = client.font.width(duration);
-        int nameMaxWidth = WIDTH - PADDING * 3 - timeWidth;
-        graphics.text(client.font, trimToWidth(name, Math.max(32, nameMaxWidth)), left + PADDING, y, color, true);
-        graphics.text(client.font, duration, left + WIDTH - PADDING - timeWidth, y, color, true);
+    static long lostTimeMillis(long wallMillis, long serverMillis) {
+        if (wallMillis < 0L || serverMillis < 0L) return -1L;
+        return Math.max(0L, wallMillis - serverMillis);
     }
 
-    private static String formatDurationMillis(long millis) {
-        double seconds = millis / 1000.0;
-        if (seconds < 60.0) {
-            return String.format(Locale.ROOT, "%.2fs", seconds);
+    /** A running phase never changes the displayed loss; use the last completed boundary. */
+    static long settledTotalLostTimeMillis(DungeonSplitTracker tracker) {
+        if (!tracker.started()) return -1L;
+        if (!tracker.running()) {
+            return lostTimeMillis(tracker.currentTotalDurationMillis(), tracker.currentTotalServerDurationMillis());
         }
-
-        long minutes = (long) (seconds / 60.0);
-        double remainder = seconds - minutes * 60.0;
-        return String.format(Locale.ROOT, "%dm%.2fs", minutes, remainder);
+        List<DungeonSplitTracker.CompletedSplit> completed = tracker.completedSplits();
+        if (completed.isEmpty()) return -1L;
+        var boundary = completed.getLast();
+        return lostTimeMillis(boundary.totalDurationMillis(), boundary.serverTotalDurationMillis());
     }
 
-    private static String trimToWidth(String value, int maxWidth) {
-        Minecraft client = Minecraft.getInstance();
-        if (client.font.width(value) <= maxWidth) {
-            return value;
-        }
-
-        String suffix = "...";
-        for (int end = value.length(); end > 0; end--) {
-            String candidate = value.substring(0, end) + suffix;
-            if (client.font.width(candidate) <= maxWidth) {
-                return candidate;
-            }
-        }
-        return suffix;
+    static String lostTimeSuffix(long wallMillis, long serverMillis) {
+        long loss = lostTimeMillis(wallMillis, serverMillis);
+        // Only show a loss that rounds to a non-zero tenth, avoiding a misleading red -0.0s.
+        return loss < 50L ? "" : formatLostTimeMillis(loss);
     }
 
-    public record OverlayBounds(int x, int y, int width, int height) {
+    static String formatLostTimeMillis(long millis) {
+        if (millis < 0L) return "--";
+        long tenths = millis / 100L + (millis % 100L >= 50L ? 1L : 0L);
+        return (tenths > 0L ? "-" : "") + tenths / 10L + "." + tenths % 10L + "s";
     }
+
+    static String formatDurationMillis(long millis) {
+        return formatDurationMillis(millis, SplitsConfig.TimeFormat.MINUTES);
+    }
+
+    static String formatDurationMillis(long millis, SplitsConfig.TimeFormat format) {
+        if (millis < 0L) return "--";
+        long hundredths = millis / 10L;
+        long minutes = format == SplitsConfig.TimeFormat.SECONDS ? 0L : hundredths / 6_000L;
+        long seconds = format == SplitsConfig.TimeFormat.SECONDS ? hundredths / 100L : hundredths / 100L % 60L;
+        long fraction = hundredths % 100L;
+        return (minutes > 0L ? minutes + "m " : "")
+            + seconds + "." + (fraction < 10L ? "0" : "") + fraction + "s";
+    }
+
+    private static int phaseColor(String name) {
+        return switch (name) {
+            case "Blood Open" -> 0xFF55AA55;
+            case "Blood Clear" -> 0xFF55FFFF;
+            case "Portal Entry" -> 0xFFFF55FF;
+            case "Maxor", "Relics" -> 0xFFBB66FF;
+            case "Storm", "Wither King" -> 0xFF55BBBB;
+            case "Terminals", "Dragons" -> 0xFFFFAA00;
+            case "Goldor" -> 0xFFAAAAAA;
+            case "Necron", "Bonzo Phase 1", "Scarf's Minions", "Guardians", "Terracottas" -> 0xFFFF5555;
+            case "The Professor", "Giants" -> 0xFF55FF55;
+            default -> 0xFFFF7777;
+        };
+    }
+
+    public record OverlayBounds(int x, int y, int width, int height) { }
 }

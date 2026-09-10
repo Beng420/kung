@@ -31,15 +31,11 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.monster.zombie.Zombie;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
-import net.minecraft.world.level.chunk.LevelChunk;
-import net.minecraft.world.level.chunk.status.ChunkStatus;
 import net.minecraft.world.phys.Vec3;
 
 public final class DungeonMimicEspFeature extends ConfigurableFeature<DungeonConfig> implements Feature {
     private static final Identifier WAYPOINT_HUD_ID = Identifier.fromNamespaceAndPath(KungMod.MOD_ID, "mimic_esp_waypoint");
     private static final long SCAN_INTERVAL_TICKS = 10L;
-    private static final int CHUNK_SCAN_RADIUS = 12;
-    private static final long ENTITY_MISSING_GRACE_TICKS = 10L;
     private static final long OPENED_CHEST_COMBAT_WINDOW_TICKS = 20L * 25L;
     private static final int TEXT_RED = 0xFFFF4040;
     private static final int WAYPOINT_BACKGROUND = 0x99000000;
@@ -61,21 +57,22 @@ public final class DungeonMimicEspFeature extends ConfigurableFeature<DungeonCon
         Pattern.compile(".*(?:Mimic dead!?|Mimic Killed!|\\$SKYTILS-DUNGEON-SCORE-MIMIC\\$).*", Pattern.CASE_INSENSITIVE);
 
     private final DungeonStateTracker tracker;
+    private final DungeonMimicChestScanner chestScanner = new DungeonMimicChestScanner();
+    private final DungeonMimicChestMemory chestMemory = new DungeonMimicChestMemory();
     private List<BlockPos> mimicChestPositions = List.of();
     private List<BlockPos> lastKnownMimicChestPositions = List.of();
     private Set<Integer> observedMimicEntityIds = Set.of();
     private ScanStats lastScanStats = ScanStats.empty();
     private Object observedLevel;
+    private long observedMapGeneration = Long.MIN_VALUE;
     private DungeonLiveMapWriter.CellKey lastPlayerRoom;
     private boolean mimicEncounterActive;
     private long mimicChestOpenedTick = Long.MIN_VALUE;
-    private long mimicEntityMissingSinceTick = Long.MIN_VALUE;
     private long lastScanTick = Long.MIN_VALUE;
     private long lastRenderLogTick = Long.MIN_VALUE;
     private String lastRenderLogState = "";
     private String lastLoggedState = "";
     private DungeonMapSnapshot.GridKey observedMimicMapRoom;
-    private BlockPos observedMimicMapPos;
 
     public DungeonMimicEspFeature(DungeonStateTracker tracker) {
         super(config -> config.dungeon);
@@ -116,18 +113,14 @@ public final class DungeonMimicEspFeature extends ConfigurableFeature<DungeonCon
             return;
         }
 
-        if (observedLevel != client.level) {
+        if (observedLevel != client.level || observedMapGeneration != tracker.mapSnapshot().resetGeneration()) {
+            clear();
             observedLevel = client.level;
-            mimicChestPositions = List.of();
-            lastScanStats = ScanStats.empty();
-            lastScanTick = Long.MIN_VALUE;
-            lastPlayerRoom = null;
-            mimicEncounterActive = false;
-            mimicChestOpenedTick = Long.MIN_VALUE;
-            mimicEntityMissingSinceTick = Long.MIN_VALUE;
+            observedMapGeneration = tracker.mapSnapshot().resetGeneration();
         }
 
         long nowTick = tracker.dungeonTick();
+        chestScanner.tick(client.level, client.player.blockPosition(), nowTick);
         DungeonLiveMapWriter.CellKey playerRoom = currentPlayerRoom(client);
         boolean enteredNewRoom = playerRoom != null && !playerRoom.equals(lastPlayerRoom);
         lastPlayerRoom = playerRoom;
@@ -139,17 +132,17 @@ public final class DungeonMimicEspFeature extends ConfigurableFeature<DungeonCon
         List<BlockPos> previousChestPositions = mimicChestPositions;
         mimicChestPositions = findMimicChests(client);
         observeOpenedMimicChest(client, previousChestPositions, mimicChestPositions, nowTick);
-        if (!mimicChestPositions.isEmpty()) {
-            lastKnownMimicChestPositions = mimicChestPositions;
-        }
-        observeMimicRooms(client);
+        DungeonLiveMapWriter.MatchRenderPlan renderPlan = tracker.renderPlan();
+        chestMemory.observe(mimicChestPositions, pos -> isAllowedMimicRoom(renderPlan, pos));
+        lastKnownMimicChestPositions = chestMemory.positions();
+        observeMimicRooms();
         observeMimicEntityState(client);
         logState();
     }
 
     private void render(LevelRenderContext context) {
         Minecraft client = Minecraft.getInstance();
-        if (!shouldTrack(client) || mimicChestPositions.isEmpty()) {
+        if (!shouldTrack(client) || !hasCurrentObservation(client) || mimicChestPositions.isEmpty()) {
             return;
         }
 
@@ -167,7 +160,7 @@ public final class DungeonMimicEspFeature extends ConfigurableFeature<DungeonCon
 
     private void renderWaypointHud(GuiGraphicsExtractor graphics, DeltaTracker deltaTracker) {
         Minecraft client = Minecraft.getInstance();
-        if (!shouldTrack(client) || mimicChestPositions.isEmpty()) {
+        if (!shouldTrack(client) || !hasCurrentObservation(client) || mimicChestPositions.isEmpty()) {
             return;
         }
 
@@ -202,42 +195,19 @@ public final class DungeonMimicEspFeature extends ConfigurableFeature<DungeonCon
         return floor <= 0 || floor == 6 || floor == 7;
     }
 
+    private boolean hasCurrentObservation(Minecraft client) {
+        return observedLevel == client.level
+            && observedMapGeneration == tracker.mapSnapshot().resetGeneration();
+    }
+
     private List<BlockPos> findMimicChests(Minecraft client) {
-        int playerChunkX = Math.floorDiv(client.player.blockPosition().getX(), 16);
-        int playerChunkZ = Math.floorDiv(client.player.blockPosition().getZ(), 16);
         Set<BlockPos> result = new LinkedHashSet<>();
-        int checkedChunks = 0;
-        int checkedBlockEntities = 0;
-        int scannedChunks = 0;
         DungeonLiveMapWriter.MatchRenderPlan renderPlan = tracker.renderPlan();
         forgetTrapMimicRooms(renderPlan);
-
-        for (int chunkX = playerChunkX - CHUNK_SCAN_RADIUS; chunkX <= playerChunkX + CHUNK_SCAN_RADIUS; chunkX++) {
-            for (int chunkZ = playerChunkZ - CHUNK_SCAN_RADIUS; chunkZ <= playerChunkZ + CHUNK_SCAN_RADIUS; chunkZ++) {
-                LevelChunk chunk = client.level.getChunkSource().getChunk(chunkX, chunkZ, ChunkStatus.FULL, false);
-                if (chunk == null || chunk.isEmpty()) {
-                    continue;
-                }
-                checkedChunks++;
-                for (BlockPos pos : chunk.getBlockEntities().keySet()) {
-                    checkedBlockEntities++;
-                    if (isMimicChest(client, renderPlan, pos)) {
-                        result.add(copyPos(pos));
-                    }
-                }
-                scannedChunks++;
-                chunk.findBlocks(
-                    state -> state.is(Blocks.TRAPPED_CHEST),
-                    (pos, state) -> {
-                        if (isMimicChest(client, renderPlan, pos)) {
-                            result.add(copyPos(pos));
-                        }
-                    }
-                );
-            }
+        for (BlockPos pos : chestScanner.positions()) {
+            if (isMimicChest(client, renderPlan, pos)) result.add(pos);
         }
-
-        lastScanStats = new ScanStats(checkedChunks, checkedBlockEntities, scannedChunks);
+        lastScanStats = new ScanStats(chestScanner.cachedChunks(), result.size(), chestScanner.fallbackScans());
         return List.copyOf(result);
     }
 
@@ -246,16 +216,15 @@ public final class DungeonMimicEspFeature extends ConfigurableFeature<DungeonCon
         DungeonLiveMapWriter.MatchRenderPlan renderPlan,
         BlockPos pos
     ) {
-        DungeonScanUtils.GridPosition grid = DungeonScanUtils.getRoomGridPosition(pos);
-        if (!isInsideDungeonGrid(grid) || renderPlan.roomTypeAt(grid.gridX(), grid.gridZ()) == RoomType.TRAP) {
-            return false;
-        }
-        if (isKnownStaticTrappedChestRoom(renderPlan, grid.gridX(), grid.gridZ())) {
-            return false;
-        }
-
         BlockState state = client.level.getBlockState(pos);
-        return state.is(Blocks.TRAPPED_CHEST);
+        return isAllowedMimicRoom(renderPlan, pos) && state.is(Blocks.TRAPPED_CHEST);
+    }
+
+    private static boolean isAllowedMimicRoom(DungeonLiveMapWriter.MatchRenderPlan renderPlan, BlockPos pos) {
+        DungeonScanUtils.GridPosition grid = DungeonScanUtils.getRoomGridPosition(pos);
+        return isInsideDungeonGrid(grid)
+            && renderPlan.roomTypeAt(grid.gridX(), grid.gridZ()) != RoomType.TRAP
+            && !isKnownStaticTrappedChestRoom(renderPlan, grid.gridX(), grid.gridZ());
     }
 
     private static boolean isInsideDungeonGrid(DungeonScanUtils.GridPosition grid) {
@@ -263,10 +232,6 @@ public final class DungeonMimicEspFeature extends ConfigurableFeature<DungeonCon
             && grid.gridZ() >= 0
             && grid.gridX() <= DungeonScanUtils.SCAN_GRID_SIZE / 2
             && grid.gridZ() <= DungeonScanUtils.SCAN_GRID_SIZE / 2;
-    }
-
-    private static BlockPos copyPos(BlockPos pos) {
-        return new BlockPos(pos.getX(), pos.getY(), pos.getZ());
     }
 
     private static DungeonLiveMapWriter.CellKey currentPlayerRoom(Minecraft client) {
@@ -288,8 +253,9 @@ public final class DungeonMimicEspFeature extends ConfigurableFeature<DungeonCon
         }
     }
 
-    private void observeMimicRooms(Minecraft client) {
-        BlockPos pos = selectMapMimicChest(client);
+    private void observeMimicRooms() {
+        DungeonLiveMapWriter.MatchRenderPlan renderPlan = tracker.renderPlan();
+        BlockPos pos = chestMemory.mapChest(chest -> roomKey(renderPlan, chest));
         if (pos == null) {
             forgetObservedMimicMapRoom("mimic-candidate-ambiguous");
             return;
@@ -305,40 +271,11 @@ public final class DungeonMimicEspFeature extends ConfigurableFeature<DungeonCon
             );
         }
         observedMimicMapRoom = room;
-        observedMimicMapPos = pos;
         tracker.mapSnapshot().observeMimicRoom(
             grid.gridX(),
             grid.gridZ(),
             "trapped-chest@" + pos.getX() + "," + pos.getY() + "," + pos.getZ()
         );
-    }
-
-    private BlockPos selectMapMimicChest(Minecraft client) {
-        List<BlockPos> positions = mimicEncounterActive && !lastKnownMimicChestPositions.isEmpty()
-            ? lastKnownMimicChestPositions
-            : mimicChestPositions;
-        if (positions.isEmpty()) {
-            return null;
-        }
-
-        DungeonLiveMapWriter.MatchRenderPlan renderPlan = tracker.renderPlan();
-        String selectedRoomKey = null;
-        BlockPos selectedPos = null;
-        for (BlockPos pos : positions) {
-            String roomKey = roomKey(renderPlan, pos);
-            if (roomKey == null) {
-                return positions.size() == 1 ? pos : null;
-            }
-            if (selectedRoomKey == null) {
-                selectedRoomKey = roomKey;
-                selectedPos = pos;
-                continue;
-            }
-            if (!selectedRoomKey.equals(roomKey)) {
-                return null;
-            }
-        }
-        return selectedPos;
     }
 
     private void forgetObservedMimicMapRoom(String source) {
@@ -351,7 +288,6 @@ public final class DungeonMimicEspFeature extends ConfigurableFeature<DungeonCon
             source
         );
         observedMimicMapRoom = null;
-        observedMimicMapPos = null;
     }
 
     private void observeOpenedMimicChest(
@@ -368,12 +304,12 @@ public final class DungeonMimicEspFeature extends ConfigurableFeature<DungeonCon
             if (currentPositions.contains(previous) || !playerInSameRoom(client, renderPlan, previous)) {
                 continue;
             }
-            if (client.level.getBlockState(previous).is(Blocks.TRAPPED_CHEST)) {
+            if (!client.level.hasChunk(previous.getX() >> 4, previous.getZ() >> 4)
+                || client.level.getBlockState(previous).is(Blocks.TRAPPED_CHEST)) {
                 continue;
             }
             mimicEncounterActive = true;
             mimicChestOpenedTick = nowTick;
-            mimicEntityMissingSinceTick = Long.MIN_VALUE;
             KungDebugRecorder.event("mimic-esp", "mimic chest opened pos="
                 + previous.getX() + "," + previous.getY() + "," + previous.getZ());
             return;
@@ -386,6 +322,14 @@ public final class DungeonMimicEspFeature extends ConfigurableFeature<DungeonCon
             return;
         }
 
+        for (int entityId : observedMimicEntityIds) {
+            Entity entity = client.level.getEntity(entityId);
+            if (entity instanceof net.minecraft.world.entity.LivingEntity living && living.isDeadOrDying()) {
+                completeMimic(client, "mimic-entity-dead");
+                return;
+            }
+        }
+
         Set<Integer> currentIds = new LinkedHashSet<>();
         for (Entity entity : client.level.entitiesForRendering()) {
             if (isMimicSpawnCandidate(entity)) {
@@ -393,23 +337,8 @@ public final class DungeonMimicEspFeature extends ConfigurableFeature<DungeonCon
             }
         }
 
-        long nowTick = tracker.dungeonTick();
-        if (currentIds.isEmpty()) {
-            if (!observedMimicEntityIds.isEmpty()) {
-                if (mimicEntityMissingSinceTick == Long.MIN_VALUE) {
-                    mimicEntityMissingSinceTick = nowTick;
-                }
-                if (nowTick - mimicEntityMissingSinceTick >= ENTITY_MISSING_GRACE_TICKS) {
-                    KungDebugRecorder.event("mimic-esp", "mimic entity gone ids=" + observedMimicEntityIds.size());
-                    completeMimic(client, "mimic-entity-gone");
-                    return;
-                }
-            }
-        } else {
-            mimicEncounterActive = true;
-            mimicEntityMissingSinceTick = Long.MIN_VALUE;
-        }
-
+        // Entities also disappear when leaving their tracking range. That is not a kill.
+        if (!currentIds.isEmpty()) mimicEncounterActive = true;
         observedMimicEntityIds = currentIds;
     }
 
@@ -421,7 +350,10 @@ public final class DungeonMimicEspFeature extends ConfigurableFeature<DungeonCon
         if (name.contains("mimic")) {
             return true;
         }
-        return entity instanceof Zombie zombie && zombie.isBaby();
+        // Dungeon baby zombies can pass a closed trapped chest. Only an observed
+        // opening establishes the encounter needed to identify an unnamed Mimic.
+        return mimicChestOpenedTick != Long.MIN_VALUE
+            && entity instanceof Zombie zombie && zombie.isBaby();
     }
 
     private boolean nearKnownMimicChest(Entity entity) {
@@ -458,11 +390,21 @@ public final class DungeonMimicEspFeature extends ConfigurableFeature<DungeonCon
             return;
         }
 
+        // A reset can happen between ticks. Do not apply the old encounter's XP
+        // window to the new instance; explicit Mimic kill chat above is fresh evidence.
+        if (!hasCurrentObservation(client)) {
+            return;
+        }
+
         long nowTick = tracker.dungeonTick();
         boolean openedRecently = mimicEncounterActive
             && mimicChestOpenedTick != Long.MIN_VALUE
             && nowTick - mimicChestOpenedTick <= OPENED_CHEST_COMBAT_WINDOW_TICKS;
         if (openedRecently && COMBAT_XP_PATTERN.matcher(message).matches()) {
+            DungeonLiveMapWriter.MatchRenderPlan renderPlan = tracker.renderPlan();
+            if (lastKnownMimicChestPositions.stream().noneMatch(pos -> playerInSameRoom(client, renderPlan, pos))) {
+                return;
+            }
             KungDebugRecorder.event("mimic-esp", "mimic combat xp message=" + KungDebugRecorder.compact(message));
             completeMimic(client, "combat-xp");
         }
@@ -716,20 +658,22 @@ public final class DungeonMimicEspFeature extends ConfigurableFeature<DungeonCon
             return;
         }
         tracker.mapSnapshot().clearMimicRooms("mimic-clear");
+        chestScanner.clear();
+        chestMemory.clear();
         mimicChestPositions = List.of();
         lastKnownMimicChestPositions = List.of();
         observedMimicEntityIds = Set.of();
         observedLevel = null;
+        observedMapGeneration = Long.MIN_VALUE;
+        lastScanStats = ScanStats.empty();
         lastPlayerRoom = null;
         mimicEncounterActive = false;
         mimicChestOpenedTick = Long.MIN_VALUE;
-        mimicEntityMissingSinceTick = Long.MIN_VALUE;
         lastScanTick = Long.MIN_VALUE;
         lastRenderLogTick = Long.MIN_VALUE;
         lastRenderLogState = "";
         lastLoggedState = "";
         observedMimicMapRoom = null;
-        observedMimicMapPos = null;
     }
 
     private void logRenderState(Vec3 camera, int sameRoomMarkers) {

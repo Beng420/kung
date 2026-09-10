@@ -31,7 +31,7 @@ public final class DungeonStateTracker {
     private static final long LIVE_ROOM_SYNC_INTERVAL_TICKS = 10;
     private static final long RUN_SUMMARY_DELAY_TICKS = 20;
     private static final long LIFECYCLE_DUPLICATE_WINDOW_TICKS = 20;
-    private static final long MISSING_INSTANCE_GRACE_TICKS = 80;
+    private static final long LIFECYCLE_MESSAGE_WINDOW_TICKS = 80;
     private static final int DEBUG_ROOM_SIZE = 19;
     private static final int DEBUG_DOOR_SIZE = 6;
     private static final int DEBUG_CELL_GAP = 1;
@@ -43,13 +43,11 @@ public final class DungeonStateTracker {
     private final DungeonRunStats runStats = new DungeonRunStats();
     private final DungeonSplitTracker splitTracker = new DungeonSplitTracker();
     private final BloodRushHelperFeature bloodRushHelper = BloodRushHelperFeature.INSTANCE;
-    private boolean lastInDungeon;
     private boolean dungeonInstanceActive;
     private boolean inDungeonArea;
     private boolean mapVisibleArea;
     private long dungeonTick;
     private long lastDungeonAreaSeenTick;
-    private int missingRunTicks;
     private long cachedRenderPlanRevision = Long.MIN_VALUE;
     private long cachedRenderPlanCatalogRevision = Long.MIN_VALUE;
     private DungeonLiveMapWriter.MatchRenderPlan cachedRenderPlan;
@@ -62,20 +60,24 @@ public final class DungeonStateTracker {
     private long lastRunStartSignalTick = Long.MIN_VALUE;
     private long lastRunFinishedSignalTick = Long.MIN_VALUE;
     private long lastLeftDungeonsMessageTick = Long.MIN_VALUE;
-    private Object observedLevel;
-    private String lastLoggedDungeonState = "";
+    private long observedInstanceEpoch = Long.MIN_VALUE;
     private String lastLoggedDungeonStateKey = "";
-    private long lastLoggedDungeonStateTick = Long.MIN_VALUE;
     private String lastLoggedMapTopologyState = "";
     private String lastLoggedMapTopologySummary = "";
     private String lastLoggedLiveRoomSyncState = "";
     private final Set<String> loggedMapDiscoveryLines = new HashSet<>();
-    private boolean contextLostMessageSent;
     private long lastRunErrorMessageTick = Long.MIN_VALUE;
     private boolean runSummarySent;
     private boolean runStartMessageSent;
     private boolean runEndMessageSent;
     private boolean realRunStarted;
+    private DungeonScanUtils.GridPosition instanceEntrance;
+
+    void seedScanEntrance(DungeonMapSnapshot snapshot) {
+        if (instanceEntrance != null) {
+            snapshot.observeStartRoom(instanceEntrance.gridX(), instanceEntrance.gridZ());
+        }
+    }
 
     public DungeonStateTracker() {
         this(KnownDungeonRoomRepository.INSTANCE);
@@ -163,17 +165,17 @@ public final class DungeonStateTracker {
             cachedRenderPlan = renderPlan;
             cachedRenderPlanRevision = revision;
             cachedRenderPlanCatalogRevision = catalogRevision;
-            logMapTopology(snapshot, renderPlan);
-            logMapDiscovery(snapshot, renderPlan);
+            List<String> topology = renderPlan.topologyDebugLines(snapshot);
+            logMapTopology(topology);
+            logMapDiscovery(snapshot, topology);
         }
         return cachedRenderPlan;
     }
 
-    private void logMapTopology(DungeonMapSnapshot snapshot, DungeonLiveMapWriter.MatchRenderPlan renderPlan) {
-        if (!dungeonInstanceActive && !lastInDungeon) {
+    private void logMapTopology(List<String> lines) {
+        if (!dungeonInstanceActive) {
             return;
         }
-        List<String> lines = renderPlan.topologyDebugLines(snapshot);
         String state = String.join("\n", lines);
         if (state.equals(lastLoggedMapTopologyState)) {
             return;
@@ -192,11 +194,11 @@ public final class DungeonStateTracker {
         }
     }
 
-    private void logMapDiscovery(DungeonMapSnapshot snapshot, DungeonLiveMapWriter.MatchRenderPlan renderPlan) {
-        if (!dungeonInstanceActive && !lastInDungeon) {
+    private void logMapDiscovery(DungeonMapSnapshot snapshot, List<String> lines) {
+        if (!dungeonInstanceActive) {
             return;
         }
-        for (String line : renderPlan.topologyDebugLines(snapshot)) {
+        for (String line : lines) {
             if (line.startsWith("summary ")) {
                 continue;
             }
@@ -745,22 +747,31 @@ public final class DungeonStateTracker {
         }
     }
 
-    void handleWorldChangePacket() {
-        KungDebugRecorder.event("dungeon", "world-change reset active="
-            + dungeonInstanceActive
-            + " pendingSummary="
-            + (pendingRunSummaryTick != Long.MIN_VALUE)
-            + " realRunStarted="
-            + realRunStarted);
-        cachedRenderPlan = null;
-        cachedRenderPlanRevision = Long.MIN_VALUE;
-        cachedRenderPlanCatalogRevision = Long.MIN_VALUE;
-        state.setRooms(java.util.List.of());
-        if (dungeonInstanceActive && pendingRunSummaryTick == Long.MIN_VALUE) {
-            scanRecorder.restartRecording();
-            bloodRushHelper.clear(dungeonTick);
-            contextLostMessageSent = false;
+    void synchronizeInstance(Minecraft client) {
+        HypixelInstanceTracker context = HypixelInstanceTracker.INSTANCE;
+        if (observedInstanceEpoch != context.instanceEpoch()) {
+            endDungeonInstance(client);
+            observedInstanceEpoch = context.instanceEpoch();
+            instanceEntrance = null;
+            pendingRunStartSignalTick = Long.MIN_VALUE;
+            lastRunStartSignalTick = Long.MIN_VALUE;
+            lastRunFinishedSignalTick = Long.MIN_VALUE;
+            scanRecorder.stopRecording();
         }
+        boolean inCatacombs = runDetector.isDungeonInstanceCandidate(client);
+        if (inCatacombs && !dungeonInstanceActive) startDungeonInstance(client);
+        else if (!inCatacombs) endDungeonInstance(client);
+        if (inCatacombs) configureDungeonFloor();
+        inDungeonArea = inCatacombs;
+        mapVisibleArea = inCatacombs;
+        state.setInDungeon(inCatacombs);
+    }
+
+    private void configureDungeonFloor() {
+        var floor = HypixelInstanceTracker.INSTANCE.dungeonFloor();
+        if (!floor.known()) return;
+        runStats.configureForFloor(floor.floor(), floor.masterMode());
+        splitTracker.configureKnownFloor(floor.floor(), floor.masterMode());
     }
 
     void observeGameMessage(Component message, boolean overlay) {
@@ -786,9 +797,10 @@ public final class DungeonStateTracker {
         if (!canProcessDungeonRunMessage(client)) {
             return;
         }
-        runStats.observeMessage(client, text, dungeonTick);
+        DungeonWorkload workload = DungeonWorkload.current();
+        if (workload.players()) runStats.observeMessage(client, text, dungeonTick);
         bloodRushHelper.observeMessage(client, text, realRunStarted, this);
-        if (overlay) {
+        if (overlay && workload.rooms()) {
             runStats.observeRoomSecretOverlay(client, text, renderPlan());
         }
         splitTracker.configureForFloor(runStats.floor(), runStats.masterMode());
@@ -1560,112 +1572,25 @@ public final class DungeonStateTracker {
 
     private void tickUnsafe(Minecraft client) {
         dungeonTick++;
-        bloodRushHelper.maybeShowDoorTitle(client, this);
-        if (client.level == null || client.player == null || !runDetector.hasClientWorld(client)) {
-            observedLevel = null;
-            logDungeonState("no-client-world", false, false, false, false, false, false, false);
-            endDungeonInstance(client);
-            state.setInDungeon(false);
-            inDungeonArea = false;
-            mapVisibleArea = false;
-            return;
-        }
-
-        if (observedLevel != client.level) {
-            Object oldLevel = observedLevel;
-            observedLevel = client.level;
-            KungDebugRecorder.event("client", "dungeon level identity changed old="
-                + identity(oldLevel)
-                + " new="
-                + identity(observedLevel));
-            handleWorldChangePacket();
-        }
-
-        if (runDetector.isDungeonHub(client)) {
-            logDungeonState(
-                "dungeon-hub",
-                false,
-                false,
-                runDetector.hasDungeonMap(client),
-                runDetector.isInsideDungeonGrid(client),
-                false,
-                false,
-                false
-            );
-            endDungeonInstance(client);
-            state.setInDungeon(false);
-            inDungeonArea = false;
-            mapVisibleArea = false;
-            return;
-        }
-
-        if (runDetector.isKnownNonDungeonInstance()) {
-            logDungeonState(
-                "known-non-dungeon",
-                false,
-                false,
-                runDetector.hasDungeonMap(client),
-                runDetector.isInsideDungeonGrid(client),
-                false,
-                false,
-                true
-            );
-            endDungeonInstance(client);
-            state.setInDungeon(false);
-            inDungeonArea = false;
-            mapVisibleArea = false;
-            return;
-        }
-
-        boolean detectedInstanceStart = runDetector.isDungeonInstanceCandidate(client);
-        boolean activeCatacombsInstance = runDetector.isActiveCatacombsInstance(client);
-        boolean hasDungeonMap = runDetector.hasDungeonMap(client);
+        synchronizeInstance(client);
+        if (!runDetector.hasClientWorld(client)) return;
         boolean insideDungeonGrid = runDetector.isInsideDungeonGrid(client);
-        boolean knownNonDungeon = runDetector.isKnownNonDungeonInstance();
-        boolean showActiveRunWithoutContext = KungConfig.get().dungeon.showInBoss();
-        DungeonLifecyclePolicy.Decision lifecycle = DungeonLifecyclePolicy.evaluate(
-            dungeonInstanceActive,
-            realRunStarted,
-            missingRunTicks,
-            (int) MISSING_INSTANCE_GRACE_TICKS,
-            new DungeonLifecyclePolicy.Evidence(
-                detectedInstanceStart,
-                activeCatacombsInstance,
-                insideDungeonGrid,
-                knownNonDungeon,
-                showActiveRunWithoutContext
-            )
-        );
-        boolean stickyGridContext = lifecycle.stickyGridContext();
-        boolean dungeonContextPresent = lifecycle.contextPresent();
-        missingRunTicks = lifecycle.missingTicks();
-        if (dungeonContextPresent) {
-            contextLostMessageSent = false;
+        if (instanceEntrance == null && dungeonInstanceActive && insideDungeonGrid) {
+            instanceEntrance = DungeonScanUtils.getRoomGridPosition(client.player.blockPosition());
         }
-        if (lifecycle.startInstance()) {
-            startDungeonInstance(client);
-        }
-        if (lifecycle.reportContextLost()) {
-            reportContextLost(client);
-        }
-        if (lifecycle.endInstance()) {
-            endDungeonInstance(client);
-        }
-        inDungeonArea = lifecycle.visibleArea();
-        mapVisibleArea = lifecycle.visibleArea();
         if (mapVisibleArea) {
             lastDungeonAreaSeenTick = dungeonTick;
         }
 
-        if (dungeonInstanceActive) {
+        DungeonWorkload workload = DungeonWorkload.current();
+        if (dungeonInstanceActive && workload.players()) {
             if (shouldObserve(lastStatsObserveTick, STATS_OBSERVE_INTERVAL_TICKS)) {
                 lastStatsObserveTick = dungeonTick;
                 runStats.observePlayers(client, dungeonTick);
                 splitTracker.configureForFloor(runStats.floor(), runStats.masterMode());
             }
         }
-        if (mapVisibleArea) {
-            observeBloodDoorOpenFromMap();
+        if (mapVisibleArea && workload.rooms()) {
             observeClearStates(client);
             syncLiveRooms(client);
             bloodRushHelper.observeProgress(client, this);
@@ -1675,16 +1600,7 @@ public final class DungeonStateTracker {
             sendRunSummaryOnce(client);
         }
         state.setInDungeon(dungeonInstanceActive);
-        logDungeonState(
-            "tick",
-            detectedInstanceStart,
-            activeCatacombsInstance,
-            hasDungeonMap,
-            insideDungeonGrid,
-            dungeonContextPresent,
-            stickyGridContext,
-            knownNonDungeon
-        );
+        logDungeonState();
     }
 
     public void debugShowDoorTitle(Minecraft client, int doorCount) {
@@ -1700,6 +1616,9 @@ public final class DungeonStateTracker {
     }
 
     private void syncLiveRooms(Minecraft client) {
+        if (!DungeonWorkload.current().roomSync() || !DungeonRoomDataSyncClient.INSTANCE.active()) {
+            return;
+        }
         if (!shouldObserve(lastLiveRoomSyncTick, LIVE_ROOM_SYNC_INTERVAL_TICKS)) {
             return;
         }
@@ -1972,18 +1891,12 @@ public final class DungeonStateTracker {
         return List.copyOf(doors);
     }
 
-    private boolean stickyActiveRun(boolean catacombsContext) {
-        return lastInDungeon
-            && catacombsContext
-            && missingRunTicks < 200;
-    }
-
     private void startDungeonInstance(Minecraft client) {
         KungMod.LOGGER.info("Dungeon instance detected. Starting instance tracking.");
         KungDebugRecorder.event("dungeon", "start instance");
         dungeonInstanceActive = true;
-        lastInDungeon = true;
-        missingRunTicks = 0;
+        instanceEntrance = runDetector.isInsideDungeonGrid(client)
+            ? DungeonScanUtils.getRoomGridPosition(client.player.blockPosition()) : null;
         cachedRenderPlan = null;
         cachedRenderPlanRevision = Long.MIN_VALUE;
         cachedRenderPlanCatalogRevision = Long.MIN_VALUE;
@@ -1998,14 +1911,15 @@ public final class DungeonStateTracker {
         state.setRooms(java.util.List.of());
         runStats.reset();
         runStats.startRun(dungeonTick);
-        splitTracker.startRun(dungeonTick, runStats.floor(), runStats.masterMode());
+        splitTracker.reset();
+        configureDungeonFloor();
         pendingRunSummaryTick = Long.MIN_VALUE;
         runSummarySent = false;
         runStartMessageSent = false;
         runEndMessageSent = false;
         realRunStarted = false;
-        contextLostMessageSent = false;
         if (consumePendingRunStartSignal()) {
+            splitTracker.startRun(dungeonTick, runStats.floor(), runStats.masterMode());
             realRunStarted = true;
             bloodRushHelper.scheduleInitial(dungeonTick);
             scanRecorder.restartRecording();
@@ -2019,6 +1933,7 @@ public final class DungeonStateTracker {
         if (!dungeonInstanceActive) {
             KungDebugRecorder.event("dungeon", "restart requested without active instance");
             startDungeonInstance(client);
+            splitTracker.startRun(dungeonTick, runStats.floor(), runStats.masterMode());
             bloodRushHelper.scheduleInitial(dungeonTick);
             realRunStarted = true;
             scanRecorder.restartRecording();
@@ -2042,20 +1957,26 @@ public final class DungeonStateTracker {
         pendingRunSummaryTick = Long.MIN_VALUE;
         pendingRunStartSignalTick = Long.MIN_VALUE;
         runSummarySent = false;
+        boolean preparedRun = !realRunStarted;
         realRunStarted = true;
         state.setRooms(java.util.List.of());
-        runStats.reset();
+        int floor = runStats.floor();
+        boolean masterMode = runStats.masterMode();
+        if (preparedRun) runStats.resetForCountdown();
+        else runStats.reset();
         runStats.startRun(dungeonTick);
-        splitTracker.startRun(dungeonTick, runStats.floor(), runStats.masterMode());
+        runStats.configureForFloor(floor, masterMode);
+        splitTracker.startRun(dungeonTick, floor, masterMode);
         bloodRushHelper.scheduleInitial(dungeonTick);
-        scanRecorder.restartRecording();
+        // The countdown belongs to the same instance. Keep pre-run cores and door evidence;
+        // the bounded scanner will pick up changed columns after the run starts.
         sendRunStartedMessage(client);
         state.setInDungeon(true);
         scanRecorder.scanNow(client, this);
     }
 
     private void endDungeonInstance(Minecraft client) {
-        if (!dungeonInstanceActive && !lastInDungeon) {
+        if (!dungeonInstanceActive) {
             return;
         }
 
@@ -2063,27 +1984,26 @@ public final class DungeonStateTracker {
         KungDebugRecorder.event("dungeon", "end instance pendingSummary="
             + (pendingRunSummaryTick != Long.MIN_VALUE)
             + " realRunStarted="
-            + realRunStarted
-            + " missingRunTicks="
-            + missingRunTicks);
+            + realRunStarted);
         boolean shouldSendSummary = pendingRunSummaryTick != Long.MIN_VALUE;
         runStats.stopRun(dungeonTick);
         if (shouldSendSummary) {
-            sendRunSummaryOnce(client);
+            sendRunSummaryOnce(client, false);
         } else {
             sendLeftDungeonsMessage(client);
         }
         splitTracker.stopRun();
+        scanRecorder.stopRecording();
+        instanceEntrance = null;
+        inDungeonArea = false;
+        mapVisibleArea = false;
         runStats.reset();
         dungeonInstanceActive = false;
-        lastInDungeon = false;
-        missingRunTicks = 0;
         pendingRunSummaryTick = Long.MIN_VALUE;
         runSummarySent = false;
         runStartMessageSent = false;
         runEndMessageSent = false;
         realRunStarted = false;
-        contextLostMessageSent = false;
         bloodRushHelper.clear(dungeonTick);
         cachedRenderPlan = null;
         cachedRenderPlanRevision = Long.MIN_VALUE;
@@ -2121,7 +2041,7 @@ public final class DungeonStateTracker {
         if (!isRunFinishedSignal(text) || duplicateLifecycleSignal(lastRunFinishedSignalTick)) {
             return;
         }
-        if ((!dungeonInstanceActive && !lastInDungeon) || !canAcceptDungeonLifecycleSignal(Minecraft.getInstance())) {
+        if (!dungeonInstanceActive || !realRunStarted || !canAcceptDungeonLifecycleSignal(Minecraft.getInstance())) {
             return;
         }
         lastRunFinishedSignalTick = dungeonTick;
@@ -2135,18 +2055,22 @@ public final class DungeonStateTracker {
     }
 
     private void sendRunSummaryOnce(Minecraft client) {
+        sendRunSummaryOnce(client, true);
+    }
+
+    private void sendRunSummaryOnce(Minecraft client, boolean allowApiWait) {
         if (runSummarySent) {
             pendingRunSummaryTick = Long.MIN_VALUE;
             return;
         }
-        if (client != null && client.level != null && client.player != null) {
+        if (allowApiWait && client != null && client.level != null && client.player != null) {
             runStats.observePlayers(client, dungeonTick);
             if (mapVisibleArea) {
                 observeClearStates(client);
             }
         }
         runStats.stopRun(dungeonTick);
-        if (!runStats.prepareRunSecretDeltas(client, dungeonTick)) {
+        if (allowApiWait && !runStats.prepareRunSecretDeltas(client, dungeonTick)) {
             pendingRunSummaryTick = dungeonTick + 1;
             return;
         }
@@ -2187,7 +2111,7 @@ public final class DungeonStateTracker {
         }
         if (!KungConfig.get().debug.dungeonMessagesEnabled()
             || (lastLeftDungeonsMessageTick != Long.MIN_VALUE
-                && dungeonTick - lastLeftDungeonsMessageTick < MISSING_INSTANCE_GRACE_TICKS)) {
+                && dungeonTick - lastLeftDungeonsMessageTick < LIFECYCLE_MESSAGE_WINDOW_TICKS)) {
             runEndMessageSent = true;
             return;
         }
@@ -2207,31 +2131,6 @@ public final class DungeonStateTracker {
         client.player.sendSystemMessage(KungMessages.error(
             "Error",
             area + ": " + throwable.getClass().getSimpleName() + " - " + safeErrorMessage(throwable)
-        ));
-    }
-
-    private void reportContextLost(Minecraft client) {
-        if (client == null || client.player == null) {
-            return;
-        }
-        if (contextLostMessageSent) {
-            return;
-        }
-        contextLostMessageSent = true;
-        HypixelInstanceTracker context = HypixelInstanceTracker.INSTANCE;
-        DungeonScanUtils.GridPosition grid = DungeonScanUtils.getRoomGridPosition(client.player.blockPosition());
-        client.player.sendSystemMessage(KungMessages.error(
-            "Error",
-            "Dungeon context missing; keeping map visible. ticks="
-                + missingRunTicks
-                + " server="
-                + blankDiagnostic(context.serverId())
-                + " instance="
-                + blankDiagnostic(context.instanceLine())
-                + " map="
-                + runDetector.hasDungeonMap(client)
-                + " grid="
-                + grid.gridX() + "," + grid.gridZ()
         ));
     }
 
@@ -2261,25 +2160,16 @@ public final class DungeonStateTracker {
     }
 
     private boolean canAcceptDungeonLifecycleSignal(Minecraft client) {
-        return client != null
-            && (runDetector.isDungeonInstanceCandidate(client)
-                || (runDetector.hasClientWorld(client)
-                    && runDetector.isInsideDungeonGrid(client)
-                    && !runDetector.isKnownNonDungeonInstance()
-                    && (runDetector.hasDungeonMap(client) || dungeonInstanceActive || mapVisibleArea)));
+        return runDetector.isDungeonInstanceCandidate(client);
     }
 
     private boolean canProcessDungeonRunMessage(Minecraft client) {
-        return dungeonInstanceActive
-            && client != null
-            && (runDetector.isActiveCatacombsInstance(client)
-                || runDetector.isDungeonInstanceCandidate(client)
-                || mapVisibleArea);
+        return dungeonInstanceActive && runDetector.isDungeonInstanceCandidate(client);
     }
 
     private boolean consumePendingRunStartSignal() {
         if (pendingRunStartSignalTick == Long.MIN_VALUE
-            || dungeonTick - pendingRunStartSignalTick > MISSING_INSTANCE_GRACE_TICKS) {
+            || dungeonTick - pendingRunStartSignalTick > LIFECYCLE_MESSAGE_WINDOW_TICKS) {
             pendingRunStartSignalTick = Long.MIN_VALUE;
             return false;
         }
@@ -2287,75 +2177,17 @@ public final class DungeonStateTracker {
         return true;
     }
 
-    private void observeBloodDoorOpenFromMap() {
-        if (!splitTracker.running() || !"Blood Open".equals(splitTracker.currentSplitName())) {
-            return;
-        }
-        // The map can briefly report the Blood entrance as open while the topology is still settling.
-        // Wait for Hypixel's chat message before advancing Blood Open.
-    }
-
-    private void logDungeonState(
-        String reason,
-        boolean detectedInstanceStart,
-        boolean activeCatacombsInstance,
-        boolean hasDungeonMap,
-        boolean insideDungeonGrid,
-        boolean dungeonContextPresent,
-        boolean stickyGridContext,
-        boolean knownNonDungeon
-    ) {
+    private void logDungeonState() {
         HypixelInstanceTracker context = HypixelInstanceTracker.INSTANCE;
-        String stateText = "reason="
-            + reason
-            + " active="
-            + dungeonInstanceActive
-            + " lastIn="
-            + lastInDungeon
-            + " realRunStarted="
-            + realRunStarted
-            + " inArea="
-            + inDungeonArea
-            + " mapVisible="
-            + mapVisibleArea
-            + " missing="
-            + missingRunTicks
-            + " detectedStart="
-            + detectedInstanceStart
-            + " activeCatacombs="
-            + activeCatacombsInstance
-            + " contextPresent="
-            + dungeonContextPresent
-            + " stickyGrid="
-            + stickyGridContext
-            + " hasMap="
-            + hasDungeonMap
-            + " insideGrid="
-            + insideDungeonGrid
-            + " knownNonDungeon="
-            + knownNonDungeon
-            + " pendingStart="
-            + (pendingRunStartSignalTick != Long.MIN_VALUE)
-            + " pendingSummary="
-            + (pendingRunSummaryTick != Long.MIN_VALUE)
-            + " titlePending="
-            + doorTitlePending()
-            + " server="
-            + blankDiagnostic(context.serverId())
-            + " instance="
-            + blankDiagnostic(context.instanceLine());
-        String stateKey = stateText.replaceFirst(" missing=\\d+", " missing=*");
-        if (!stateKey.equals(lastLoggedDungeonStateKey)
-            || dungeonTick - lastLoggedDungeonStateTick >= 40L) {
-            lastLoggedDungeonState = stateText;
-            lastLoggedDungeonStateKey = stateKey;
-            lastLoggedDungeonStateTick = dungeonTick;
+        String stateText = "epoch=" + context.instanceEpoch()
+            + " active=" + dungeonInstanceActive + " realRunStarted=" + realRunStarted
+            + " inArea=" + inDungeonArea + " mapVisible=" + mapVisibleArea
+            + " server=" + blankDiagnostic(context.serverId())
+            + " instance=" + blankDiagnostic(context.instanceLine());
+        if (!stateText.equals(lastLoggedDungeonStateKey)) {
+            lastLoggedDungeonStateKey = stateText;
             KungDebugRecorder.event("dungeon-state", stateText);
         }
-    }
-
-    private static String identity(Object value) {
-        return value == null ? "null" : Integer.toHexString(System.identityHashCode(value));
     }
 
     private void observeClearStates(Minecraft client) {
