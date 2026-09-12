@@ -6,8 +6,6 @@ import com.github.beng420.kung.feature.ConfigurableFeature;
 import com.github.beng420.kung.feature.Feature;
 import com.github.beng420.kung.feature.dungeon.room.RoomType;
 import com.github.beng420.kung.util.KungDebugRecorder;
-import com.mojang.blaze3d.vertex.PoseStack;
-import com.mojang.blaze3d.vertex.VertexConsumer;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -18,13 +16,9 @@ import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.VanillaHudElements;
-import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderContext;
-import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderEvents;
 import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
-import net.minecraft.client.renderer.MultiBufferSource;
-import net.minecraft.client.renderer.rendertype.RenderTypes;
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.entity.Entity;
@@ -42,10 +36,6 @@ public final class DungeonMimicEspFeature extends ConfigurableFeature<DungeonCon
     private static final int WAYPOINT_FILL = 0xAAFF3030;
     private static final int WAYPOINT_OUTLINE = 0xFFFFF15A;
     private static final double MIMIC_ENTITY_SEARCH_RANGE = 16.0;
-    private static final int HIGHLIGHT_RED = 255;
-    private static final int HIGHLIGHT_GREEN = 35;
-    private static final int HIGHLIGHT_BLUE = 35;
-    private static final int HIGHLIGHT_ALPHA = 120;
     private static final Set<String> KNOWN_STATIC_TRAPPED_CHEST_ROOMS = Set.of(
         "buttons",
         "slime",
@@ -90,7 +80,6 @@ public final class DungeonMimicEspFeature extends ConfigurableFeature<DungeonCon
         ClientReceiveMessageEvents.CHAT.register((message, signedMessage, sender, params, receptionTimestamp) ->
             observeMessage(Minecraft.getInstance(), message.getString())
         );
-        LevelRenderEvents.END_MAIN.register(this::render);
         HudElementRegistry.attachElementBefore(
             VanillaHudElements.PLAYER_LIST,
             WAYPOINT_HUD_ID,
@@ -143,24 +132,6 @@ public final class DungeonMimicEspFeature extends ConfigurableFeature<DungeonCon
         logState();
     }
 
-    private void render(LevelRenderContext context) {
-        Minecraft client = Minecraft.getInstance();
-        if (!shouldTrack(client) || !hasCurrentObservation(client) || mimicChestPositions.isEmpty()) {
-            return;
-        }
-
-        PoseStack poseStack = context.poseStack();
-        try {
-            Vec3 camera = client.gameRenderer.getMainCamera().position();
-            MultiBufferSource buffers = context.bufferSource();
-            drawChestHighlights(poseStack, buffers, camera, mimicChestPositions);
-            logRenderState(camera, sameRoomMimicChestCount(client));
-        } catch (RuntimeException | LinkageError exception) {
-            tracker.reportRunError(client, "Mimic ESP render", exception);
-            KungMod.LOGGER.warn("Failed to render dungeon mimic ESP.", exception);
-        }
-    }
-
     private void renderWaypointHud(GuiGraphicsExtractor graphics, DeltaTracker deltaTracker) {
         Minecraft client = Minecraft.getInstance();
         if (!shouldTrack(client) || !hasCurrentObservation(client) || mimicChestPositions.isEmpty()) {
@@ -179,6 +150,7 @@ public final class DungeonMimicEspFeature extends ConfigurableFeature<DungeonCon
                     drawScreenWaypoint(client, graphics, pos);
                 }
             }
+            logRenderState(client.gameRenderer.getMainCamera().position(), sameRoomMimicChestCount(client));
         } catch (RuntimeException | LinkageError exception) {
             tracker.reportRunError(client, "Mimic ESP waypoint", exception);
             KungMod.LOGGER.warn("Failed to render dungeon mimic waypoint.", exception);
@@ -563,101 +535,6 @@ public final class DungeonMimicEspFeature extends ConfigurableFeature<DungeonCon
         graphics.text(client.font, label, labelX, labelY, TEXT_RED, true);
     }
 
-    private static void drawChestHighlights(
-        PoseStack poseStack,
-        MultiBufferSource buffers,
-        Vec3 camera,
-        List<BlockPos> positions
-    ) {
-        poseStack.pushPose();
-        try {
-            poseStack.translate(-camera.x, -camera.y, -camera.z);
-            VertexConsumer vertices = buffers.getBuffer(RenderTypes.debugQuads());
-            PoseStack.Pose pose = poseStack.last();
-            for (BlockPos pos : positions) {
-                drawBox(
-                    pose,
-                    vertices,
-                    pos.getX(),
-                    pos.getY(),
-                    pos.getZ(),
-                    pos.getX() + 1.0,
-                    pos.getY() + 1.0,
-                    pos.getZ() + 1.0,
-                    HIGHLIGHT_RED,
-                    HIGHLIGHT_GREEN,
-                    HIGHLIGHT_BLUE,
-                    HIGHLIGHT_ALPHA
-                );
-            }
-        } finally {
-            poseStack.popPose();
-        }
-    }
-
-    private static void drawBox(
-        PoseStack.Pose pose,
-        VertexConsumer vertices,
-        double minX,
-        double minY,
-        double minZ,
-        double maxX,
-        double maxY,
-        double maxZ,
-        int red,
-        int green,
-        int blue,
-        int alpha
-    ) {
-        addQuad(pose, vertices, minX, minY, minZ, maxX, minY, minZ, maxX, maxY, minZ, minX, maxY, minZ, red, green, blue, alpha);
-        addQuad(pose, vertices, maxX, minY, maxZ, minX, minY, maxZ, minX, maxY, maxZ, maxX, maxY, maxZ, red, green, blue, alpha);
-        addQuad(pose, vertices, minX, minY, maxZ, minX, minY, minZ, minX, maxY, minZ, minX, maxY, maxZ, red, green, blue, alpha);
-        addQuad(pose, vertices, maxX, minY, minZ, maxX, minY, maxZ, maxX, maxY, maxZ, maxX, maxY, minZ, red, green, blue, alpha);
-        addQuad(pose, vertices, minX, maxY, minZ, maxX, maxY, minZ, maxX, maxY, maxZ, minX, maxY, maxZ, red, green, blue, alpha);
-        addQuad(pose, vertices, minX, minY, maxZ, maxX, minY, maxZ, maxX, minY, minZ, minX, minY, minZ, red, green, blue, alpha);
-    }
-
-    private static void addQuad(
-        PoseStack.Pose pose,
-        VertexConsumer vertices,
-        double x1,
-        double y1,
-        double z1,
-        double x2,
-        double y2,
-        double z2,
-        double x3,
-        double y3,
-        double z3,
-        double x4,
-        double y4,
-        double z4,
-        int red,
-        int green,
-        int blue,
-        int alpha
-    ) {
-        addVertex(pose, vertices, x1, y1, z1, red, green, blue, alpha);
-        addVertex(pose, vertices, x2, y2, z2, red, green, blue, alpha);
-        addVertex(pose, vertices, x3, y3, z3, red, green, blue, alpha);
-        addVertex(pose, vertices, x4, y4, z4, red, green, blue, alpha);
-    }
-
-    private static void addVertex(
-        PoseStack.Pose pose,
-        VertexConsumer vertices,
-        double x,
-        double y,
-        double z,
-        int red,
-        int green,
-        int blue,
-        int alpha
-    ) {
-        vertices.addVertex(pose, (float) x, (float) y, (float) z)
-            .setColor(red, green, blue, alpha);
-    }
-
     private void clear() {
         if (mimicChestPositions.isEmpty()
             && lastKnownMimicChestPositions.isEmpty()
@@ -698,7 +575,7 @@ public final class DungeonMimicEspFeature extends ConfigurableFeature<DungeonCon
         double dy = first.getY() + 0.5 - camera.y;
         double dz = first.getZ() + 0.5 - camera.z;
         int distance = (int) Math.round(Math.sqrt(dx * dx + dy * dy + dz * dz));
-        String state = "render chests=" + mimicChestPositions.size()
+        String state = "waypoint chests=" + mimicChestPositions.size()
             + " sameRoom=" + sameRoomMarkers
             + " pos=" + first.getX() + "," + first.getY() + "," + first.getZ()
             + " distance=" + distance;

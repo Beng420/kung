@@ -2,9 +2,9 @@ package com.github.beng420.kung.feature.dungeon;
 
 import java.util.regex.Pattern;
 
-/** Hypixel's personal integer, party percentage and room fraction describe different counters. */
+/** Shared tab counts and percentages describe the party, never an individual player. */
 final class DungeonSecretCounts {
-    private static final Pattern PERSONAL = Pattern.compile("^Secrets Found: ([\\d,]+)$");
+    private static final Pattern PARTY_FOUND = Pattern.compile("^Secrets Found: ([\\d,]+)$");
     private static final Pattern PERCENT = Pattern.compile("^Secrets Found: (\\d+(?:\\.\\d+)?)%$");
     private static final Pattern PARTY = Pattern.compile("^Secrets?: (\\d+)/(\\d+|\\?)(?: \\(Total: (\\d+)\\))?$");
 
@@ -14,8 +14,8 @@ final class DungeonSecretCounts {
         return raw == null ? "" : raw.replaceAll("§.", "").replaceAll("\\s+", " ").trim();
     }
 
-    static int personal(String raw) {
-        var match = PERSONAL.matcher(clean(raw));
+    static int partyFound(String raw) {
+        var match = PARTY_FOUND.matcher(clean(raw));
         return match.matches() ? Integer.parseInt(match.group(1).replace(",", "")) : -1;
     }
 

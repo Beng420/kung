@@ -3,7 +3,9 @@ package com.github.beng420.kung.feature.dungeon;
 import static org.junit.Assert.*;
 
 import com.github.beng420.kung.config.KungConfig;
+import com.github.beng420.kung.config.category.DungeonConfig;
 import com.google.gson.Gson;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -13,6 +15,42 @@ import org.junit.Test;
 public final class DungeonRunSummaryTest {
     private static final UUID ALICE = new UUID(0, 1);
     private static final UUID BOB = new UUID(0, 2);
+
+    @Test
+    public void playerStatsSwitchGatesTheEntireSummaryWithMapAndOtherConsumersEnabled() {
+        var previous = KungConfig.get().dungeon;
+        var config = new DungeonConfig();
+        KungConfig.get().dungeon = config;
+        try {
+            config.setEnabled(true);
+            config.setExtraScoreMessagesEnabled(true);
+            var stats = new DungeonRunStats();
+            stats.rememberSelf(ALICE, "Alice");
+            stats.observeStatLine(null, "Secrets: 52/58");
+            stats.observeStatLine(null, "Team Score: 302 (S+)");
+            stats.playerStats(ALICE).setApiRunSecretsFound(12);
+            var plan = new DungeonStateTracker().renderPlan();
+            var lines = new ArrayList<String>();
+
+            stats.sendRunSummary(plan, String::length, line -> lines.add(line.getString()));
+            assertTrue(lines.isEmpty());
+            assertEquals(52, stats.partySecretsFound(stats.summaryPlayers()));
+            config.setPlayerTrackingEnabled(true);
+            stats.sendRunSummary(plan, String::length, line -> lines.add(line.getString()));
+            assertTrue(lines.stream().anyMatch(line -> line.contains("Run Stats")));
+            assertTrue(lines.stream().anyMatch(line -> line.contains("Secrets 52/58")));
+            assertTrue(lines.stream().anyMatch(line -> line.contains("Alice") && line.contains("12/52 Secrets")));
+
+            // A summary already prepared before a late toggle must also stay silent.
+            lines.clear();
+            config.setPlayerTrackingEnabled(false);
+            stats.sendRunSummary(plan, String::length, line -> lines.add(line.getString()));
+            assertTrue(lines.isEmpty());
+            assertEquals(12, stats.playerStats(ALICE).secretsFound());
+        } finally {
+            KungConfig.get().dungeon = previous;
+        }
+    }
 
     @Test
     public void countdownKeepsRosterAndPreparedBaselinesWhileResettingRunCounters() throws Exception {

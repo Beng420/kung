@@ -22,7 +22,7 @@ public final class DungeonSecretCounterTest {
     }
 
     @Test
-    public void exactTabReplacesInflatedApiAndRejectsLaterLowerPrioritySources() {
+    public void exactPersonalMeasurementReplacesInflatedApiAndRejectsLaterLowerPrioritySources() {
         DungeonPlayerStats stats = player(1);
         stats.setApiRunSecretsFound(412);
         assertEquals(412, stats.secretsFound());
@@ -31,7 +31,7 @@ public final class DungeonSecretCounterTest {
         stats.setSyncedSecretsFound(90, 123L);
         stats.incrementSecrets(12);
         assertEquals(8, stats.secretsFound());
-        assertEquals("PERSONAL_TAB", stats.secretsSource());
+        assertEquals("PERSONAL", stats.secretsSource());
         stats.setSecretsFound(7); // Hypixel can correct a previous observation.
         assertEquals(7, stats.secretsFound());
     }

@@ -1,13 +1,16 @@
 # Stella boss maps — 2026-09-12
 
-Active module: Minecraft 26.1.2, Kung 0.2.13 (initial boss-map integration: 0.2.11).
+Active module: Minecraft 26.1.2 (initial boss-map integration: 0.2.11,
+Necron calibration: 0.2.13, boss visibility toggle: 0.3.3).
 
 The user requested the exact boss maps used by Stella. Kung now bundles the
 original twelve PNGs and `imagedata.json` from Stella's asset repository, with the
 Necron calibration correction described below.
-The existing **Boss Map** setting switches the map area to the matching arena;
-with it disabled the ordinary clear map remains. HUD positioning, scale, text
-scale, footer, inventory dimming and dungeon-instance ownership are preserved.
+The **Boss Map** setting controls the entire map HUD during the boss phase.
+With it disabled, both arena and ordinary clear-map rendering are hidden, including
+footer and legend. Clear-phase rendering remains available. With it enabled, the
+map area uses the matching arena. HUD positioning, scale, text scale, inventory
+dimming and dungeon-instance ownership are preserved.
 
 ## Source and attribution
 
@@ -64,7 +67,12 @@ requires existing boss-phase evidence. A matching arena outside that rectangle
 can establish the view immediately on teleport, even before its dialogue.
 The selected arena survives fractional gaps between F7's integer Y bands. A
 return to the clear grid outside every arena restores the clear map; instance
-epoch/floor changes discard selection. Run completion does not hide the map.
+epoch/floor changes discard selection. With Boss Map enabled, run completion does
+not hide the map. With it disabled, boss-phase evidence keeps the HUD hidden after
+completion until instance reset. Visibility uses either the retained boss-phase
+signal or the selected arena, so early teleports and fractional layer gaps cannot
+fall back to the clear map. Phase evidence still works when arena assets are missing.
+Changing the toggle during the boss phase takes effect on the next rendered frame.
 The `dungeon-boss-map` trace records image/floor/epoch/position only when the view
 or instance changes.
 
@@ -75,6 +83,11 @@ An unloaded teammate has no current boss position available and is omitted,
 matching Stella's entity-based boss rendering.
 
 ## Validation
+
+The 0.3.3 regressions cover the full HUD visibility decision during clear, boss
+entry, completion, missing arena assets, early teleports, layer gaps, live toggles
+and the next instance. The visibility check runs before drawing the grid, footer
+or legend. The requested live check is Boss Map off/on during an actual boss run.
 
 The 0.2.13 full build passed with **244 tests, zero failures/errors/skips**.
 The added Necron regression checks the center and all four arena edges against

@@ -2065,7 +2065,8 @@ public final class DungeonStateTracker {
     }
 
     private void sendRunSummaryOnce(Minecraft client, boolean allowApiWait) {
-        if (runSummarySent) {
+        if (runSummarySent || !KungConfig.get().dungeon.playerTrackingEnabled()) {
+            runSummarySent = true;
             pendingRunSummaryTick = Long.MIN_VALUE;
             return;
         }

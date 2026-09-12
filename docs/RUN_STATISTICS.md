@@ -1,6 +1,6 @@
 # Run statistics and splits
 
-Current contracts as of 2026-09-12. Source and regression entry points:
+Current contracts as of 2026-09-13. Source and regression entry points:
 [CODE_MAP.md](CODE_MAP.md). Instance preparation, countdown and exit behavior:
 [dungeon lifecycle](DUNGEON_ARCHITECTURE.md#instance-and-run-lifecycle).
 
@@ -8,19 +8,23 @@ Current contracts as of 2026-09-12. Source and regression entry points:
 
 | Observation | Meaning / owner |
 | --- | --- |
-| Personal tab `Secrets Found: n` | Local player's count |
+| Shared tab `Secrets Found: n` | Party count; no player attribution |
 | Party `Secrets Found: n%` | Party percentage; no player attribution |
 | Party `Secrets: n/total` | Exact party count and denominator |
 | Actionbar `n/total Secrets` | Current room observation |
-| Verified remote personal report | Sender's own count, from known roster and timestamp |
+| Verified remote personal report | Sender's own count, with personal source, current dungeon roster and timestamp |
 | API achievement delta | Fallback only with a valid run baseline |
 
 `DungeonSecretCounts` parses source-specific values; `DungeonSecretCounter`
-prioritizes personal tab, then verified self-report, then valid API delta. Exact
+prioritizes an explicit personal measurement, then verified self-report, then valid API delta. Exact
 snapshots can correct stale higher counts. Missing API values (-1), callbacks from
 an obsolete run and a baseline arriving after the final fetch cannot create credit.
 Never attribute a party delta to self, associate adjacent tab rows with a player,
 or infer personal counts from arbitrary chat. Unknown counts display `?`.
+The integer `Secrets Found: n` is also shared: 0.3.0 incorrectly treated it as
+personal and could display the entire party total beside the local player.
+No current tab parser supplies a personal count. API baselines are requested
+while preparing the instance, before countdown, and preserved across countdown.
 
 Party totals use exact server counts, a compatible percentage plus complete room
 metadata, or a complete set of personal counts. An incomplete set is unknown.
@@ -41,6 +45,12 @@ Use `score-calc` traces for source selection, target, puzzle failures and bonuse
 
 ## Room credit and summary
 
+`Dungeon > Player Stats` gates the entire end-of-run chat summary: heading, rooms,
+score, party secrets, crypts and player rows. A disabled switch also consumes a
+pending summary without waiting for final API fetches, including the instance-exit
+flush. Checking again at output time covers disabling the feature after completion.
+Shared statistics remain available to the map and other enabled consumers.
+
 `DungeonRoomProgress` counts logical owners, including white checkmarks, while
 excluding Start/Fairy/Blood. Secret-completion markers and tab cells are not room
 totals. `DungeonRoomClearAttribution` retains first-clear witnesses and merges
@@ -50,6 +60,21 @@ without an extra `estimated min-max` label.
 `DungeonRunSummaryLayout` measures names using the active font and the one-pixel
 spacing font to align Secret columns. Summary output uses the remembered roster
 and client chat component, so completion can flush even after LocalPlayer disappears.
+The roster admits self and identified dungeon class rows only, up to five players.
+Global party history and general online-player caches never supply extra run
+participants. UUID remapping preserves one canonical row and its counters/slot;
+instance reset clears membership, while countdown and result display retain it.
+
+Missing personal counters get a short availability explanation in the summary.
+API-off/no-key state is distinguished from enabled API data that was not received;
+neither state creates zero counters. `run-statistics` traces record the actual
+summary roster, each count/source and API availability without credentials.
+The sync protocol requires `secretsSource=API_DELTA` or `PERSONAL` for incoming
+personal counts. Untagged reports from older clients (which may contain the party
+total) are not trusted. Only one's own measured/API count is published, never a
+forwarded report. The companion sync server must be updated to retain this field;
+room/door synchronization remains compatible. Negative/missing personal counts
+stay unknown through the server. See [0.3.1 evidence](RUN_STATISTICS_FIXES.md).
 
 Global Mimic/Prince/Bat bonus evidence does not identify a contributor. Append P/M/B
 to a player only for explicit named claims or an observed Mimic damage-source player.

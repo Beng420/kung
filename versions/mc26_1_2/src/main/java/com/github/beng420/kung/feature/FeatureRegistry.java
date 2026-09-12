@@ -6,6 +6,7 @@ import com.github.beng420.kung.feature.dungeon.DungeonMimicEspFeature;
 import com.github.beng420.kung.feature.dungeon.DungeonSplitsOverlayFeature;
 import com.github.beng420.kung.feature.dungeon.DungeonStateTracker;
 import com.github.beng420.kung.feature.misc.ChatCommandsFeature;
+import com.github.beng420.kung.feature.misc.ChatEmotesFeature;
 import com.github.beng420.kung.feature.misc.CustomSoundsFeature;
 import com.github.beng420.kung.feature.misc.LoadoutsAutoCloseFeature;
 import com.github.beng420.kung.feature.misc.LobbyHopHelperFeature;
@@ -34,6 +35,7 @@ public final class FeatureRegistry {
         register(new DungeonChatFilterFeature(tracker));
         register(new DungeonSplitsOverlayFeature(tracker));
         register(ChatCommandsFeature.INSTANCE);
+        register(new ChatEmotesFeature());
         register(CustomSoundsFeature.INSTANCE);
         register(LoadoutsAutoCloseFeature.INSTANCE);
         register(LobbyHopHelperFeature.INSTANCE);

@@ -283,7 +283,8 @@ function livePlayerFromReport(player) {
   }
   return {
     name,
-    secretsFound: boundedInteger(player.secretsFound, 0, 250),
+    secretsFound: player.secretsFound == null ? -1 : boundedInteger(player.secretsFound, -1, 250),
+    secretsSource: ["API_DELTA", "PERSONAL"].includes(player.secretsSource) ? player.secretsSource : "",
     deaths: boundedInteger(player.deaths, 0, 99),
   };
 }

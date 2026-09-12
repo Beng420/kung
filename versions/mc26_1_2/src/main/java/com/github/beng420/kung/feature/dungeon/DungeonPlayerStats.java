@@ -32,7 +32,9 @@ public final class DungeonPlayerStats {
     public int secretsFound() { return secrets.value(); }
     public boolean hasSecretsFound() { return secrets.known(); }
     public String secretsSource() { return secrets.source().name(); }
-    public boolean hasPersonalSecrets() { return secrets.source() == DungeonSecretCounter.Source.PERSONAL_TAB; }
+    public boolean hasOwnRunSecrets() {
+        return secrets.source() == DungeonSecretCounter.Source.PERSONAL || secrets.source() == DungeonSecretCounter.Source.API_DELTA;
+    }
     public int totalSecretsFound() { return totalSecretsFound; }
     public int roomGridX() { return roomGridX; }
     public int roomGridZ() { return roomGridZ; }
@@ -58,8 +60,8 @@ public final class DungeonPlayerStats {
         roomsCleared = Math.max(soloRoomsCleared, maximum);
     }
     void addBonus(DungeonBonusContribution bonus) { bonuses.add(bonus); }
-    /** An exact personal counter from Hypixel, including an observed zero/correction. */
-    void setSecretsFound(int secretsFound) { secrets.personalTab(secretsFound); }
+    /** An explicit personal measurement, never a shared tab or room counter. */
+    void setSecretsFound(int secretsFound) { secrets.personal(secretsFound); }
     /** Only the player's own known counter may be accepted as a remote self-report. */
     void setSyncedSecretsFound(int secretsFound, long reportedAtMillis) {
         secrets.selfReport(secretsFound, reportedAtMillis);

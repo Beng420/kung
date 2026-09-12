@@ -8,6 +8,10 @@ Spielprofil übernommen; für diese Ausschlüsse wird keine Profildatei benötig
 
 ## Benutzung
 
+Seit 0.3.3 zeigt Mimic ESP den 2D-Waypoint und die Mimic-Kartenmarkierung.
+Die rote 3D-Box ist entfernt; Erkennung, Truhenausschlüsse und Kill-Erfassung
+verwenden weiterhin dieselben Kandidaten und Filter.
+
 Für Buttons und Dueces genügt die aktuelle JAR. `/kung mimic` zeigt die Zahl
 eingebauter Ausschlüsse und zusätzlicher Sitzungsmarkierungen sowie den Status
 einer anvisierten Position. Erneutes Markieren bekannter Truhen ist nicht nötig.
@@ -61,7 +65,7 @@ wurde um 05:24:55 gespeichert. Die übernommenen Originaldaten haben SHA-256
   Vereinigung möglicher Truhenpositionen. Eine mehrdeutige Erstaufnahme wird
   abgelehnt, ohne Daten zu speichern.
 - Exakte Position inklusive Y: Eine zusätzliche Trapped Chest im selben Raum
-  bleibt Kandidat. Der gemeinsame Filter greift in ESP, 2D-Waypoint und der
+  bleibt Kandidat. Der gemeinsame Filter greift im 2D-Waypoint und der
   persistenten Mimic-Kartenerkennung. Spätere sichere Ausschlüsse entfernen
   zuvor gespeicherte Fake-Kandidaten und können eine mehrdeutige Karte auflösen.
 - Bestehende pauschale Buttons-/Slime-/Slime-Maze-Filter bleiben für Varianten

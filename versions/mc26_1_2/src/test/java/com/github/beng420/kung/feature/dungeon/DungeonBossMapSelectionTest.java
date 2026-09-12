@@ -2,9 +2,47 @@ package com.github.beng420.kung.feature.dungeon;
 
 import static org.junit.Assert.*;
 
+import com.github.beng420.kung.config.category.DungeonConfig;
 import org.junit.Test;
 
 public final class DungeonBossMapSelectionTest {
+    @Test public void disabledBossMapHidesTheWholeHudEvenWithoutAnArenaImage() {
+        var config = new DungeonConfig();
+        config.setShowInBoss(false);
+        var tracker = new DungeonSplitTracker(() -> 1_000L, ignored -> {});
+        tracker.startRun(0, 4, false);
+        assertTrue(DungeonMapFeature.shouldRenderInPhase(config, tracker.hasEnteredBoss(), null));
+        tracker.observeMessage("[BOSS] Thorn: Welcome Adventurers! I am Thorn, the Spirit! And host of the Vegan Trials!", 0);
+        assertFalse(DungeonMapFeature.shouldRenderInPhase(config, tracker.hasEnteredBoss(), null));
+        tracker.observeMessage("Team Score: 300 (S+)", 0);
+        assertFalse(DungeonMapFeature.shouldRenderInPhase(config, tracker.hasEnteredBoss(), null));
+        config.setShowInBoss(true);
+        assertTrue(DungeonMapFeature.shouldRenderInPhase(config, tracker.hasEnteredBoss(), null));
+        config.setShowInBoss(false);
+        assertFalse(DungeonMapFeature.shouldRenderInPhase(config, tracker.hasEnteredBoss(), null));
+        tracker.reset();
+        assertTrue(DungeonMapFeature.shouldRenderInPhase(config, tracker.hasEnteredBoss(), null));
+    }
+
+    @Test public void disabledBossMapAlsoHidesEarlyTeleportsAndLayerGapsWithoutHidingClear() throws Exception {
+        var config = new DungeonConfig();
+        config.setShowInBoss(false);
+        var catalog = DungeonBossMapCatalog.loadBundled();
+        var selection = new DungeonBossMapSelection();
+        var clear = selection.update(catalog, 1, 4, true, true, false, -25, 70, -25);
+        assertTrue(DungeonMapFeature.shouldRenderInPhase(config, false, clear));
+        var boss = selection.update(catalog, 1, 7, true, true, false, 73, 230, 48);
+        assertFalse(DungeonMapFeature.shouldRenderInPhase(config, false, boss));
+        var gap = selection.update(catalog, 1, 7, true, true, false, 73, 212.5, 48);
+        assertFalse(DungeonMapFeature.shouldRenderInPhase(config, false, gap));
+        config.setShowInBoss(true);
+        assertTrue(DungeonMapFeature.shouldRenderInPhase(config, false, gap));
+        assertSame(boss, gap);
+        config.setShowInBoss(false);
+        var nextRun = selection.update(catalog, 2, 7, true, true, false, -185, 70, -185);
+        assertTrue(DungeonMapFeature.shouldRenderInPhase(config, false, nextRun));
+    }
+
     @Test public void appliedBossEntryRetainsItsSignalAfterVictoryUntilInstanceReset() {
         var tracker = new DungeonSplitTracker(() -> 1_000L, ignored -> {});
         tracker.configureForFloor(4, true);

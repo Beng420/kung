@@ -8,7 +8,7 @@ import java.util.concurrent.atomic.AtomicLong;
  */
 final class DungeonSecretCounter {
     enum Source {
-        UNKNOWN, OBSERVED_EVENTS, API_DELTA, SELF_REPORT, PERSONAL_TAB
+        UNKNOWN, OBSERVED_EVENTS, API_DELTA, SELF_REPORT, PERSONAL
     }
 
     private static final AtomicLong OBSERVATIONS = new AtomicLong();
@@ -20,8 +20,8 @@ final class DungeonSecretCounter {
     boolean known() { return source != Source.UNKNOWN; }
     Source source() { return source; }
 
-    void personalTab(int count) {
-        observe(count, Source.PERSONAL_TAB, OBSERVATIONS.incrementAndGet());
+    void personal(int count) {
+        observe(count, Source.PERSONAL, OBSERVATIONS.incrementAndGet());
     }
 
     void selfReport(int count, long reportedAtMillis) {

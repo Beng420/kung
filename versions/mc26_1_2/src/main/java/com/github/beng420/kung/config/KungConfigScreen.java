@@ -1001,6 +1001,15 @@ public final class KungConfigScreen extends Screen {
                 )
             ),
             new FeatureEntry(
+                "Chat Emotes",
+                config.misc::chatEmotesEnabled,
+                () -> config.misc.setChatEmotesEnabled(!config.misc.chatEmotesEnabled()),
+                List.of(
+                    SettingEntry.dynamicLabel(() -> ":iman: = \u2672"),
+                    SettingEntry.dynamicLabel(() -> "Up arrow recalls your original message.")
+                )
+            ),
+            new FeatureEntry(
                 "Custom Sounds",
                 config.misc::customSoundsEnabled,
                 () -> config.misc.setCustomSoundsEnabled(!config.misc.customSoundsEnabled()),

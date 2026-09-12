@@ -54,6 +54,7 @@ Prefer the exact user-supplied path and time over scanning every saved log.
 | Door late, room/checkmark changes | `map-change`, `map-check` |
 | Wrong teammate, white class border or skin | `player-slots`, `player-markers` |
 | Secrets, score, target mismatch | `score-calc` |
+| Extra summary players / missing personal secrets | `run-statistics` summary roster/count/source/API state, `player-slots`, `player-stats` API outcomes; include the five actual names |
 | Superpairs reveals or counts | `superpairs` |
 | Missing overlays or resets | Instance/lifecycle events around the supplied time |
 | Split loss | `dungeon-splits`: real/ideal clocks, `phaseStartTicks`, `phaseTicks`, `totalTicks`, exact `boundary`, `start-candidate`, `receivedTicks` and `ignoredBundledPings` |

@@ -9,6 +9,7 @@ public final class MiscConfig extends ConfigCategory {
     private String hypixelApiKey = "";
 
     private boolean chatCommandsEnabled = false;
+    private boolean chatEmotesEnabled = false;
 
     private boolean c50ChatCommandEnabled = true;
     private boolean c50PartyCommandsEnabled = true;
@@ -64,6 +65,8 @@ public final class MiscConfig extends ConfigCategory {
     public void setHypixelApiKey(String value) { hypixelApiKey = value == null ? "" : value.trim(); save(); }
     public boolean chatCommandsEnabled() { return chatCommandsEnabled; }
     public void setChatCommandsEnabled(boolean value) { chatCommandsEnabled = value; save(); }
+    public boolean chatEmotesEnabled() { return chatEmotesEnabled; }
+    public void setChatEmotesEnabled(boolean value) { chatEmotesEnabled = value; save(); }
     public boolean c50ChatCommandEnabled() { return c50ChatCommandEnabled; }
     public void setC50ChatCommandEnabled(boolean value) { c50ChatCommandEnabled = value; save(); }
     public boolean c50PartyCommandsEnabled() { return c50PartyCommandsEnabled; }

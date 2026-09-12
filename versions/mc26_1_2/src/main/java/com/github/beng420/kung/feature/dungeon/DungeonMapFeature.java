@@ -140,6 +140,12 @@ public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> 
         }
     }
 
+    static boolean shouldRenderInPhase(DungeonConfig config, boolean bossStarted, DungeonBossMapCatalog.Arena bossMap) {
+        // Arena selection also catches teleports before boss dialogue; phase evidence
+        // still hides the HUD if the texture/catalog is unavailable.
+        return config.showInBoss() || (!bossStarted && bossMap == null);
+    }
+
     private void renderUnsafe(
         GuiGraphicsExtractor graphics,
         DeltaTracker deltaTracker,
@@ -150,19 +156,18 @@ public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> 
             return;
         }
 
-        DungeonMapSnapshot snapshot = dungeonStateTracker.mapSnapshot();
-        DungeonLiveMapWriter.MatchRenderPlan renderPlan = dungeonStateTracker.renderPlan();
         Minecraft client = Minecraft.getInstance();
+        boolean bossStarted = dungeonStateTracker.splitTracker().hasEnteredBoss();
         DungeonBossMapCatalog.Arena bossMap = null;
         if (bossMapCatalog != null && client.player != null) {
             var context = HypixelInstanceTracker.INSTANCE;
             bossMap = bossMapSelection.update(bossMapCatalog, context.instanceEpoch(),
                 dungeonStateTracker.runStats().floor(), context.catacombs(), context.positionKnown(),
-                dungeonStateTracker.splitTracker().hasEnteredBoss(),
+                bossStarted,
                 client.player.getX(), client.player.getY(), client.player.getZ());
         }
-        if (!config.showInBoss()) bossMap = null;
-        String image = bossMap == null ? "clear" : bossMap.image();
+        boolean visible = shouldRenderInPhase(config, bossStarted, bossMap);
+        String image = !visible ? "hidden" : bossMap == null ? "clear" : bossMap.image();
         long epoch = HypixelInstanceTracker.INSTANCE.instanceEpoch();
         if (!image.equals(lastBossMapImage) || lastBossMapEpoch != epoch) {
             lastBossMapImage = image;
@@ -171,6 +176,9 @@ public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> 
                 + dungeonStateTracker.runStats().floor() + " epoch=" + epoch
                 + " position=" + (client.player == null ? "unknown" : client.player.blockPosition()));
         }
+        if (!visible) return;
+        DungeonMapSnapshot snapshot = dungeonStateTracker.mapSnapshot();
+        DungeonLiveMapWriter.MatchRenderPlan renderPlan = dungeonStateTracker.renderPlan();
         float scale = effectiveScale(config);
         graphics.pose().pushMatrix();
         try {

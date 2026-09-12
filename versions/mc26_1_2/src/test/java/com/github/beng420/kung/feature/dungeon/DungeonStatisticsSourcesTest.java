@@ -17,20 +17,21 @@ public final class DungeonStatisticsSourcesTest {
         return stats;
     }
 
-    @Test public void personalIntegerBelongsToSelfRegardlessOfPreviousPartyRow() {
+    @Test public void sharedIntegerNeverBelongsToSelfOrThePreviousPartyRow() {
         var stats = run();
         stats.observeTabLine(null, "[50] Awesomeness_Boy (Mage 50)", TEAMMATE);
         stats.observeTabLine(null, "Player Stats", null);
         stats.observeTabLine(null, "§aSecrets Found: §f7", null);
         stats.observeTabLine(null, "Secrets Found: 80.0%", null);
-        assertEquals(7, stats.playerStats(SELF).secretsFound());
+        assertFalse(stats.playerStats(SELF).hasSecretsFound());
         assertFalse(stats.playerStats(TEAMMATE).hasSecretsFound());
         assertEquals(80.0, stats.secretsPercent(), 0.001);
-        assertEquals(44, stats.displayedSecretsFound(55));
-        assertEquals(-1, stats.displayedSecretsFound(56));
-        assertEquals(-1, stats.partySecretsFound(stats.summaryPlayers()));
+        assertEquals(7, stats.displayedSecretsFound(55));
+        assertEquals(7, stats.displayedSecretsFound(56));
+        assertEquals(7, stats.partySecretsFound(stats.summaryPlayers()));
         stats.observeTabLine(null, "Secrets Found: 6", null);
-        assertEquals(6, stats.playerStats(SELF).secretsFound());
+        assertEquals(6, stats.partySecretsFound(stats.summaryPlayers()));
+        assertFalse(stats.playerStats(SELF).hasSecretsFound());
     }
 
     @Test public void partyRoomAndQuotedSecretFieldsNeverCreditSelf() {
@@ -46,9 +47,9 @@ public final class DungeonStatisticsSourcesTest {
     }
 
     @Test public void exactSecretFieldGrammarKeepsCountersSeparate() {
-        assertEquals(12, DungeonSecretCounts.personal("Secrets Found: 12"));
-        assertEquals(-1, DungeonSecretCounts.personal("Secrets Found: 80.0%"));
-        assertEquals(-1, DungeonSecretCounts.personal("Party > Beng114: Secrets Found: 12"));
+        assertEquals(12, DungeonSecretCounts.partyFound("Secrets Found: 12"));
+        assertEquals(-1, DungeonSecretCounts.partyFound("Secrets Found: 80.0%"));
+        assertEquals(-1, DungeonSecretCounts.partyFound("Party > Beng114: Secrets Found: 12"));
         assertNull(DungeonSecretCounts.party("4/10 Secrets"));
         assertNull(DungeonSecretCounts.party("Beng114 Secrets: 12/55"));
         assertEquals(new DungeonSecretCounts.Fraction(12, 55), DungeonSecretCounts.party("Secrets: 12/55"));
@@ -87,7 +88,7 @@ public final class DungeonStatisticsSourcesTest {
 
     @Test public void onlyKnownPlayersOwnSyncReportsCanSupplyPersonalSecrets() {
         var stats = run();
-        stats.observeTabLine(null, "Secrets Found: 7", null);
+        stats.playerStats(SELF).setApiRunSecretsFound(7);
         stats.mergeRemoteLivePlayers(List.of(
             report("Party", 50, "Party", 10),
             report("Awesomeness_Boy", 99, "Beng114", 10),
@@ -104,11 +105,51 @@ public final class DungeonStatisticsSourcesTest {
     @Test public void missingRemoteCountsAreUnknownInsteadOfZero() {
         var stats = run();
         assertTrue(DungeonRunStats.playerStatsSummaryLine(stats.playerStats(TEAMMATE), 44).contains("?/44 Secrets"));
-        stats.observeTabLine(null, "Secrets Found: 0", null);
+        stats.playerStats(SELF).setApiRunSecretsFound(0);
         assertTrue(DungeonRunStats.playerStatsSummaryLine(stats.playerStats(SELF), 44).contains("0/44 Secrets"));
     }
 
+    @Test public void legacySharedTabReportsCannotReintroduceFalsePersonalCounts() {
+        var stats = run();
+        stats.mergeRemoteLivePlayers(List.of(
+            new DungeonRoomDataSyncClient.LivePlayerReport("Awesomeness_Boy", 52, 0, "Awesomeness_Boy", 100L),
+            new DungeonRoomDataSyncClient.LivePlayerReport("Awesomeness_Boy", 52, 0, "Awesomeness_Boy", 101L, "PERSONAL_TAB")));
+        assertFalse(stats.playerStats(TEAMMATE).hasSecretsFound());
+        stats.mergeRemoteLivePlayers(List.of(report("Awesomeness_Boy", 9, "Awesomeness_Boy", 102L)));
+        assertEquals(9, stats.playerStats(TEAMMATE).secretsFound());
+        assertFalse(stats.playerStats(TEAMMATE).hasOwnRunSecrets()); // No forwarding another client's count.
+        stats.playerStats(SELF).setApiRunSecretsFound(7);
+        assertTrue(stats.playerStats(SELF).hasOwnRunSecrets());
+    }
+
+    @Test public void summaryExplainsMissingPersonalSourcesWithoutInventingZeros() {
+        var stats = run();
+        assertEquals("Personal secrets: 0/2 available. Hypixel API is off or has no key.",
+            DungeonRunStats.personalSecretAvailability(stats.summaryPlayers(), false));
+        stats.playerStats(SELF).setApiRunSecretsFound(0);
+        assertEquals("Personal secrets: 1/2 available. Missing player data was not received.",
+            DungeonRunStats.personalSecretAvailability(stats.summaryPlayers(), true));
+        stats.mergeRemoteLivePlayers(List.of(report("Awesomeness_Boy", 9, "Awesomeness_Boy", 102L)));
+        assertEquals("", DungeonRunStats.personalSecretAvailability(stats.summaryPlayers(), true));
+    }
+
+    @Test public void syncDecoderPreservesPersonalSourceAndKeepsLegacyReportsUnverified() throws Exception {
+        var decode = DungeonRoomDataSyncClient.class.getDeclaredMethod("parseLiveSnapshot", String.class);
+        decode.setAccessible(true);
+        var snapshot = (DungeonRoomDataSyncClient.LiveSyncSnapshot) decode.invoke(null, """
+            {"clients":[{"player":"Awesomeness_Boy","updatedAt":100,"rooms":[],"players":[
+              {"name":"Awesomeness_Boy","secretsFound":52,"deaths":0},
+              {"name":"Awesomeness_Boy","secretsFound":9,"secretsSource":"API_DELTA","deaths":0}
+            ]}]}
+            """);
+        assertFalse(snapshot.players().getFirst().hasPersonalSecretSource());
+        assertEquals("API_DELTA", snapshot.players().getLast().secretsSource());
+        var stats = run();
+        stats.mergeRemoteLivePlayers(snapshot.players());
+        assertEquals(9, stats.playerStats(TEAMMATE).secretsFound());
+    }
+
     private static DungeonRoomDataSyncClient.LivePlayerReport report(String name, int count, String source, long time) {
-        return new DungeonRoomDataSyncClient.LivePlayerReport(name, count, 0, source, time);
+        return new DungeonRoomDataSyncClient.LivePlayerReport(name, count, 0, source, time, "API_DELTA");
     }
 }

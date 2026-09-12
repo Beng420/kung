@@ -3,20 +3,34 @@
 Entry point for Kung maintenance. Project rules: [AGENTS.md](../AGENTS.md).
 Read the [code map](CODE_MAP.md), then only the topic needed for the task.
 
-## Current state — 2026-09-12
+## Current state — 2026-09-13
 
-- Active module: Minecraft **26.1.2**, version **0.3.0**, Java **25**.
+- Active module: Minecraft **26.1.2**, version **0.3.3**, Java **25**.
   The version source is [gradle.properties](../gradle.properties).
-- Last code validation: full active-module build, **293 tests**, zero failures/errors.
-  Artifact: `versions/mc26_1_2/build/libs/kung-26.1.2-0.3.0.jar`.
+- Last code validation: full active-module build, **304 tests**, zero failures/errors.
+  Artifact: `versions/mc26_1_2/build/libs/kung-26.1.2-0.3.3.jar`.
   Split clock conservation and trace retention also passed the supplied live
   trace check at 18:16:58; details are in the split timing report.
-- Latest change: `Dungeon > Extra Score Messages` adds a default-off master and
-  independent Mimic/Prince/Bat announcement switches. Bonus tracking stays active;
-  enabling only these messages needs no room scans. All 16 switch combinations,
-  persistence and workload activation pass automated checks; live settings/party
-  delivery remains to be checked. The existing project version 0.3.0 was retained.
-  See [statistics and announcements](RUN_STATISTICS.md#room-credit-and-summary).
+- Latest change: Player Stats off suppresses the complete end-of-run summary,
+  including shared totals and pending exit flushes. Boss Map off hides the entire
+  map HUD throughout the boss phase; early arena teleports and layer gaps are
+  covered. Mimic's red 3D chest box/world-render callback is removed; the 2D
+  waypoint and map marker remain. Three regressions pass; live checks with the
+  reporting friends' profiles remain open. See [statistics](RUN_STATISTICS.md),
+  [boss maps](BOSS_MAPS.md), and [Mimic lifetime](DUNGEON_ARCHITECTURE.md#mimic-lifetime).
+- Util > Chat Emotes (default off) replaces `:iman:` with `♲` in
+  outgoing chat and commands. Fabric's modification callbacks preserve Minecraft's
+  original input history for Up-arrow recall. Event/config tests pass; live recall
+  and compatibility with the user's other chat mods remain open.
+  See [chat emotes](CHAT_EMOTES.md).
+- Run statistics use the five-player dungeon roster, excluding stale
+  global party members. Shared `Secrets Found: n` no longer credits all party secrets
+  to self. Missing personal sources are explained; API preparation and typed sync
+  reports preserve valid data without trusting older erroneous reports. Seven added
+  tests and a local sync HTTP round trip pass. The live profile has API disabled/no
+  key, so full personal counts still require an actual data source. Sync users also
+  need the updated companion server. Live 0.3.1 validation remains open.
+  See [run-statistics evidence](RUN_STATISTICS_FIXES.md).
 - Split clocks conserve every accepted tick. Full traces preserve 128 split
   records, including countdown/Mort start markers. The 18:16:58 live
   trace retains two complete runs with consistent phase partitions and no clipped

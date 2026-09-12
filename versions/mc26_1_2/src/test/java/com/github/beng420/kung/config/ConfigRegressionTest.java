@@ -36,6 +36,7 @@ public final class ConfigRegressionTest {
         equal(true, defaults.misc.c50ChatCommandEnabled(), "c50 command defaults on");
         equal(true, defaults.misc.ca50ChatCommandEnabled(), "ca50 command defaults on");
         equal(true, defaults.misc.tpsChatCommandEnabled(), "tps command defaults on");
+        equal(false, defaults.misc.chatEmotesEnabled(), "chat emotes default off for existing configs too");
         equal(false, defaults.misc.loadoutsCloseOnlyOnChange(), "loadouts change-only close defaults off");
         KungConfig legacy = read("""
             {
@@ -151,6 +152,7 @@ public final class ConfigRegressionTest {
             config.debug.setTarantulaMessages(false);
             config.slayer.setEggSacPredictionEnabled(true);
             config.misc.setLoadoutKeybind(2, "mouse:3");
+            config.misc.setChatEmotesEnabled(true);
             config.misc.setCustomArrowHitSounds("\"C:/sounds/ping.wav\", 'bell.wav'");
             String saved = Files.readString(file);
             KungConfig roundTrip = read(saved);
@@ -170,6 +172,7 @@ public final class ConfigRegressionTest {
             equal(false, roundTrip.debug.tarantulaMessages(), "debug setter persists");
             equal(true, roundTrip.slayer.eggSacPredictionEnabled(), "slayer setter persists");
             equal("mouse:3", roundTrip.misc.loadoutKeybind(2), "keybind setter persists");
+            equal(true, roundTrip.misc.chatEmotesEnabled(), "chat emotes switch persists");
             equal("ping.wav, bell.wav", roundTrip.misc.customArrowHitSounds(), "quoted sound paths normalized");
             equal(false, saved.contains("tarantulaHelperDebugMessages"), "duplicate legacy debug key removed");
             equal(false, saved.contains("onChange"), "save callbacks are not serialized");

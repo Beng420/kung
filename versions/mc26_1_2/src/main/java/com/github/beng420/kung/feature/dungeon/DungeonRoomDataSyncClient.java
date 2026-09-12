@@ -357,6 +357,7 @@ public final class DungeonRoomDataSyncClient {
             JsonObject object = new JsonObject();
             object.addProperty("name", player.name());
             object.addProperty("secretsFound", player.secretsFound());
+            object.addProperty("secretsSource", player.secretsSource());
             object.addProperty("deaths", player.deaths());
             playerArray.add(object);
         }
@@ -503,7 +504,8 @@ public final class DungeonRoomDataSyncClient {
                     intValue(playerObject, "secretsFound", -1),
                     intValue(playerObject, "deaths", -1),
                     source,
-                    updatedAt
+                    updatedAt,
+                    string(playerObject, "secretsSource", "")
                 ));
             }
         }
@@ -599,8 +601,17 @@ public final class DungeonRoomDataSyncClient {
         int secretsFound,
         int deaths,
         String source,
-        long updatedAtMillis
+        long updatedAtMillis,
+        String secretsSource
     ) {
+        public LivePlayerReport(String name, int secretsFound, int deaths, String source, long updatedAtMillis) {
+            this(name, secretsFound, deaths, source, updatedAtMillis, "");
+        }
+
+        public boolean hasPersonalSecretSource() {
+            // Older clients advertised the shared tab count as their own secrets.
+            return "API_DELTA".equals(secretsSource) || "PERSONAL".equals(secretsSource);
+        }
     }
 
     public record LiveSyncSnapshot(

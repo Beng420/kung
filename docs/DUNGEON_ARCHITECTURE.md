@@ -74,8 +74,9 @@ including their measured bounds. Do not silently clamp map size to the window.
 
 ## Player markers
 
-Use a fixed five-slot dungeon roster from tab/class data and the shared
-`HypixelPartyTracker`. The local player occupies slot 0 / FRAME; BLUE_MARKER
+Use a fixed five-slot dungeon roster from identified tab/class rows and self.
+`HypixelPartyTracker` may resolve names to UUIDs but its global membership/history
+must not add dungeon participants. The local player occupies slot 0 / FRAME; BLUE_MARKER
 decorations map sequentially to slots 1–4. Missing identity means skip and trace,
 not guess from nearby entities, ranks or anonymous decorations.
 
@@ -105,6 +106,8 @@ even when the rendered path count stays unchanged.
 `DungeonMimicChestMemory` retains room evidence across distance and chunk unloads.
 Empty loaded scans do not prove a kill. Conflicting evidence, reclassification,
 confirmed kill, map reset, feature disable or instance exit can update/clear it.
-Loaded candidates control world highlights; remembered evidence controls the map.
+Loaded candidates control the 2D waypoint; remembered evidence controls the map.
+Since 0.3.3, Mimic ESP has no world-render callback or 3D chest box. Its HUD waypoint,
+candidate filters, kill tracking and room memory remain active under the same toggle.
 The exact static-chest filter, rotation units, cache invalidation and 512-block-read
 budget are specified in [MIMIC_STATIC_CHESTS.md](MIMIC_STATIC_CHESTS.md).

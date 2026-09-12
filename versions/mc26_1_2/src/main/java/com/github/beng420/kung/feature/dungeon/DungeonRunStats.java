@@ -14,6 +14,8 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Consumer;
+import java.util.function.ToIntFunction;
 import java.lang.reflect.Field;
 import java.text.NumberFormat;
 import java.util.regex.Matcher;
@@ -622,33 +624,43 @@ public final class DungeonRunStats {
     }
 
     public void sendRunSummary(Minecraft client, DungeonLiveMapWriter.MatchRenderPlan renderPlan) {
-        if (client == null || client.gui == null) {
+        if (!KungConfig.get().dungeon.playerTrackingEnabled() || client == null || client.gui == null) {
             return;
         }
 
         if (client.player != null) rememberSelf(client.player.getUUID(), client.player.getName().getString());
+        sendRunSummary(renderPlan, client.font::width, client.gui.getChat()::addClientSystemMessage);
+    }
+
+    void sendRunSummary(DungeonLiveMapWriter.MatchRenderPlan renderPlan, ToIntFunction<String> textWidth,
+                        Consumer<Component> output) {
+        // Player Stats owns the entire chat summary, including the shared totals.
+        if (!KungConfig.get().dungeon.playerTrackingEnabled()) return;
         List<DungeonPlayerStats> sortedPlayers = summaryPlayers();
         int availableSecrets = bestSecretsAvailable(catalogSecretsAvailable(renderPlan));
         int totalFoundSecrets = partySecretsFound(sortedPlayers, availableSecrets);
+        KungDebugRecorder.event("run-statistics", "summary partySecrets=" + totalFoundSecrets
+            + " api=" + (KungConfig.get().misc.directHypixelApiEnabled() ? "configured" : "disabled-or-missing-key")
+            + " players=" + sortedPlayers.stream().map(stats -> stats.name() + ":"
+                + (stats.hasSecretsFound() ? stats.secretsFound() : "?") + ":" + stats.secretsSource()).toList());
 
         sendingRunSummary = true;
         try {
-            var chat = client.gui.getChat();
-            chat.addClientSystemMessage(KungMessages.info("Run Stats"));
-            chat.addClientSystemMessage(KungMessages.detail(roomProgressSummary(renderPlan)));
-            chat.addClientSystemMessage(KungMessages.detail(
+            output.accept(KungMessages.info("Run Stats"));
+            output.accept(KungMessages.detail(roomProgressSummary(renderPlan)));
+            output.accept(KungMessages.detail(
                 "Score " + score(renderPlan, 0)
                     + " | Secrets " + unknownDash(totalFoundSecrets) + "/" + unknownPositive(availableSecrets)
                     + " | Crypts " + cryptsOpened + "/" + unknownDash(cryptsAvailable)
             ));
-            if (KungConfig.get().dungeon.playerTrackingEnabled()) {
-                chat.addClientSystemMessage(KungMessages.detail("Party Secrets: " + unknownDash(totalFoundSecrets)));
-                int nameWidth = DungeonRunSummaryLayout.nameColumnWidth(
-                    sortedPlayers.stream().map(DungeonPlayerStats::name).toList(), client.font::width);
-                for (DungeonPlayerStats stats : sortedPlayers) {
-                    chat.addClientSystemMessage(DungeonRunSummaryLayout.playerLine(
-                        stats.name(), playerStatsDetails(stats, totalFoundSecrets), nameWidth, client.font::width));
-                }
+            output.accept(KungMessages.detail("Party Secrets: " + unknownDash(totalFoundSecrets)));
+            String availability = personalSecretAvailability(sortedPlayers, KungConfig.get().misc.directHypixelApiEnabled());
+            if (!availability.isEmpty()) output.accept(KungMessages.detail(availability));
+            int nameWidth = DungeonRunSummaryLayout.nameColumnWidth(
+                sortedPlayers.stream().map(DungeonPlayerStats::name).toList(), textWidth);
+            for (DungeonPlayerStats stats : sortedPlayers) {
+                output.accept(DungeonRunSummaryLayout.playerLine(
+                    stats.name(), playerStatsDetails(stats, totalFoundSecrets), nameWidth, textWidth));
             }
         } finally {
             sendingRunSummary = false;
@@ -656,11 +668,10 @@ public final class DungeonRunStats {
     }
 
     void rememberSelf(UUID uuid, String name) {
-        if (uuid == null || !isPlayerName(name)) return;
+        if (uuid == null || !isPlayerName(name) || !admitDungeonPlayerName(name)) return;
         selfUuid = uuid;
         selfName = name;
         registerPlayerName(name, uuid);
-        dungeonPlayerNames.add(name.toLowerCase(Locale.ROOT));
         rememberDungeonPlayerOrder(uuid);
     }
 
@@ -675,19 +686,10 @@ public final class DungeonRunStats {
         } else if (selfUuid != null) {
             addSummaryPlayer(result, selfUuid, selfName);
         }
-        for (UUID uuid : dungeonPlayerSlots) {
-            addSummaryPlayer(result, uuid, trackedPlayerName(uuid));
-        }
+        // The run roster is independent of the global party cache and remains
+        // valid after a player leaves, a boss teleport or the result banner.
         for (UUID uuid : dungeonPlayerOrder) {
             addSummaryPlayer(result, uuid, trackedPlayerName(uuid));
-        }
-        for (UUID uuid : knownTrackedPlayerUuids()) {
-            addSummaryPlayer(result, uuid, trackedPlayerName(uuid));
-        }
-        for (DungeonPlayerStats stats : players.values()) {
-            if (isSummaryPlayer(stats, selfUuid)) {
-                result.putIfAbsent(stats.uuid(), stats);
-            }
         }
 
         List<DungeonPlayerStats> sorted = new ArrayList<>(result.values());
@@ -698,7 +700,8 @@ public final class DungeonRunStats {
     }
 
     private void addSummaryPlayer(Map<UUID, DungeonPlayerStats> playersByUuid, UUID uuid, String fallbackName) {
-        if (uuid == null || !isPlayerName(fallbackName)) {
+        if (uuid == null || !isPlayerName(fallbackName) || !isKnownDungeonPlayer(fallbackName)
+            || !uuid.equals(dungeonPlayerUuid(fallbackName))) {
             return;
         }
         DungeonPlayerStats stats = playerStats(uuid, fallbackName);
@@ -708,6 +711,13 @@ public final class DungeonRunStats {
 
     static String playerStatsSummaryLine(DungeonPlayerStats stats, int totalFoundSecrets) {
         return stats.name() + " - " + playerStatsDetails(stats, totalFoundSecrets);
+    }
+
+    static String personalSecretAvailability(List<DungeonPlayerStats> players, boolean apiConfigured) {
+        long known = players.stream().filter(DungeonPlayerStats::hasSecretsFound).count();
+        if (known == players.size()) return "";
+        return "Personal secrets: " + known + "/" + players.size() + " available. "
+            + (apiConfigured ? "Missing player data was not received." : "Hypixel API is off or has no key.");
     }
 
     private static String playerStatsDetails(DungeonPlayerStats stats, int totalFoundSecrets) {
@@ -756,7 +766,7 @@ public final class DungeonRunStats {
         List<DungeonRoomDataSyncClient.LivePlayerReport> reports = new ArrayList<>();
         for (DungeonPlayerStats stats : summaryPlayers(client, selfUuid)) {
             if (!stats.uuid().equals(selfUuid) || !stats.hasSecretsFound()
-                || !stats.hasPersonalSecrets()) {
+                || !stats.hasOwnRunSecrets()) {
                 continue;
             }
             reports.add(new DungeonRoomDataSyncClient.LivePlayerReport(
@@ -764,7 +774,8 @@ public final class DungeonRunStats {
                 Math.max(0, stats.secretsFound()),
                 Math.max(0, stats.deaths()),
                 "",
-                System.currentTimeMillis()
+                System.currentTimeMillis(),
+                stats.secretsSource()
             ));
         }
         return List.copyOf(reports);
@@ -776,6 +787,7 @@ public final class DungeonRunStats {
         }
         for (DungeonRoomDataSyncClient.LivePlayerReport report : reports) {
             if (report == null || !isKnownTrackedPlayer(report.name()) || report.secretsFound() < 0
+                || !report.hasPersonalSecretSource()
                 || !report.name().equalsIgnoreCase(report.source()) || report.updatedAtMillis() <= 0) {
                 continue;
             }
@@ -826,7 +838,7 @@ public final class DungeonRunStats {
     }
 
     public boolean isKnownTrackedPlayer(String name) {
-        return isKnownPartyPlayer(name) || isKnownDungeonPlayer(name);
+        return isKnownDungeonPlayer(name);
     }
 
     public int partyPlayerCount() {
@@ -849,15 +861,7 @@ public final class DungeonRunStats {
     }
 
     public Set<UUID> knownTrackedPlayerUuids() {
-        Set<UUID> uuids = new HashSet<>();
-        uuids.addAll(HypixelPartyTracker.INSTANCE.knownPartyPlayerUuids());
-        for (String name : dungeonPlayerNames) {
-            UUID uuid = playerNames.get(name);
-            if (uuid != null) {
-                uuids.add(uuid);
-            }
-        }
-        return Set.copyOf(uuids);
+        return knownDungeonPlayerUuids();
     }
 
     public List<DungeonPlayerSlot> dungeonPlayerSlots(Minecraft client) {
@@ -1149,15 +1153,9 @@ public final class DungeonRunStats {
 
     UUID observeTabLine(Minecraft client, String line, UUID uuid) {
         line = DungeonSecretCounts.clean(line);
-        int personalSecrets = DungeonSecretCounts.personal(line);
-        if (personalSecrets >= 0) {
-            if (selfUuid != null) {
-                var self = playerStats(selfUuid, selfName);
-                if (!self.hasSecretsFound() || self.secretsFound() != personalSecrets) {
-                    KungDebugRecorder.event("player-stats", "personal tab player=" + selfName + " secrets=" + personalSecrets);
-                }
-                self.setSecretsFound(personalSecrets);
-            }
+        int partySecrets = DungeonSecretCounts.partyFound(line);
+        if (partySecrets >= 0) {
+            observeSecretsTotal(client, partySecrets);
             return null;
         }
         int teamDeaths = DungeonDeathTracker.teamTotal(line);
@@ -1470,13 +1468,23 @@ public final class DungeonRunStats {
         return registerDungeonPlayerName(null, name, null);
     }
 
+    private boolean admitDungeonPlayerName(String name) {
+        String key = name.toLowerCase(Locale.ROOT);
+        if (dungeonPlayerNames.contains(key)) return true;
+        if (dungeonPlayerNames.size() >= MAX_DUNGEON_PLAYERS) {
+            KungDebugRecorder.event("run-statistics", "roster ignored extra class row player=" + name);
+            return false;
+        }
+        dungeonPlayerNames.add(key);
+        return true;
+    }
+
     private UUID registerDungeonPlayerName(Minecraft client, String name, UUID uuid) {
-        if (!isPlayerName(name)) {
+        if (!isPlayerName(name) || !admitDungeonPlayerName(name)) {
             return null;
         }
 
         String lowerName = name.toLowerCase(java.util.Locale.ROOT);
-        dungeonPlayerNames.add(lowerName);
         UUID loadedUuid = loadedPlayerUuidByName(client, name);
         UUID observedPartyUuid = HypixelPartyTracker.INSTANCE.observedOnlinePlayerUuid(name);
         UUID partyUuid = HypixelPartyTracker.INSTANCE.partyPlayerUuid(name);
@@ -1636,7 +1644,6 @@ public final class DungeonRunStats {
     private void requestRunSecretBaseline(Minecraft client, String name) {
         if (client == null
             || client.player == null
-            || runStartTick <= 0L
             || !KungConfig.get().misc.directHypixelApiEnabled()
             || !isPlayerName(name)) {
             return;
@@ -1696,6 +1703,9 @@ public final class DungeonRunStats {
     }
 
     private void replaceDungeonPlayerOrder(UUID previousUuid, UUID uuid) {
+        for (int index = 0; index < dungeonPlayerSlots.length; index++) {
+            if (previousUuid.equals(dungeonPlayerSlots[index])) dungeonPlayerSlots[index] = uuid;
+        }
         for (int index = 0; index < dungeonPlayerOrder.size(); index++) {
             if (dungeonPlayerOrder.get(index).equals(previousUuid)) {
                 dungeonPlayerOrder.set(index, uuid);
@@ -1813,13 +1823,6 @@ public final class DungeonRunStats {
 
     private DungeonPlayerStats playerStats(UUID uuid, String fallbackName) {
         return players.computeIfAbsent(uuid, ignored -> new DungeonPlayerStats(uuid, fallbackName));
-    }
-
-    private boolean isSummaryPlayer(DungeonPlayerStats stats, UUID selfUuid) {
-        return stats != null
-            && stats.uuid() != null
-            && isPlayerName(stats.name())
-            && (stats.uuid().equals(selfUuid) || isKnownTrackedPlayer(stats.name()));
     }
 
     private boolean isKnownStatsUuid(UUID uuid) {
