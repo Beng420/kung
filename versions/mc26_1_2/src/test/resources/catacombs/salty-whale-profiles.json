@@ -1,0 +1,178 @@
+{
+  "_source": "https://adjectilsbackend.adjectivenoun3215.workers.dev/v2/skyblock/profiles?uuid=7b2c5b9705a24f478f2d725b9694bd4d",
+  "_accessed": "2026-09-12",
+  "_note": "Public dungeon-only regression fixture. Selected Watermelon is followed by an empty Raspberry profile. Adjectils M7 defaults without mayor: 1538 (484 Archer, 514 Berserk, 540 Mage).",
+  "success": true,
+  "profiles": [
+    {
+      "profile_id": "9c2699d5-0a51-4361-a09c-a0127265a488",
+      "cute_name": "Watermelon",
+      "selected": true,
+      "members": {
+        "7b2c5b9705a24f478f2d725b9694bd4d": {
+          "dungeons": {
+            "dungeon_types": {
+              "catacombs": {
+                "experience": 1072528552.5049516,
+                "milestone_completions": {
+                  "0": 21.0,
+                  "1": 42.0,
+                  "2": 72.0,
+                  "3": 20.0,
+                  "4": 72.0,
+                  "5": 650.0,
+                  "6": 224.0,
+                  "7": 1523.0,
+                  "total": 103.0
+                },
+                "best_score": {
+                  "0": 204.0,
+                  "1": 310.0,
+                  "2": 303.0,
+                  "3": 305.0,
+                  "4": 305.0,
+                  "5": 315.0,
+                  "6": 316.0,
+                  "7": 317.0,
+                  "best": 316.0
+                },
+                "fastest_time_s": {
+                  "1": 169948.0,
+                  "2": 156094.0,
+                  "3": 262420.0,
+                  "4": 262896.0,
+                  "5": 218494.0,
+                  "6": 272439.0,
+                  "7": 279471.0,
+                  "best": 156094.0
+                },
+                "fastest_time_s_plus": {
+                  "1": 167703.0,
+                  "3": 533377.0,
+                  "4": 337999.0,
+                  "5": 187957.0,
+                  "2": 165338.0,
+                  "6": 257638.0,
+                  "7": 259192.0,
+                  "best": 165338.0
+                }
+              },
+              "master_catacombs": {
+                "milestone_completions": {
+                  "1": 342.0,
+                  "2": 401.0,
+                  "3": 486.0,
+                  "total": 3494.0,
+                  "4": 463.0,
+                  "5": 173.0,
+                  "6": 796.0,
+                  "7": 854.0
+                },
+                "fastest_time_s": {
+                  "1": 109421.0,
+                  "2": 138442.0,
+                  "3": 136020.0,
+                  "best": 109421.0,
+                  "5": 133865.0,
+                  "6": 160201.0,
+                  "4": 173785.0,
+                  "7": 338306.0
+                },
+                "best_score": {
+                  "1": 311.0,
+                  "2": 298.0,
+                  "3": 315.0,
+                  "best": 319.0,
+                  "4": 316.0,
+                  "5": 312.0,
+                  "6": 318.0,
+                  "7": 319.0
+                },
+                "fastest_time_s_plus": {
+                  "best": 118862.0,
+                  "5": 120072.0,
+                  "6": 149691.0,
+                  "3": 118862.0,
+                  "1": 340845.0,
+                  "4": 148016.0,
+                  "7": 299301.0
+                }
+              }
+            },
+            "player_classes": {
+              "healer": {
+                "experience": 408447504.7293446
+              },
+              "mage": {
+                "experience": 238265249.89556026
+              },
+              "berserk": {
+                "experience": 246569870.72050408
+              },
+              "archer": {
+                "experience": 256162139.66255537
+              },
+              "tank": {
+                "experience": 408667650.0418245
+              }
+            },
+            "selected_dungeon_class": "berserk",
+            "daily_runs": {
+              "current_day_stamp": 20708,
+              "completed_runs_count": 7
+            },
+            "dungeon_journal": {
+              "unlocked_journals": [
+                "grim_adversity",
+                "expedition_volume_3",
+                "expedition_volume_4",
+                "the_study",
+                "the_eye",
+                "the_apprentice",
+                "expedition_volume_1",
+                "murderer",
+                "expedition_volume_2",
+                "aftermath",
+                "the_follower",
+                "uncanny_remains",
+                "the_apprentice_2",
+                "the_apprentice_3",
+                "the_walls",
+                "karylles_diary",
+                "the_follower_2",
+                "necrons_magic_scroll"
+              ]
+            },
+            "secrets": 63101
+          },
+          "player_data": {
+            "perks": {
+              "toxophilite": 5,
+              "unbridled_rage": 5,
+              "heart_of_gold": 5,
+              "cold_efficiency": 5,
+              "diamond_in_the_rough": 5
+            }
+          },
+          "attributes": {
+            "stacks": {
+              "catacombs_explorer": 32
+            }
+          }
+        }
+      }
+    },
+    {
+      "profile_id": "5c4d3da3-11d7-472c-a929-12bcb8fe94d2",
+      "cute_name": "Raspberry",
+      "selected": false,
+      "members": {
+        "7b2c5b9705a24f478f2d725b9694bd4d": {
+          "player_data": {
+            "perks": {}
+          }
+        }
+      }
+    }
+  ]
+}

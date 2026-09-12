@@ -3,6 +3,13 @@ package com.github.beng420.kung.feature.dungeon;
 import static com.github.beng420.kung.util.GuiDraw.fill;
 
 import com.github.beng420.kung.KungMod;
+import com.github.beng420.kung.util.CatacombsAverageCalculator;
+import com.github.beng420.kung.util.CatacombsAverageCalculator.Breakdown;
+import com.github.beng420.kung.util.CatacombsAverageCalculator.DungeonClass;
+import com.github.beng420.kung.util.CatacombsAverageCalculator.FloorStats;
+import com.github.beng420.kung.util.CatacombsAverageCalculator.PlayerData;
+import com.github.beng420.kung.util.CatacombsAverageCalculator.ProfileData;
+import com.github.beng420.kung.util.HypixelSkyBlockProfileClient;
 import com.github.beng420.kung.skyblock.SkyBlockMayorTracker;
 import com.github.beng420.kung.ui.UiBounds;
 import com.github.beng420.kung.ui.UiTextField;
@@ -12,17 +19,7 @@ import com.github.beng420.kung.ui.UiSpacing;
 import com.github.beng420.kung.ui.UiTextStyle;
 import com.github.beng420.kung.ui.UiNumberField;
 import com.github.beng420.kung.ui.UiToggle;
-import com.google.gson.JsonElement;
-import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
-import java.net.URI;
-import java.net.URLEncoder;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.nio.charset.StandardCharsets;
 import java.text.NumberFormat;
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.List;
@@ -37,8 +34,6 @@ import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
 
 public final class CatacombsCalculatorScreen extends Screen {
-    private static final URI PIXELSTATS_DUNGEON_API =
-        URI.create("https://www.pixelstats.net/api/calc/dungeon");
     private static final UiTheme THEME = UiTheme.catacombsCalculator();
     private static final UiTextStyle TEXT_STYLE = UiTextStyle.normal(THEME);
 
@@ -46,10 +41,11 @@ public final class CatacombsCalculatorScreen extends Screen {
     private static final int GAP = 10;
     private static final int ROW = 19;
     private static final int CONTROL_HEIGHT = UiSpacing.XL;
-    private static final int CONTENT_HEIGHT = 800;
+    private static final int CONTENT_HEIGHT = 838;
     private static final int SCROLL_STEP = 36;
     private static final UiNumberField HECATOMB_LEVEL = new UiNumberField(0, 10, 1);
     private static final UiNumberField GRADUATE_LEVEL = new UiNumberField(0, 10, 1);
+    private static final UiNumberField EXPLORER_LEVEL = new UiNumberField(0, 10, 1);
     private static final UiNumberField TARGET_LEVEL = new UiNumberField(1, 50, 1);
     private static final UiNumberField CLASS_PERK_LEVEL = new UiNumberField(0, 5, 1);
     private static final NumberFormat INTEGER_FORMAT = NumberFormat.getIntegerInstance(Locale.GERMANY);
@@ -111,9 +107,7 @@ public final class CatacombsCalculatorScreen extends Screen {
         569_809_640L
     };
 
-    private final HttpClient httpClient = HttpClient.newBuilder()
-        .connectTimeout(Duration.ofSeconds(5))
-        .build();
+    private long loadRequestId;
     private final List<ClickRegion> clickRegions = new ArrayList<>();
     private final String initialUsername;
     private final EnumMap<DungeonClass, Integer> classPerks = new EnumMap<>(DungeonClass.class);
@@ -128,6 +122,8 @@ public final class CatacombsCalculatorScreen extends Screen {
     private ScarfAccessory scarfAccessory = ScarfAccessory.GRIMOIRE;
     private double globalBoost;
     private int graduateLevel = 10;
+    private int explorerLevel = 10;
+    private boolean explorerPreset = true;
     private int targetCatacombsLevel = 50;
     private MayorBoost manualMayorBoost;
     private boolean autoLoadStarted;
@@ -284,7 +280,7 @@ public final class CatacombsCalculatorScreen extends Screen {
             }
             drawKV(graphics, x + 14, lineY, panelWidth - 28, "Class Average", decimal(classAverage(profile)), THEME.text());
             lineY += ROW;
-            drawKV(graphics, x + 14, lineY, panelWidth - 28, "Daily runs remaining", String.valueOf(Math.max(0, 5 - profile.dailyRuns())), THEME.text());
+            drawKV(graphics, x + 14, lineY, panelWidth - 28, "Daily runs remaining", String.valueOf(Math.max(0, 5 - profile.stats().dailyRuns())), THEME.text());
             lineY += ROW + 13;
         }
 
@@ -293,13 +289,13 @@ public final class CatacombsCalculatorScreen extends Screen {
         if (profile != null) {
             drawKV(graphics, x + 14, lineY, panelWidth - 28, "Profile", selectedProfileName(), THEME.text());
             lineY += ROW;
-            drawKV(graphics, x + 14, lineY, panelWidth - 28, "Secrets found", format(profile.secrets()), THEME.text());
+            drawKV(graphics, x + 14, lineY, panelWidth - 28, "Secrets found", profile.stats().secrets() < 0 ? "..." : format(profile.stats().secrets()), THEME.text());
             lineY += ROW;
-            drawKV(graphics, x + 14, lineY, panelWidth - 28, "Journals completed", profile.journals() + " / 25", THEME.text());
+            drawKV(graphics, x + 14, lineY, panelWidth - 28, "Journals completed", profile.stats().journals() + " / 25", THEME.text());
             lineY += ROW;
-            drawKV(graphics, x + 14, lineY, panelWidth - 28, "Selected class", classLabel(profile.selectedClass()), THEME.text());
+            drawKV(graphics, x + 14, lineY, panelWidth - 28, "Selected class", classLabel(profile.stats().selectedClass()), THEME.text());
             lineY += ROW;
-            drawKV(graphics, x + 14, lineY, panelWidth - 28, "Total runs", format(profile.catacombs().totalCompletions()), THEME.text());
+            drawKV(graphics, x + 14, lineY, panelWidth - 28, "Total runs", format(profile.stats().catacombs().totalCompletions()), THEME.text());
             lineY += ROW + 13;
         } else {
             drawMuted(graphics, "...", x + 14, lineY);
@@ -308,7 +304,7 @@ public final class CatacombsCalculatorScreen extends Screen {
 
         drawHeading(graphics, "Floor stats", x + 12, lineY);
         lineY += 24;
-        FloorStats stats = profile == null ? null : selectedFloor.masterMode() ? profile.master() : profile.catacombs();
+        FloorStats stats = profile == null ? null : selectedFloor.masterMode() ? profile.stats().master() : profile.stats().catacombs();
         String floorNumber = selectedFloor.floorNumber();
         drawKV(graphics, x + 14, lineY, panelWidth - 28, "Best score", stats == null ? "..." : floorStat(stats.bestScore(), floorNumber), THEME.text());
         lineY += ROW;
@@ -358,6 +354,11 @@ public final class CatacombsCalculatorScreen extends Screen {
         drawControl(graphics, rightX, rowY, columnWidth, "Target Catacombs level", String.valueOf(targetCatacombsLevel), mouseX, mouseY,
             () -> targetCatacombsLevel = TARGET_LEVEL.decrement(targetCatacombsLevel),
             () -> targetCatacombsLevel = TARGET_LEVEL.increment(targetCatacombsLevel));
+        rowY += 38;
+        drawControl(graphics, leftX, rowY, columnWidth, "Catacombs Explorer" + (explorerPreset ? " (preset)" : ""),
+            romanLevel(explorerLevel) + " (" + explorerLevel + "%)", mouseX, mouseY,
+            () -> setExplorerLevel(EXPLORER_LEVEL.decrement(explorerLevel)),
+            () -> setExplorerLevel(EXPLORER_LEVEL.increment(explorerLevel)));
         rowY += 44;
 
         drawMuted(graphics, "Class XP boost perks (Essence shop, each level +2%)", leftX, rowY);
@@ -651,118 +652,29 @@ public final class CatacombsCalculatorScreen extends Screen {
         statusMessage = "Loading " + name + "...";
         copiedClassAverage = false;
         copiedCatacombs = false;
-        HttpRequest request = HttpRequest.newBuilder(URI.create(
-                PIXELSTATS_DUNGEON_API
-                    + "?username="
-                    + URLEncoder.encode(name, StandardCharsets.UTF_8)
-                    + "&_kungFresh="
-                    + System.currentTimeMillis()
-            ))
-            .timeout(Duration.ofSeconds(12))
-            .header("Accept", "application/json")
-            .header("Cache-Control", "no-cache, no-store, max-age=0")
-            .header("Pragma", "no-cache")
-            .header("User-Agent", "Kung-CatacombsCalculator")
-            .GET()
-            .build();
-        httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString())
-            .whenComplete((response, throwable) -> Minecraft.getInstance().execute(() -> {
-                if (throwable != null) {
+        long requestId = ++loadRequestId;
+        loadedPlayer = null;
+        HypixelSkyBlockProfileClient.INSTANCE.loadCalculatorPlayer(name)
+            .whenComplete((result, throwable) -> Minecraft.getInstance().execute(() -> {
+                if (requestId != loadRequestId) return;
+                if (throwable != null || result == null) {
                     loadState = LoadState.ERROR;
-                    statusMessage = "API error: " + shortError(throwable);
-                    KungMod.LOGGER.warn("Failed to load PixelStats dungeon data.", throwable);
+                    statusMessage = "Could not load player data.";
+                    KungMod.LOGGER.warn("Failed to load calculator profile data.", throwable);
                     return;
                 }
-                if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                if (!result.success()) {
                     loadState = LoadState.ERROR;
-                    statusMessage = "API returned HTTP " + response.statusCode();
+                    statusMessage = result.error();
                     return;
                 }
-                try {
-                    loadedPlayer = parsePlayer(response.body());
-                    selectedProfileIndex = Math.max(0, loadedPlayer.selectedIndex());
-                    applyProfilePerks();
-                    loadState = LoadState.LOADED;
-                    statusMessage = "Loaded " + loadedPlayer.name() + " on " + selectedProfileName() + ".";
-                } catch (RuntimeException exception) {
-                    loadState = LoadState.ERROR;
-                    statusMessage = "Could not read calculator data.";
-                    KungMod.LOGGER.warn("Failed to parse PixelStats dungeon data.", exception);
-                }
+                loadedPlayer = result.player();
+                selectedProfileIndex = Math.max(0, loadedPlayer.selectedIndex());
+                applyProfilePerks();
+                loadState = LoadState.LOADED;
+                statusMessage = "Loaded " + loadedPlayer.name() + " on " + selectedProfileName() + "."
+                    + (loadedPlayer.selectedProfile().stats().available() ? "" : " No Dungeon stats on this profile.");
             }));
-    }
-
-    private PlayerData parsePlayer(String body) {
-        JsonObject root = JsonParser.parseString(body).getAsJsonObject();
-        String name = string(root, "name", usernameBox == null ? "" : usernameBox.value());
-        ArrayList<ProfileData> profiles = new ArrayList<>();
-        JsonElement profilesElement = root.get("profiles");
-        if (profilesElement != null && profilesElement.isJsonArray()) {
-            for (JsonElement element : profilesElement.getAsJsonArray()) {
-                if (element != null && element.isJsonObject()) {
-                    profiles.add(parseProfile(element.getAsJsonObject()));
-                }
-            }
-        }
-        if (profiles.isEmpty()) {
-            throw new IllegalArgumentException("no profiles");
-        }
-        int selected = 0;
-        for (int index = 0; index < profiles.size(); index++) {
-            if (profiles.get(index).selected()) {
-                selected = index;
-                break;
-            }
-        }
-        return new PlayerData(name, profiles, selected);
-    }
-
-    private ProfileData parseProfile(JsonObject object) {
-        JsonObject data = objectMember(object, "data");
-        EnumMap<DungeonClass, Double> classXp = new EnumMap<>(DungeonClass.class);
-        EnumMap<DungeonClass, Integer> perks = new EnumMap<>(DungeonClass.class);
-        JsonObject classXpObject = objectMember(data, "classXp");
-        JsonObject perksObject = objectMember(data, "classPerks");
-        for (DungeonClass dungeonClass : CLASSES) {
-            classXp.put(dungeonClass, number(classXpObject, dungeonClass.id(), 0.0));
-            perks.put(dungeonClass, (int) Math.round(number(perksObject, dungeonClass.id(), 0.0)));
-        }
-        return new ProfileData(
-            string(object, "id", ""),
-            string(object, "cuteName", "Profile"),
-            bool(object, "selected"),
-            number(data, "cataXp", 0.0),
-            classXp,
-            perks,
-            classFromId(string(data, "selectedClass", "")),
-            (long) number(data, "secrets", 0.0),
-            (int) number(data, "dailyRuns", 0.0),
-            (int) number(data, "journals", 0.0),
-            parseFloorStats(objectMember(data, "catacombs")),
-            parseFloorStats(objectMember(data, "master"))
-        );
-    }
-
-    private FloorStats parseFloorStats(JsonObject object) {
-        return new FloorStats(
-            parseIntMap(objectMember(object, "bestScore")),
-            parseIntMap(objectMember(object, "completions")),
-            parseIntMap(objectMember(object, "sPlus")),
-            parseIntMap(objectMember(object, "s"))
-        );
-    }
-
-    private Map<String, Integer> parseIntMap(JsonObject object) {
-        if (object == null) {
-            return Map.of();
-        }
-        java.util.HashMap<String, Integer> values = new java.util.HashMap<>();
-        for (Map.Entry<String, JsonElement> entry : object.entrySet()) {
-            if (entry.getValue() != null && entry.getValue().isJsonPrimitive()) {
-                values.put(entry.getKey(), (int) Math.round(entry.getValue().getAsDouble()));
-            }
-        }
-        return Map.copyOf(values);
     }
 
     private void applyProfilePerks() {
@@ -773,31 +685,25 @@ public final class CatacombsCalculatorScreen extends Screen {
         for (DungeonClass dungeonClass : CLASSES) {
             classPerks.put(dungeonClass, CLASS_PERK_LEVEL.clamp(profile.classPerk(dungeonClass)));
         }
+        explorerPreset = profile.stats().explorerLevel() < 0;
+        explorerLevel = explorerPreset ? 10 : EXPLORER_LEVEL.clamp(profile.stats().explorerLevel());
+    }
+
+    private void setExplorerLevel(int level) {
+        explorerLevel = level;
+        explorerPreset = false;
     }
 
     private Calculation calculate() {
         double baseXp = selectedFloor.baseXp();
-        int maxRuns = baseXp >= 15_000.0 ? 26 : baseXp == 4_880.0 ? 51 : 76;
         double hecatomb = HECATOMB_BONUSES[Math.clamp(hecatombLevel, 0, HECATOMB_BONUSES.length - 1)];
         MayorBoost mayor = currentMayorBoost();
-        double cataMultiplier;
-        if (expertRing && mayor.multiplier() > 1.0) {
-            cataMultiplier = 0.95 + (mayor.multiplier() - 1.0 + (maxRuns - 1) / 100.0)
-                + 0.1 + hecatomb + (maxRuns - 1) * (0.024 + hecatomb / 50.0);
-        } else if (expertRing) {
-            cataMultiplier = 0.95 + 0.1 + hecatomb + (maxRuns - 1) * (0.024 + hecatomb / 50.0);
-        } else {
-            cataMultiplier = 0.95 + hecatomb + (maxRuns - 1) * (0.022 + hecatomb / 50.0);
-        }
-        long cataPerRun = (long) Math.ceil(baseXp * cataMultiplier * (1.0 + globalBoost));
+        long cataPerRun = CatacombsAverageCalculator.catacombsXpPerRun(baseXp, expertRing, hecatomb,
+            explorerLevel, globalBoost, mayor.multiplier());
 
-        EnumMap<DungeonClass, Double> classXpPerRun = new EnumMap<>(DungeonClass.class);
-        for (DungeonClass dungeonClass : CLASSES) {
-            double perk = classPerks.getOrDefault(dungeonClass, 0) * 0.02;
-            double value = baseXp * (1.0 + 2.0 * hecatomb + perk + scarfAccessory.bonus()
-                + graduateLevel * 0.02 + globalBoost) * mayor.multiplier();
-            classXpPerRun.put(dungeonClass, value);
-        }
+        EnumMap<DungeonClass, Double> classXpPerRun = CatacombsAverageCalculator.classXpPerRun(
+            classPerks, baseXp, hecatomb, scarfAccessory.bonus(), graduateLevel * 0.02,
+            globalBoost, mayor.multiplier());
         double average = 0.0;
         for (DungeonClass dungeonClass : CLASSES) {
             average += classXpPerRun.get(dungeonClass);
@@ -807,130 +713,12 @@ public final class CatacombsCalculatorScreen extends Screen {
         ProfileData profile = selectedProfile();
         Long runsToCatacombs = null;
         Breakdown breakdown = null;
-        if (profile != null) {
+        if (profile != null && profile.stats().available()) {
             double remaining = xpForLevel(targetCatacombsLevel) - profile.cataXp();
             runsToCatacombs = remaining <= 0.0 ? 0L : (long) Math.ceil(remaining / cataPerRun);
-            breakdown = calculateBreakdown(profile.classXp(), classXpPerRun);
+            breakdown = CatacombsAverageCalculator.calculateBreakdown(profile.classXp(), classXpPerRun);
         }
         return new Calculation(cataPerRun, average, targetCatacombsLevel, runsToCatacombs, breakdown);
-    }
-
-    private Breakdown calculateBreakdown(
-        Map<DungeonClass, Double> currentClassXp,
-        Map<DungeonClass, Double> classXpPerRun
-    ) {
-        EnumMap<DungeonClass, Double> remaining = new EnumMap<>(DungeonClass.class);
-        EnumMap<DungeonClass, Long> perClass = new EnumMap<>(DungeonClass.class);
-        double totalRemaining = 0.0;
-        for (DungeonClass dungeonClass : CLASSES) {
-            double xp = Math.max(0.0, xpForLevel(50) - currentClassXp.getOrDefault(dungeonClass, 0.0));
-            remaining.put(dungeonClass, xp);
-            perClass.put(dungeonClass, 0L);
-            totalRemaining += xp;
-        }
-        if (totalRemaining <= 0.0) {
-            return new Breakdown(0L, perClass);
-        }
-        for (DungeonClass dungeonClass : CLASSES) {
-            if (remaining.get(dungeonClass) > 0.0 && classXpPerRun.getOrDefault(dungeonClass, 0.0) <= 0.0) {
-                for (DungeonClass classKey : CLASSES) {
-                    perClass.put(classKey, remaining.get(classKey) > 0.0 ? Long.MAX_VALUE : 0L);
-                }
-                return new Breakdown(Long.MAX_VALUE, perClass);
-            }
-        }
-
-        long low = 0L;
-        long high = 0L;
-        for (DungeonClass dungeonClass : CLASSES) {
-            double xpPerRun = classXpPerRun.getOrDefault(dungeonClass, 0.0);
-            if (xpPerRun > 0.0) {
-                high += (long) Math.ceil(remaining.get(dungeonClass) / xpPerRun);
-            }
-        }
-        high = Math.max(1L, high);
-        while (requiredRunCount(remaining, classXpPerRun, high) > high && high < Long.MAX_VALUE / 2L) {
-            high *= 2L;
-        }
-
-        while (low < high) {
-            long mid = low + (high - low) / 2L;
-            if (requiredRunCount(remaining, classXpPerRun, mid) <= mid) {
-                high = mid;
-            } else {
-                low = mid + 1L;
-            }
-        }
-
-        perClass = requiredRunsForTotal(remaining, classXpPerRun, low);
-        long assigned = 0L;
-        for (long runs : perClass.values()) {
-            assigned += runs;
-        }
-        while (assigned < low) {
-            DungeonClass target = extraRunTarget(remaining, classXpPerRun, perClass);
-            perClass.put(target, perClass.get(target) + 1L);
-            assigned++;
-        }
-        return new Breakdown(low, perClass);
-    }
-
-    private long requiredRunCount(
-        Map<DungeonClass, Double> remaining,
-        Map<DungeonClass, Double> classXpPerRun,
-        long totalRuns
-    ) {
-        long total = 0L;
-        for (long runs : requiredRunsForTotal(remaining, classXpPerRun, totalRuns).values()) {
-            total += runs;
-        }
-        return total;
-    }
-
-    private EnumMap<DungeonClass, Long> requiredRunsForTotal(
-        Map<DungeonClass, Double> remaining,
-        Map<DungeonClass, Double> classXpPerRun,
-        long totalRuns
-    ) {
-        EnumMap<DungeonClass, Long> runs = new EnumMap<>(DungeonClass.class);
-        for (DungeonClass dungeonClass : CLASSES) {
-            double xpPerRun = classXpPerRun.getOrDefault(dungeonClass, 0.0);
-            double xpLeftAfterTeamBonus = remaining.getOrDefault(dungeonClass, 0.0) - xpPerRun * totalRuns / 4.0;
-            long selectedRuns = xpLeftAfterTeamBonus <= 0.0001 || xpPerRun <= 0.0
-                ? 0L
-                : (long) Math.ceil(xpLeftAfterTeamBonus / (xpPerRun * 0.75) - 0.0000001);
-            runs.put(dungeonClass, Math.max(0L, selectedRuns));
-        }
-        return runs;
-    }
-
-    private DungeonClass extraRunTarget(
-        Map<DungeonClass, Double> remaining,
-        Map<DungeonClass, Double> classXpPerRun,
-        Map<DungeonClass, Long> perClass
-    ) {
-        boolean hasRequiredClass = false;
-        for (long runs : perClass.values()) {
-            if (runs > 0L) {
-                hasRequiredClass = true;
-                break;
-            }
-        }
-
-        DungeonClass best = CLASSES[0];
-        double bestScore = Double.NEGATIVE_INFINITY;
-        for (DungeonClass dungeonClass : CLASSES) {
-            if (hasRequiredClass && perClass.getOrDefault(dungeonClass, 0L) <= 0L) {
-                continue;
-            }
-            double xpPerRun = classXpPerRun.getOrDefault(dungeonClass, 1.0);
-            double score = remaining.getOrDefault(dungeonClass, 0.0) / Math.max(1.0, xpPerRun);
-            if (score > bestScore) {
-                bestScore = score;
-                best = dungeonClass;
-            }
-        }
-        return best;
     }
 
     private void copyClassAverageSummary(Calculation calculation) {
@@ -1127,8 +915,8 @@ public final class CatacombsCalculatorScreen extends Screen {
         if (level == 0) {
             return "None";
         }
-        double shown = level == 10 ? 1.0 : level * 0.1;
-        return roman[level] + " (+" + String.format(Locale.ROOT, "%.1f", shown) + "%)";
+        double shown = HECATOMB_BONUSES[level] * 100.0;
+        return roman[level] + " (+" + String.format(Locale.ROOT, "%.2f", shown) + "%)";
     }
 
     private static String romanLevel(int level) {
@@ -1176,44 +964,6 @@ public final class CatacombsCalculatorScreen extends Screen {
         return format(Math.round(value));
     }
 
-    private static JsonObject objectMember(JsonObject object, String name) {
-        if (object == null || !object.has(name)) {
-            return null;
-        }
-        JsonElement value = object.get(name);
-        return value != null && value.isJsonObject() ? value.getAsJsonObject() : null;
-    }
-
-    private static String string(JsonObject object, String name, String fallback) {
-        if (object == null || !object.has(name) || object.get(name).isJsonNull()) {
-            return fallback;
-        }
-        JsonElement value = object.get(name);
-        return value != null && value.isJsonPrimitive() ? value.getAsString() : fallback;
-    }
-
-    private static double number(JsonObject object, String name, double fallback) {
-        if (object == null || !object.has(name) || object.get(name).isJsonNull()) {
-            return fallback;
-        }
-        JsonElement value = object.get(name);
-        return value != null && value.isJsonPrimitive() ? value.getAsDouble() : fallback;
-    }
-
-    private static boolean bool(JsonObject object, String name) {
-        if (object == null || !object.has(name) || object.get(name).isJsonNull()) {
-            return false;
-        }
-        JsonElement value = object.get(name);
-        return value != null && value.isJsonPrimitive() && value.getAsBoolean();
-    }
-
-    private static String shortError(Throwable throwable) {
-        Throwable cause = throwable.getCause() != null ? throwable.getCause() : throwable;
-        String message = cause.getMessage();
-        return message == null || message.isBlank() ? cause.getClass().getSimpleName() : message;
-    }
-
     private static DungeonClass classFromId(String id) {
         if (id == null || id.isBlank()) {
             return null;
@@ -1244,42 +994,6 @@ public final class CatacombsCalculatorScreen extends Screen {
         LOADING,
         LOADED,
         ERROR
-    }
-
-    private enum DungeonClass {
-        ARCHER("archer", "Archer", "Toxophilite", 0xFFFF6B6B),
-        BERSERK("berserk", "Berserk", "Unbridled Rage", 0xFFFFB86C),
-        HEALER("healer", "Healer", "Heart of Gold", 0xFFFF66FF),
-        MAGE("mage", "Mage", "Cold Efficiency", 0xFF66E7FF),
-        TANK("tank", "Tank", "Diamond in the Rough", 0xFF8DFF73);
-
-        private final String id;
-        private final String label;
-        private final String perkName;
-        private final int color;
-
-        DungeonClass(String id, String label, String perkName, int color) {
-            this.id = id;
-            this.label = label;
-            this.perkName = perkName;
-            this.color = color;
-        }
-
-        String id() {
-            return id;
-        }
-
-        String label() {
-            return label;
-        }
-
-        String perkName() {
-            return perkName;
-        }
-
-        int color() {
-            return color;
-        }
     }
 
     private enum FloorOption {
@@ -1419,50 +1133,6 @@ public final class CatacombsCalculatorScreen extends Screen {
     private record ClickRegion(UiBounds bounds, ClickAction action) {
     }
 
-    private record PlayerData(String name, List<ProfileData> profiles, int selectedIndex) {
-        PlayerData {
-            profiles = List.copyOf(profiles);
-        }
-    }
-
-    private record ProfileData(
-        String id,
-        String cuteName,
-        boolean selected,
-        double cataXp,
-        Map<DungeonClass, Double> classXp,
-        Map<DungeonClass, Integer> classPerks,
-        DungeonClass selectedClass,
-        long secrets,
-        int dailyRuns,
-        int journals,
-        FloorStats catacombs,
-        FloorStats master
-    ) {
-        double classXp(DungeonClass dungeonClass) {
-            return classXp.getOrDefault(dungeonClass, 0.0);
-        }
-
-        int classPerk(DungeonClass dungeonClass) {
-            return classPerks.getOrDefault(dungeonClass, 0);
-        }
-    }
-
-    private record FloorStats(
-        Map<String, Integer> bestScore,
-        Map<String, Integer> completions,
-        Map<String, Integer> sPlus,
-        Map<String, Integer> s
-    ) {
-        int value(Map<String, Integer> values, String floor) {
-            return values.getOrDefault(floor, 0);
-        }
-
-        long totalCompletions() {
-            return completions.getOrDefault("total", 0);
-        }
-    }
-
     private record Calculation(
         long cataPerRun,
         double averageClassPerRun,
@@ -1472,9 +1142,4 @@ public final class CatacombsCalculatorScreen extends Screen {
     ) {
     }
 
-    private record Breakdown(long total, Map<DungeonClass, Long> perClass) {
-        long perClass(DungeonClass dungeonClass) {
-            return perClass.getOrDefault(dungeonClass, 0L);
-        }
-    }
 }

@@ -186,7 +186,8 @@ public final class CatacombsRecentXpTracker {
             selectedProfile.selected(),
             selectedProfile.cataXp() + delta.catacombsXp(),
             adjustedClassXp,
-            selectedProfile.classPerks()
+            selectedProfile.classPerks(),
+            selectedProfile.stats()
         ));
         return new PlayerData(player.name(), profiles, player.selectedIndex());
     }

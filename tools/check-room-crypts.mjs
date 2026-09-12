@@ -4,7 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 const root = process.cwd();
-const modules = ["mc26_1_2", "mc26_2"];
+const modules = ["mc26_1_2"];
 
 // Source: https://hypixelskyblock.minecraft.wiki/w/Catacombs_Rooms
 // Princes are included in the crypt total on the wiki and are not added again.
@@ -145,7 +145,9 @@ const wikiCrypts = new Map(Object.entries({
   "Zodd": 0,
 }));
 
-const confirmationNeeded = new Map(Object.entries({
+// User confirmed the existing mod values on 2026-09-11. The saved wiki
+// snapshot still retains its original [Confirm] markers for these rows.
+const userConfirmedCrypts = new Map(Object.entries({
   "Admin": 34,
   "Buttons": 21,
 }));
@@ -167,23 +169,19 @@ for (const moduleName of modules) {
   const mismatches = [];
   const missing = [];
 
-  for (const [name, crypts] of wikiCrypts) {
-    const room = byName.get(name);
-    if (!room) {
-      missing.push(name);
-    } else if (room.crypts !== crypts) {
-      mismatches.push(`${name}: db=${room.crypts} wiki=${crypts}`);
+  for (const [source, expectations] of [["wiki", wikiCrypts], ["user-confirmed", userConfirmedCrypts]]) {
+    for (const [name, crypts] of expectations) {
+      const room = byName.get(name);
+      if (!room) {
+        missing.push(`${name} (${source})`);
+      } else if (room.crypts !== crypts) {
+        mismatches.push(`${name}: db=${room.crypts} ${source}=${crypts}`);
+      }
     }
   }
 
-  const uncertain = [];
-  for (const [name, wikiValue] of confirmationNeeded) {
-    const room = byName.get(name);
-    uncertain.push(`${name}: db=${room?.crypts ?? "missing"} wiki-confirm-needed=${wikiValue}`);
-  }
-
   const extras = rooms
-    .filter((room) => !wikiCrypts.has(room.name) && !confirmationNeeded.has(room.name))
+    .filter((room) => !wikiCrypts.has(room.name) && !userConfirmedCrypts.has(room.name))
     .map((room) => `${room.name}|${room.type}|${room.secrets}/${room.crypts}`);
 
   console.log(`${moduleName}:`);
@@ -195,9 +193,9 @@ for (const moduleName of modules) {
   for (const line of missing) {
     console.log(`    ${line}`);
   }
-  console.log("  confirmationNeeded:");
-  for (const line of uncertain) {
-    console.log(`    ${line}`);
+  console.log("  userConfirmed (2026-09-11):");
+  for (const [name, crypts] of userConfirmedCrypts) {
+    console.log(`    ${name}: expected=${crypts} db=${byName.get(name)?.crypts ?? "missing"}`);
   }
   console.log(`  nonWikiExtras=${extras.length}`);
   for (const line of extras) {

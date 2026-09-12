@@ -1,11 +1,6 @@
 package com.github.beng420.kung.util;
 
-import com.github.beng420.kung.config.KungConfig;
-
 import com.github.beng420.kung.skyblock.SkyBlockMayorTracker;
-import com.google.gson.JsonElement;
-import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
 import java.text.NumberFormat;
 import java.time.Instant;
 import java.util.EnumMap;
@@ -44,44 +39,11 @@ public final class CatacombsAverageCalculator {
             return CompletableFuture.completedFuture(Result.error("invalid username"));
         }
 
-        if (KungConfig.get().misc.directHypixelApiEnabled()) {
-            return HypixelSkyBlockProfileClient.INSTANCE.loadPlayer(normalized)
-                .thenCompose(result -> {
-                    if (result.success()) {
-                        return CompletableFuture.completedFuture(calculate(
-                            result.player(),
-                            "source=hypixel secrets=" + result.secretsFound(),
-                            normalized,
-                            goal,
-                            useLocalObservedXp
-                        ));
-                    }
-                    return loadAdjectils(normalized, goal, useLocalObservedXp, "hypixelError=" + result.error());
-                });
-        }
-
-        return loadAdjectils(normalized, goal, useLocalObservedXp, "hypixel=not-configured");
-    }
-
-    private CompletableFuture<Result> loadAdjectils(
-        String normalized,
-        Goal goal,
-        boolean useLocalObservedXp,
-        String fallbackDebug
-    ) {
-        return HypixelSkyBlockProfileClient.INSTANCE.loadPlayerFromAdjectils(normalized)
-            .thenApply(result -> {
-                if (result.success()) {
-                    return calculate(
-                        result.player(),
-                        fallbackDebug + " source=adjectils secrets=" + result.secretsFound(),
-                        normalized,
-                        goal,
-                        useLocalObservedXp
-                    );
-                }
-                return Result.error(externalProfileError(result.error()), fallbackDebug + " adjectilsError=" + result.error());
-            });
+        return HypixelSkyBlockProfileClient.INSTANCE.loadCalculatorPlayer(normalized)
+            .thenApply(result -> result.success()
+                ? calculate(result.player(), "source=" + result.source() + " secrets=" + result.secretsFound(),
+                    normalized, goal, useLocalObservedXp)
+                : Result.error(externalProfileError(result.error()), "profileError=" + result.error()));
     }
 
     public Result calculate(PlayerData player) {
@@ -97,6 +59,10 @@ public final class CatacombsAverageCalculator {
             : new CatacombsRecentXpTracker.AdjustedPlayer(player, "localXp=disabled", Map.of());
         player = adjusted.player();
         ProfileData profile = player.selectedProfile();
+        if (!profile.stats().available() && profile.totalDungeonXp() <= 0) {
+            return Result.error("selected profile has no Dungeon stats", requestDebug
+                + " profile=" + profile.cuteName());
+        }
         EnumMap<DungeonClass, Double> classXpPerRun = classXpPerRun(profile.classPerks());
         for (Map.Entry<DungeonClass, Double> entry : adjusted.classXpPerRun().entrySet()) {
             if (entry.getValue() != null && entry.getValue() > 0.0) {
@@ -113,79 +79,47 @@ public final class CatacombsAverageCalculator {
             resultDebug(player, profile, breakdown, cataRuns, cataXpPerRun, classXpPerRun, requestDebug, adjusted.debugDetails(), goal));
     }
 
-    public PlayerData parsePlayer(String body) {
-        JsonObject root = JsonParser.parseString(body).getAsJsonObject();
-        String name = string(root, "name", "");
-        java.util.ArrayList<ProfileData> profiles = new java.util.ArrayList<>();
-        JsonElement profilesElement = root.get("profiles");
-        if (profilesElement != null && profilesElement.isJsonArray()) {
-            for (JsonElement element : profilesElement.getAsJsonArray()) {
-                if (element != null && element.isJsonObject()) {
-                    profiles.add(parseProfile(element.getAsJsonObject()));
-                }
-            }
-        }
-        if (profiles.isEmpty()) {
-            throw new IllegalArgumentException("no profiles");
-        }
-        int selectedIndex = bestProfileIndex(profiles);
-        for (int index = 0; index < profiles.size(); index++) {
-            if (profiles.get(index).selected()) {
-                selectedIndex = index;
-                break;
-            }
-        }
-        return new PlayerData(name, profiles, selectedIndex);
-    }
-
-    private ProfileData parseProfile(JsonObject object) {
-        JsonObject data = objectMember(object, "data");
-        EnumMap<DungeonClass, Double> classXp = new EnumMap<>(DungeonClass.class);
-        EnumMap<DungeonClass, Integer> perks = new EnumMap<>(DungeonClass.class);
-        JsonObject classXpObject = objectMember(data, "classXp");
-        JsonObject perksObject = objectMember(data, "classPerks");
-        for (DungeonClass dungeonClass : CLASSES) {
-            classXp.put(dungeonClass, number(classXpObject, dungeonClass.id(), 0.0));
-            perks.put(dungeonClass, (int) Math.round(number(perksObject, dungeonClass.id(), 0.0)));
-        }
-        return new ProfileData(
-            string(object, "id", ""),
-            string(object, "cuteName", "Profile"),
-            bool(object, "selected"),
-            number(data, "cataXp", 0.0),
-            classXp,
-            perks
-        );
-    }
-
     private EnumMap<DungeonClass, Double> classXpPerRun(Map<DungeonClass, Integer> classPerks) {
-        double baseXp = 300_000.0;
-        double hecatomb = HECATOMB_BONUSES[10];
-        double scarfBonus = 0.06;
-        double graduateBonus = 0.20;
-        double mayorMultiplier = SkyBlockMayorTracker.INSTANCE.catacombsXpMultiplier();
+        return classXpPerRun(classPerks, 300_000.0, HECATOMB_BONUSES[10], 0.06, 0.20, 0,
+            SkyBlockMayorTracker.INSTANCE.catacombsXpMultiplier());
+    }
+
+    public static EnumMap<DungeonClass, Double> classXpPerRun(
+        Map<DungeonClass, Integer> classPerks, double baseXp, double hecatomb,
+        double scarfBonus, double graduateBonus, double globalBonus, double mayorMultiplier
+    ) {
         EnumMap<DungeonClass, Double> classXpPerRun = new EnumMap<>(DungeonClass.class);
         for (DungeonClass dungeonClass : CLASSES) {
             double perk = Math.clamp(classPerks.getOrDefault(dungeonClass, 0), 0, 5) * 0.02;
-            classXpPerRun.put(dungeonClass, baseXp * (1.0 + 2.0 * hecatomb + perk + scarfBonus + graduateBonus)
-                * mayorMultiplier);
+            // Adjectils caps the class bonus at Derpy's 50%, including Aura.
+            classXpPerRun.put(dungeonClass, baseXp * (1.0 + 2.0 * hecatomb + perk + scarfBonus + graduateBonus + globalBonus)
+                * Math.min(1.5, mayorMultiplier));
         }
         return classXpPerRun;
     }
 
     private long catacombsXpPerRun() {
-        double baseXp = 300_000.0;
-        int maxRuns = 26;
-        double hecatomb = HECATOMB_BONUSES[10];
-        double mayorMultiplier = SkyBlockMayorTracker.INSTANCE.catacombsXpMultiplier();
+        return catacombsXpPerRun(300_000.0, true, HECATOMB_BONUSES[10], 10, 0,
+            SkyBlockMayorTracker.INSTANCE.catacombsXpMultiplier());
+    }
+
+    public static long catacombsXpPerRun(double baseXp, boolean expertRing, double hecatomb,
+                                         int explorerLevel, double globalBonus, double mayorMultiplier) {
+        int maxRuns = baseXp >= 15_000.0 ? 26 : baseXp == 4_880.0 ? 51 : 76;
         double cataMultiplier;
-        if (mayorMultiplier > 1.0) {
+        if (expertRing && mayorMultiplier > 1.0) {
             cataMultiplier = 0.95 + (mayorMultiplier - 1.0 + (maxRuns - 1) / 100.0)
                 + 0.1 + hecatomb + (maxRuns - 1) * (0.024 + hecatomb / 50.0);
-        } else {
+        } else if (expertRing) {
             cataMultiplier = 0.95 + 0.1 + hecatomb + (maxRuns - 1) * (0.024 + hecatomb / 50.0);
+        } else {
+            cataMultiplier = 0.95 + hecatomb + (maxRuns - 1) * (0.022 + hecatomb / 50.0);
         }
-        return (long) Math.ceil(baseXp * cataMultiplier);
+        // Catacombs Explorer is a separate attribute, not the Expert Ring bonus.
+        // Match Adjectils' 300-score/max-completion projection, adding it exactly once.
+        cataMultiplier += Math.clamp(explorerLevel, 0, 10) * 0.01;
+        // Decimal bonuses can land a few ulps above an integer; don't invent one XP.
+        return (long) Math.ceil(baseXp * cataMultiplier * (1.0 + globalBonus) - 0.0000001);
     }
 
     private long runsToCatacombs(ProfileData profile, long cataXpPerRun) {
@@ -193,7 +127,7 @@ public final class CatacombsAverageCalculator {
         return remaining <= 0.0 ? 0L : (long) Math.ceil(remaining / Math.max(1L, cataXpPerRun));
     }
 
-    private Breakdown calculateBreakdown(
+    public static Breakdown calculateBreakdown(
         Map<DungeonClass, Double> currentClassXp,
         Map<DungeonClass, Double> classXpPerRun
     ) {
@@ -254,7 +188,7 @@ public final class CatacombsAverageCalculator {
         return new Breakdown(low, perClass);
     }
 
-    private long requiredRunCount(
+    private static long requiredRunCount(
         Map<DungeonClass, Double> remaining,
         Map<DungeonClass, Double> classXpPerRun,
         long totalRuns
@@ -266,7 +200,7 @@ public final class CatacombsAverageCalculator {
         return total;
     }
 
-    private EnumMap<DungeonClass, Long> requiredRunsForTotal(
+    private static EnumMap<DungeonClass, Long> requiredRunsForTotal(
         Map<DungeonClass, Double> remaining,
         Map<DungeonClass, Double> classXpPerRun,
         long totalRuns
@@ -283,7 +217,7 @@ public final class CatacombsAverageCalculator {
         return runs;
     }
 
-    private DungeonClass extraRunTarget(
+    private static DungeonClass extraRunTarget(
         Map<DungeonClass, Double> remaining,
         Map<DungeonClass, Double> classXpPerRun,
         Map<DungeonClass, Long> perClass
@@ -327,19 +261,6 @@ public final class CatacombsAverageCalculator {
 
     private String catacombsSummaryLine(String playerName, long runs) {
         return "It will take " + format(runs) + " M7 runs for " + playerName + " to reach Catacombs 50";
-    }
-
-    private static int bestProfileIndex(List<ProfileData> profiles) {
-        int bestIndex = 0;
-        double bestXp = -1.0;
-        for (int index = 0; index < profiles.size(); index++) {
-            double total = profiles.get(index).totalDungeonXp();
-            if (total > bestXp) {
-                bestXp = total;
-                bestIndex = index;
-            }
-        }
-        return bestIndex;
     }
 
     private static String resultDebug(
@@ -397,46 +318,8 @@ public final class CatacombsAverageCalculator {
         return INTEGER_FORMAT.format(value);
     }
 
-    private static JsonObject objectMember(JsonObject object, String name) {
-        if (object == null || !object.has(name)) {
-            return null;
-        }
-        JsonElement value = object.get(name);
-        return value != null && value.isJsonObject() ? value.getAsJsonObject() : null;
-    }
-
-    private static String string(JsonObject object, String name, String fallback) {
-        if (object == null || !object.has(name) || object.get(name).isJsonNull()) {
-            return fallback;
-        }
-        JsonElement value = object.get(name);
-        return value != null && value.isJsonPrimitive() ? value.getAsString() : fallback;
-    }
-
-    private static double number(JsonObject object, String name, double fallback) {
-        if (object == null || !object.has(name) || object.get(name).isJsonNull()) {
-            return fallback;
-        }
-        JsonElement value = object.get(name);
-        return value != null && value.isJsonPrimitive() ? value.getAsDouble() : fallback;
-    }
-
-    private static boolean bool(JsonObject object, String name) {
-        if (object == null || !object.has(name) || object.get(name).isJsonNull()) {
-            return false;
-        }
-        JsonElement value = object.get(name);
-        return value != null && value.isJsonPrimitive() && value.getAsBoolean();
-    }
-
     private static boolean validUsername(String value) {
         return value != null && value.matches("[A-Za-z0-9_]{3,16}");
-    }
-
-    private static String shortError(Throwable throwable) {
-        Throwable cause = throwable.getCause() != null ? throwable.getCause() : throwable;
-        String message = cause.getMessage();
-        return message == null || message.isBlank() ? cause.getClass().getSimpleName() : message;
     }
 
     private static String externalProfileError(String error) {
@@ -454,18 +337,22 @@ public final class CatacombsAverageCalculator {
     }
 
     public enum DungeonClass {
-        ARCHER("archer", "Archer"),
-        BERSERK("berserk", "Berserk"),
-        HEALER("healer", "Healer"),
-        MAGE("mage", "Mage"),
-        TANK("tank", "Tank");
+        ARCHER("archer", "Archer", "Toxophilite", 0xFFFF6B6B),
+        BERSERK("berserk", "Berserk", "Unbridled Rage", 0xFFFFB86C),
+        HEALER("healer", "Healer", "Heart of Gold", 0xFFFF66FF),
+        MAGE("mage", "Mage", "Cold Efficiency", 0xFF66E7FF),
+        TANK("tank", "Tank", "Diamond in the Rough", 0xFF8DFF73);
 
         private final String id;
         private final String label;
+        private final String perkName;
+        private final int color;
 
-        DungeonClass(String id, String label) {
+        DungeonClass(String id, String label, String perkName, int color) {
             this.id = id;
             this.label = label;
+            this.perkName = perkName;
+            this.color = color;
         }
 
         public String id() {
@@ -474,6 +361,14 @@ public final class CatacombsAverageCalculator {
 
         public String label() {
             return label;
+        }
+
+        public String perkName() {
+            return perkName;
+        }
+
+        public int color() {
+            return color;
         }
     }
 
@@ -515,7 +410,7 @@ public final class CatacombsAverageCalculator {
             profiles = List.copyOf(profiles);
         }
 
-        ProfileData selectedProfile() {
+        public ProfileData selectedProfile() {
             return profiles.get(Math.clamp(selectedIndex, 0, profiles.size() - 1));
         }
     }
@@ -526,11 +421,25 @@ public final class CatacombsAverageCalculator {
         boolean selected,
         double cataXp,
         Map<DungeonClass, Double> classXp,
-        Map<DungeonClass, Integer> classPerks
+        Map<DungeonClass, Integer> classPerks,
+        DungeonStats stats
     ) {
+        public ProfileData(String id, String cuteName, boolean selected, double cataXp,
+                           Map<DungeonClass, Double> classXp, Map<DungeonClass, Integer> classPerks) {
+            this(id, cuteName, selected, cataXp, classXp, classPerks, DungeonStats.EMPTY);
+        }
+
         public ProfileData {
             classXp = Map.copyOf(classXp);
             classPerks = Map.copyOf(classPerks);
+        }
+
+        public double classXp(DungeonClass dungeonClass) {
+            return classXp.getOrDefault(dungeonClass, 0.0);
+        }
+
+        public int classPerk(DungeonClass dungeonClass) {
+            return classPerks.getOrDefault(dungeonClass, 0);
         }
 
         double totalDungeonXp() {
@@ -542,8 +451,28 @@ public final class CatacombsAverageCalculator {
         }
     }
 
-    private record Breakdown(long total, Map<DungeonClass, Long> perClass) {
-        long perClass(DungeonClass dungeonClass) {
+    public record DungeonStats(boolean available, DungeonClass selectedClass, long secrets, int dailyRuns, int journals,
+                               FloorStats catacombs, FloorStats master, int explorerLevel) {
+        private static final DungeonStats EMPTY = new DungeonStats(false, null, -1, 0, 0, FloorStats.EMPTY, FloorStats.EMPTY, -1);
+    }
+
+    public record FloorStats(Map<String, Integer> bestScore, Map<String, Integer> completions,
+                             Map<String, Integer> sPlus, Map<String, Integer> s) {
+        private static final FloorStats EMPTY = new FloorStats(Map.of(), Map.of(), Map.of(), Map.of());
+
+        public int value(Map<String, Integer> values, String floor) {
+            return values.getOrDefault(floor, 0);
+        }
+
+        public long totalCompletions() {
+            if (completions.containsKey("total")) return completions.get("total");
+            return completions.entrySet().stream().filter(entry -> entry.getKey().matches("[0-7]"))
+                .mapToLong(Map.Entry::getValue).sum();
+        }
+    }
+
+    public record Breakdown(long total, Map<DungeonClass, Long> perClass) {
+        public long perClass(DungeonClass dungeonClass) {
             return perClass.getOrDefault(dungeonClass, 0L);
         }
     }

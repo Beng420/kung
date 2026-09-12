@@ -10,10 +10,9 @@ public final class DungeonPlayerStats {
     private int deaths;
     private int roomsCleared;
     private int soloRoomsCleared;
-    private int secretsFound;
+    private final DungeonSecretCounter secrets = new DungeonSecretCounter();
     private int totalSecretsFound = -1;
     private int runSecretBaseline = -1;
-    private int apiRunSecretsFound = -1;
     private int roomGridX = -1;
     private int roomGridZ = -1;
     private long lastSeenTick;
@@ -30,7 +29,10 @@ public final class DungeonPlayerStats {
     public int deaths() { return deaths; }
     public int roomsCleared() { return roomsCleared; }
     public int soloRoomsCleared() { return soloRoomsCleared; }
-    public int secretsFound() { return Math.max(secretsFound, apiRunSecretsFound); }
+    public int secretsFound() { return secrets.value(); }
+    public boolean hasSecretsFound() { return secrets.known(); }
+    public String secretsSource() { return secrets.source().name(); }
+    public boolean hasPersonalSecrets() { return secrets.source() == DungeonSecretCounter.Source.PERSONAL_TAB; }
     public int totalSecretsFound() { return totalSecretsFound; }
     public int roomGridX() { return roomGridX; }
     public int roomGridZ() { return roomGridZ; }
@@ -45,7 +47,7 @@ public final class DungeonPlayerStats {
     void setDungeonClass(DungeonRunStats.DungeonClass dungeonClass) { this.dungeonClass = dungeonClass; }
     void incrementDeaths(int count) { deaths += count; }
     void setDeaths(int deaths) { this.deaths = Math.max(this.deaths, deaths); }
-    void incrementSecrets(int count) { secretsFound += count; }
+    void incrementSecrets(int count) { secrets.incrementObserved(count); }
     void observeRoom(int roomGridX, int roomGridZ, long nowTick) {
         this.roomGridX = roomGridX;
         this.roomGridZ = roomGridZ;
@@ -56,7 +58,12 @@ public final class DungeonPlayerStats {
         roomsCleared = Math.max(soloRoomsCleared, maximum);
     }
     void addBonus(DungeonBonusContribution bonus) { bonuses.add(bonus); }
-    void setSecretsFound(int secretsFound) { this.secretsFound = Math.max(this.secretsFound, secretsFound); }
+    /** An exact personal counter from Hypixel, including an observed zero/correction. */
+    void setSecretsFound(int secretsFound) { secrets.personalTab(secretsFound); }
+    /** Only the player's own known counter may be accepted as a remote self-report. */
+    void setSyncedSecretsFound(int secretsFound, long reportedAtMillis) {
+        secrets.selfReport(secretsFound, reportedAtMillis);
+    }
     void setTotalSecretsFound(int totalSecretsFound) {
         this.totalSecretsFound = Math.max(this.totalSecretsFound, totalSecretsFound);
     }
@@ -64,15 +71,14 @@ public final class DungeonPlayerStats {
         this.runSecretBaseline = Math.max(this.runSecretBaseline, runSecretBaseline);
     }
     void setApiRunSecretsFound(int apiRunSecretsFound) {
-        this.apiRunSecretsFound = Math.max(this.apiRunSecretsFound, apiRunSecretsFound);
+        secrets.apiDelta(apiRunSecretsFound);
     }
 
     void resetRunCounters() {
         deaths = 0;
         roomsCleared = 0;
         soloRoomsCleared = 0;
-        secretsFound = 0;
-        apiRunSecretsFound = -1;
+        secrets.reset();
         roomGridX = -1;
         roomGridZ = -1;
         lastSeenTick = 0;
@@ -81,18 +87,18 @@ public final class DungeonPlayerStats {
 
     void merge(DungeonPlayerStats other) {
         bonuses.addAll(other.bonuses);
-        deaths += other.deaths;
-        roomsCleared += other.roomsCleared;
-        soloRoomsCleared += other.soloRoomsCleared;
-        secretsFound += other.secretsFound;
+        // These rows are aliases of the same player, not disjoint contributions.
+        deaths = Math.max(deaths, other.deaths);
+        roomsCleared = Math.max(roomsCleared, other.roomsCleared);
+        soloRoomsCleared = Math.max(soloRoomsCleared, other.soloRoomsCleared);
+        secrets.merge(other.secrets);
         totalSecretsFound = Math.max(totalSecretsFound, other.totalSecretsFound);
         runSecretBaseline = Math.max(runSecretBaseline, other.runSecretBaseline);
-        apiRunSecretsFound = Math.max(apiRunSecretsFound, other.apiRunSecretsFound);
         if (dungeonClass == DungeonRunStats.DungeonClass.UNKNOWN
             && other.dungeonClass != DungeonRunStats.DungeonClass.UNKNOWN) {
             dungeonClass = other.dungeonClass;
         }
-        if (roomGridX < 0 && other.roomGridX >= 0) {
+        if (other.roomGridX >= 0 && (roomGridX < 0 || other.lastSeenTick > lastSeenTick)) {
             roomGridX = other.roomGridX;
             roomGridZ = other.roomGridZ;
             lastSeenTick = other.lastSeenTick;

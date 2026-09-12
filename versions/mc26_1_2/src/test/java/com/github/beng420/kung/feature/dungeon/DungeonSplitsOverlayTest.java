@@ -12,7 +12,10 @@ public final class DungeonSplitsOverlayTest {
         AtomicLong clock = new AtomicLong();
         DungeonSplitTracker tracker = new DungeonSplitTracker(clock::get);
         tracker.startRun(0L, 7, true);
-        for (int tick = 0; tick < 1100; tick++) tracker.serverTick(0L);
+        for (int tick = 1; tick <= 1100; tick++) {
+            clock.set(tick * 50L);
+            tracker.serverTick(clock.get());
+        }
         clock.set(57_600L);
         long visibleWall = tracker.currentSplitDurationMillis();
         long visibleServer = tracker.currentSplitServerDurationMillis();
@@ -37,13 +40,13 @@ public final class DungeonSplitsOverlayTest {
         DungeonSplitTracker tracker = new DungeonSplitTracker(clock::get);
         tracker.startRun(0L, 7, true);
         clock.set(12_000L);
-        for (int tick = 0; tick < 200; tick++) tracker.serverTick(0L);
+        for (int tick = 0; tick < 200; tick++) tracker.serverTick(clock.get());
         assertEquals(-1L, DungeonSplitsOverlayFeature.settledTotalLostTimeMillis(tracker));
         tracker.mark("Blood Clear", 0L);
         assertEquals(2_000L, DungeonSplitsOverlayFeature.settledTotalLostTimeMillis(tracker));
         var bloodOpen = DungeonSplitsOverlayFeature.phaseSnapshot(tracker, "Blood Open");
         clock.set(32_000L);
-        for (int tick = 0; tick < 300; tick++) tracker.serverTick(0L);
+        for (int tick = 0; tick < 300; tick++) tracker.serverTick(clock.get());
         assertEquals(2_000L, DungeonSplitsOverlayFeature.settledTotalLostTimeMillis(tracker));
         assertEquals(bloodOpen, DungeonSplitsOverlayFeature.phaseSnapshot(tracker, "Blood Open"));
         assertNull(DungeonSplitsOverlayFeature.phaseSnapshot(tracker, "Blood Clear"));
@@ -142,7 +145,10 @@ public final class DungeonSplitsOverlayTest {
         DungeonSplitTracker tracker = new DungeonSplitTracker(clock::get);
         tracker.startRun(0L, 7, true);
         tracker.mark("Blood Clear", 0L);
-        for (int tick = 0; tick < 1600; tick++) tracker.serverTick(0L);
+        for (int tick = 1; tick <= 1600; tick++) {
+            clock.set(tick * 50L);
+            tracker.serverTick(clock.get());
+        }
         clock.set(90_000L);
         tracker.observeMessage("[BOSS] The Watcher: You have proven yourself. You may pass.", 0L);
         var bloodClear = tracker.completedSplits().getLast();

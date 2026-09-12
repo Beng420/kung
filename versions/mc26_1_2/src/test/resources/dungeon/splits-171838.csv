@@ -1,0 +1,15 @@
+# Kung 0.2.18 trace 2026-09-12 17:18:38. Aggregate counts only; no packet-arrival timestamps.
+# Blood Open is derived from the first retained Blood Clear cumulative boundary.
+# Phase,real milliseconds,accepted ticks,old displayed ideal milliseconds
+Blood Open,37846,749,37385
+Blood Clear,77312,1492,74510
+Portal Entry,98543,1951,97514
+Maxor,25966,515,25718
+Storm,50868,995,49732
+Terminals,57732,1150,57208
+Goldor,8763,175,8691
+Necron,35810,667,33333
+Relics,13962,232,11564
+Wither King,5827,124,5504
+Dragons,60764,1145,56978
+Completion wait,508,5,204

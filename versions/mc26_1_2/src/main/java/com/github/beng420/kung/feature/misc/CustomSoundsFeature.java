@@ -11,7 +11,6 @@ import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
@@ -19,13 +18,14 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 import javax.sound.sampled.AudioFormat;
 import javax.sound.sampled.AudioInputStream;
 import javax.sound.sampled.AudioSystem;
-import javax.sound.sampled.LineUnavailableException;
-import javax.sound.sampled.SourceDataLine;
 import javax.sound.sampled.UnsupportedAudioFileException;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
@@ -41,7 +41,6 @@ import net.minecraft.world.item.ItemStack;
 
 public final class CustomSoundsFeature extends ConfigurableFeature<MiscConfig> implements Feature {
     public static final CustomSoundsFeature INSTANCE = new CustomSoundsFeature();
-    private static final String SOUND_DIRECTORY_NAME = "custom-sounds";
     private static final String SOUND_DIRECTORY_LABEL = "config/kung/custom-sounds";
     private static final String BUNDLED_SOUND_RESOURCE_PREFIX = "/assets/kung/sounds/custom/";
     private static final List<String> BUNDLED_SOUND_NAMES = List.of(
@@ -51,16 +50,20 @@ public final class CustomSoundsFeature extends ConfigurableFeature<MiscConfig> i
         "kung_wither_chime.wav"
     );
     private static final Set<String> SUPPORTED_EXTENSIONS = Set.of("wav", "aif", "aiff", "au", "mp3");
-    private static final int WITHER_SHIELD_DURATION_TICKS = 100;
-    private static final ExecutorService SOUND_EXECUTOR = Executors.newCachedThreadPool(task -> {
-        Thread thread = new Thread(task, "Kung Custom Sound");
+    private static final ExecutorService SOUND_EXECUTOR = new ThreadPoolExecutor(1, 1, 0, TimeUnit.MILLISECONDS,
+        new ArrayBlockingQueue<>(32), task -> {
+        Thread thread = new Thread(task, "Kung Sound Decode");
         thread.setDaemon(true);
         return thread;
-    });
+    }, new ThreadPoolExecutor.DiscardOldestPolicy());
+    private static final CustomSoundPlayer SOUND_PLAYER = new CustomSoundPlayer(message ->
+        KungDebugRecorder.event("custom-sounds", message));
+    private static final AtomicLong PLAYBACK_GENERATION = new AtomicLong();
+    private static final WitherShieldSoundTimer SHIELD_TIMER = new WitherShieldSoundTimer();
     private static final Map<String, CachedSound> SOUND_CACHE = new ConcurrentHashMap<>();
     private static volatile List<String> availableSounds = List.of();
-    private static long clientTicks;
-    private static long witherShieldExpiresAt = Long.MIN_VALUE;
+    private static Object lastLevel;
+    private static boolean wasEnabled;
 
     private CustomSoundsFeature() {
         super(config -> config.misc);
@@ -72,8 +75,6 @@ public final class CustomSoundsFeature extends ConfigurableFeature<MiscConfig> i
         refreshSoundIndex();
         ClientTickEvents.END_CLIENT_TICK.register(CustomSoundsFeature::tick);
         ClientReceiveMessageEvents.GAME.register((message, overlay) -> observeMessage(message));
-        ClientReceiveMessageEvents.CHAT.register((message, signedMessage, sender, params, receptionTimestamp) ->
-            observeMessage(message));
         UseItemCallback.EVENT.register((player, world, hand) -> {
             if (world.isClientSide() && player == Minecraft.getInstance().player) {
                 observeItemUse(player.getItemInHand(hand));
@@ -85,6 +86,16 @@ public final class CustomSoundsFeature extends ConfigurableFeature<MiscConfig> i
     @Override
     public boolean isEnabled() {
         return config().customSoundsEnabled();
+    }
+
+    @Override
+    protected void onReset() {
+        resetPlayback();
+    }
+
+    @Override
+    protected void onShutdown() {
+        resetPlayback();
     }
 
     public static void observeSoundEvent(SoundEvent sound) {
@@ -182,10 +193,23 @@ public final class CustomSoundsFeature extends ConfigurableFeature<MiscConfig> i
     }
 
     private static void tick(Minecraft client) {
-        clientTicks++;
-        if (witherShieldExpiresAt != Long.MIN_VALUE && clientTicks >= witherShieldExpiresAt) {
-            witherShieldExpiresAt = Long.MIN_VALUE;
+        boolean active = enabled();
+        if (client.level != lastLevel || (wasEnabled && !active)) {
+            resetPlayback();
+        }
+        lastLevel = client.level;
+        wasEnabled = active;
+        if (active && client.player != null && SHIELD_TIMER.expire(System.nanoTime())) {
+            KungDebugRecorder.event("custom-sounds", "wither-shield-expire source=item-use-estimate");
             playWitherShieldExpire();
+        }
+    }
+
+    private static void resetPlayback() {
+        SHIELD_TIMER.finish();
+        synchronized (SOUND_PLAYER) {
+            PLAYBACK_GENERATION.incrementAndGet();
+            SOUND_PLAYER.stop();
         }
     }
 
@@ -200,8 +224,12 @@ public final class CustomSoundsFeature extends ConfigurableFeature<MiscConfig> i
             || itemName.contains("valkyrie")
             || itemName.contains("necron's blade")
             || itemName.contains("necrons blade")) {
-            witherShieldExpiresAt = clientTicks + WITHER_SHIELD_DURATION_TICKS;
-            KungDebugRecorder.event("custom-sounds", "scheduled wither-shield-expire tick=" + witherShieldExpiresAt);
+            if (SHIELD_TIMER.expire(System.nanoTime())) {
+                playWitherShieldExpire();
+            }
+            if (SHIELD_TIMER.start(System.nanoTime())) {
+                KungDebugRecorder.event("custom-sounds", "scheduled wither-shield-expire in=5s source=item-use-estimate");
+            }
         }
     }
 
@@ -211,8 +239,8 @@ public final class CustomSoundsFeature extends ConfigurableFeature<MiscConfig> i
         }
         String text = clean(message.getString());
         if (text.contains("wither shield")
-            && (text.contains("expired") || text.contains("ended") || text.contains("ran out"))) {
-            witherShieldExpiresAt = Long.MIN_VALUE;
+            && (text.contains("expired") || text.contains("ended") || text.contains("ran out"))
+            && SHIELD_TIMER.finish()) {
             playWitherShieldExpire();
         }
     }
@@ -246,35 +274,28 @@ public final class CustomSoundsFeature extends ConfigurableFeature<MiscConfig> i
             : config.customWitherShieldExpireSoundPitchHundredths(normalized);
         float volume = Math.clamp(volumeTenths / 10.0f, 0.0f, 5.0f);
         float pitch = Math.clamp(pitchHundredths / 100.0f, 0.25f, 3.0f);
-        CompletableFuture.runAsync(() -> playSound(normalized, volume, pitch), SOUND_EXECUTOR);
+        long generation = PLAYBACK_GENERATION.get();
+        long requestedAt = System.nanoTime();
+        CompletableFuture.runAsync(() -> playSound(normalized, volume, pitch, generation, requestedAt), SOUND_EXECUTOR);
     }
 
-    private static void playSound(String soundName, float volume, float pitch) {
+    private static void playSound(String soundName, float volume, float pitch, long generation, long requestedAt) {
         try {
             CachedSound sound = cachedSound(soundName);
-            if (sound == null || sound.pcm().length == 0) {
+            if (sound == null || sound.sample().mono().length == 0) {
+                KungDebugRecorder.event("custom-sounds", "file unavailable: " + soundName);
                 return;
             }
-            AudioFormat sourceFormat = sound.format();
-            float sampleRate = Math.clamp(sourceFormat.getSampleRate() * pitch, 8000.0f, 192000.0f);
-            AudioFormat playbackFormat = new AudioFormat(
-                sourceFormat.getEncoding(),
-                sampleRate,
-                sourceFormat.getSampleSizeInBits(),
-                sourceFormat.getChannels(),
-                sourceFormat.getFrameSize(),
-                sampleRate,
-                sourceFormat.isBigEndian()
-            );
-            try (SourceDataLine line = AudioSystem.getSourceDataLine(playbackFormat)) {
-                // Direct device playback has no world position, distance attenuation or Doppler shift.
-                line.open(playbackFormat);
-                line.start();
-                byte[] pcm = scaledPcm(sound.pcm(), volume);
-                line.write(pcm, 0, pcm.length);
-                line.drain();
+            synchronized (SOUND_PLAYER) {
+                if (generation != PLAYBACK_GENERATION.get() || System.nanoTime() - requestedAt > 1_000_000_000L) {
+                    KungDebugRecorder.event("custom-sounds", "discarded stale playback: " + soundName);
+                    return;
+                }
+                SOUND_PLAYER.play(sound.sample(), volume, pitch);
             }
-        } catch (IOException | UnsupportedAudioFileException | LineUnavailableException | IllegalArgumentException exception) {
+            KungDebugRecorder.event("custom-sounds", "play " + soundName + " volume=" + volume + " pitch=" + pitch);
+        } catch (IOException | UnsupportedAudioFileException | IllegalArgumentException exception) {
+            KungDebugRecorder.event("custom-sounds", "decode failed " + soundName + ": " + exception.getMessage());
             KungMod.LOGGER.warn("Failed to play custom sound {}.", soundName, exception);
         }
     }
@@ -304,30 +325,16 @@ public final class CustomSoundsFeature extends ConfigurableFeature<MiscConfig> i
             );
             try (AudioInputStream decoded = AudioSystem.getAudioInputStream(decodedFormat, input)) {
                 byte[] pcm = decoded.readAllBytes();
-                CachedSound next = new CachedSound(modified, pcm, decodedFormat);
+                CachedSound next = new CachedSound(modified,
+                    CustomSoundMixer.decodePcm(pcm, decodedFormat.getChannels(), decodedFormat.getSampleRate()));
                 SOUND_CACHE.put(normalized, next);
                 return next;
             }
         }
     }
 
-    private static byte[] scaledPcm(byte[] source, float volume) {
-        if (Math.abs(volume - 1.0f) < 0.001f) {
-            return source;
-        }
-        byte[] copy = Arrays.copyOf(source, source.length);
-        for (int index = 0; index + 1 < copy.length; index += 2) {
-            int sample = (short) ((copy[index] & 0xFF) | (copy[index + 1] << 8));
-            int scaled = Math.round(sample * volume);
-            scaled = Math.clamp(scaled, Short.MIN_VALUE, Short.MAX_VALUE);
-            copy[index] = (byte) (scaled & 0xFF);
-            copy[index + 1] = (byte) ((scaled >> 8) & 0xFF);
-        }
-        return copy;
-    }
-
     private static Path soundsDirectory() {
-        return KungConfig.configDirectory().resolve(SOUND_DIRECTORY_NAME);
+        return com.github.beng420.kung.runtime.KungPaths.fileLayout().soundsDirectory();
     }
 
     private static boolean enabled() {
@@ -360,7 +367,7 @@ public final class CustomSoundsFeature extends ConfigurableFeature<MiscConfig> i
         return (stripped == null ? "" : stripped).toLowerCase(Locale.ROOT);
     }
 
-    private record CachedSound(long modifiedAtMillis, byte[] pcm, AudioFormat format) {
+    private record CachedSound(long modifiedAtMillis, CustomSoundMixer.Sample sample) {
     }
 
     private enum CustomSoundEvent {

@@ -24,6 +24,10 @@ public final class ConfigRegressionTest {
         equal(100, defaults.dungeon.scale(), "missing map uses defaults");
         equal(100, defaults.dungeon.textScale(), "existing configs keep their map text size");
         equal(false, defaults.dungeon.mimicEspEnabled(), "mimic esp defaults off");
+        equal(false, defaults.dungeon.extraScoreMessagesEnabled(), "extra score messages default off for existing configs too");
+        equal(true, defaults.dungeon.mimicMessageEnabled(), "mimic subsetting defaults on");
+        equal(true, defaults.dungeon.princeMessageEnabled(), "prince subsetting defaults on");
+        equal(true, defaults.dungeon.batMessageEnabled(), "bat subsetting defaults on");
         equal(85, defaults.splits.scale(), "missing splits use defaults");
         equal(false, defaults.splits.enabled(), "splits master stays disabled by default");
         equal(SplitsConfig.TimeFormat.MINUTES, defaults.splits.format(), "existing splits retain minute format");
@@ -135,6 +139,10 @@ public final class ConfigRegressionTest {
             config.dungeon.setScale(250);
             config.dungeon.setTextScale(175);
             config.dungeon.setMimicEspEnabled(true);
+            config.dungeon.setExtraScoreMessagesEnabled(true);
+            config.dungeon.setMimicMessageEnabled(false);
+            config.dungeon.setPrinceMessageEnabled(false);
+            config.dungeon.setBatMessageEnabled(false);
             config.bloodRush.setEnabled(true);
             config.chatFilter.setNecron(false);
             config.splits.setY(123);
@@ -150,6 +158,10 @@ public final class ConfigRegressionTest {
             equal(250, roundTrip.dungeon.scale(), "map enlargement beyond old cap persists");
             equal(175, roundTrip.dungeon.textScale(), "map text size persists independently");
             equal(true, roundTrip.dungeon.mimicEspEnabled(), "mimic esp setter persists");
+            equal(true, roundTrip.dungeon.extraScoreMessagesEnabled(), "extra score master persists");
+            equal(false, roundTrip.dungeon.mimicMessageEnabled(), "mimic message switch persists");
+            equal(false, roundTrip.dungeon.princeMessageEnabled(), "prince message switch persists");
+            equal(false, roundTrip.dungeon.batMessageEnabled(), "bat message switch persists");
             equal(true, roundTrip.bloodRush.enabled(), "blood rush setter persists");
             equal(false, roundTrip.chatFilter.necron(), "filter setter persists");
             equal(123, roundTrip.splits.y(), "splits setter persists");

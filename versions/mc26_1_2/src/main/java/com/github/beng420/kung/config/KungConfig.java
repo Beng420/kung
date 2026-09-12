@@ -300,7 +300,7 @@ public final class KungConfig {
     }
 
     public static Path configDirectory() {
-        return FabricLoader.getInstance().getConfigDir().resolve("kung");
+        return com.github.beng420.kung.runtime.KungPaths.fileLayout().settingsDirectory();
     }
 
     private Path configFile() {

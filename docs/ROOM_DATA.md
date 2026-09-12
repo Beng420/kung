@@ -4,6 +4,21 @@ Bundled/canonical room data uses `known-rooms.json`.
 Kung can still import old `known-rooms.jsonl` files for migration, but active 26er profiles should store learned room data in JSON only.
 Runtime always loads bundled Jar room data. Local profile room data is an opt-in development/override layer behind the Dungeon Map `Local Data` setting, so stale files in a Modrinth profile cannot silently change normal player matching.
 
+Since 0.2.16, optional local/remote room files live under
+`config/kung/dungeon-data/` in the game profile. The old `kung-dungeon-scans/`
+directory migrates at startup; JAR resource paths keep their existing names.
+See [file storage](FILE_STORAGE.md) for the full write/migration inventory.
+
+## Metadata Reference
+
+The user-selected primary reference for room names, secret counts, shapes, crypts, and Prince metadata is the [Catacombs Rooms page on the Hypixel SkyBlock Wiki](https://hypixelskyblock.minecraft.wiki/w/Catacombs_Rooms). Use this page for metadata comparisons; Skyblocker room data is not the naming or secret-count authority for this project.
+
+The saved comparison table is [reference/catacombs-rooms.json](reference/catacombs-rooms.json). Its source, revision, interpretation notes, and readable table are documented in [CATACOMBS_ROOMS_REFERENCE.md](CATACOMBS_ROOMS_REFERENCE.md). Keep this reference separate from runtime `known-rooms.json`: it provides factual metadata for review, not observed room hashes or an automatic import into the mod.
+
+On September 11, 2026, the user confirmed the existing mod crypt totals for `Admin` (34) and `Buttons` (21). These are verified project values and remain unchanged. The wiki snapshot retains its original `[Confirm]` markers as source attribution; those markers do not make these two project values uncertain. `tools/check-room-crypts.mjs` checks both totals for missing entries and mismatches alongside the other crypt expectations, targeting the active `mc26_1_2` module only.
+
+The wiki marks the page as work in progress. Preserve duplicate rows and conflicting values for review rather than silently choosing one. In the saved September 11 reference, `Lava Pit` appears twice with 3 secrets in both rows but different crypt counts. There is no `Lava Pool` entry and the page supplies no Kung core/stable hashes. The locally learned `Lava Pool` core `-1005518830` therefore cannot be renamed to `Lava Pit`, or assigned its secret count, on name similarity alone; identify the actual room using in-game observations before changing runtime data.
+
 ## Canonical Format
 
 ```json
@@ -53,10 +68,13 @@ Runtime always loads bundled Jar room data. Local profile room data is an opt-in
 - `source`: where the hash came from, for auditing and future cleanup.
 - `crypts`: total crypt count for the room. Wiki Prince counts are included in this total and must not be added separately.
 - `prince`: whether this room can contain Prince. Do not infer it from crypt counts; for example, `Andesite` is audited as `crypts=0` and `prince=false`.
-- The map footer treats `crypts=0` as a known zero. It only shows `+?` when a scanned room is still unidentified or a room has an intentionally uncertain wiki value, currently `Admin` or `Buttons`.
+- The map footer treats `crypts=0` as a known zero. It shows `+?` when a scanned room is still unidentified. `Admin` (34 crypts) and `Buttons` (21 crypts) are user-confirmed totals and have no room-specific uncertainty exception.
 
 Canonical metadata rules:
 
+- `RARE` is a separate blue map type with ordinary room/door/clear mechanics. Eight matched Rare names use this type; legacy `NORMAL`/`UNKNOWN` records for those names are upgraded when loaded. Existing secrets, crypts, Prince flags and hashes stay unchanged. The duplicated wiki name `Lava Pit` was incorrectly applied to the bundled normal room: the user corrected this on 2026-09-12. Bundled `Lava Pit` and its existing aliases `Lava Skull`/`Lava Tomb` stay `NORMAL`; mistaken `RARE` imports and remote reports are repaired on read. The separately confirmed type-only Rare hash remains separate.
+- User-confirmed Rare core `-1005518830` is bundled as a type-only hint. Its locally saved name `Lava Pool` and 2 secrets remain unverified and are not imported into the bundled catalog. A type-only room renders blue with `?` until a room identity is known. Existing local/remote metadata can still supply its label without downgrading the confirmed blue type.
+- Learning accepts `rare`, for example `/kung room learn Example 2 rare`; `/kung room type rare` learns only the current room type and refreshes the map immediately.
 - `Blaze` is `PUZZLE` with `secrets=1`.
 - Puzzle rooms with no wiki-listed secrets, including `Ice Path`, use `secrets=0`.
 - `Deathmite` is `NORMAL` with `secrets=6`; learn legitimate 1x3/1x4 shapes with `/kung room learnmulti Deathmite`.

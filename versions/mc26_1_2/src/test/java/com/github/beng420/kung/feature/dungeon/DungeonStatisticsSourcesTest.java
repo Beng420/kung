@@ -1,0 +1,114 @@
+package com.github.beng420.kung.feature.dungeon;
+
+import static org.junit.Assert.*;
+
+import java.util.List;
+import java.util.UUID;
+import org.junit.Test;
+
+public final class DungeonStatisticsSourcesTest {
+    private static final UUID SELF = new UUID(0, 1);
+    private static final UUID TEAMMATE = new UUID(0, 2);
+
+    private static DungeonRunStats run() {
+        var stats = new DungeonRunStats();
+        stats.rememberSelf(TEAMMATE, "Awesomeness_Boy");
+        stats.rememberSelf(SELF, "Beng114");
+        return stats;
+    }
+
+    @Test public void personalIntegerBelongsToSelfRegardlessOfPreviousPartyRow() {
+        var stats = run();
+        stats.observeTabLine(null, "[50] Awesomeness_Boy (Mage 50)", TEAMMATE);
+        stats.observeTabLine(null, "Player Stats", null);
+        stats.observeTabLine(null, "§aSecrets Found: §f7", null);
+        stats.observeTabLine(null, "Secrets Found: 80.0%", null);
+        assertEquals(7, stats.playerStats(SELF).secretsFound());
+        assertFalse(stats.playerStats(TEAMMATE).hasSecretsFound());
+        assertEquals(80.0, stats.secretsPercent(), 0.001);
+        assertEquals(44, stats.displayedSecretsFound(55));
+        assertEquals(-1, stats.displayedSecretsFound(56));
+        assertEquals(-1, stats.partySecretsFound(stats.summaryPlayers()));
+        stats.observeTabLine(null, "Secrets Found: 6", null);
+        assertEquals(6, stats.playerStats(SELF).secretsFound());
+    }
+
+    @Test public void partyRoomAndQuotedSecretFieldsNeverCreditSelf() {
+        var stats = run();
+        stats.observeStatLine(null, "Secrets: 44/55");
+        stats.observeStatLine(null, "Party > Beng114: Secrets: 99/100");
+        stats.observeStatLine(null, "+1 Gold Essence 4/10 Secrets");
+        assertEquals(44, stats.partySecretsFound(stats.summaryPlayers()));
+        assertFalse(stats.playerStats(SELF).hasSecretsFound());
+        assertEquals(0, stats.roomSecretsFound(0, 0));
+        stats.observeStatLine(null, "Secrets: 43/55");
+        assertEquals(43, stats.partySecretsFound(stats.summaryPlayers()));
+    }
+
+    @Test public void exactSecretFieldGrammarKeepsCountersSeparate() {
+        assertEquals(12, DungeonSecretCounts.personal("Secrets Found: 12"));
+        assertEquals(-1, DungeonSecretCounts.personal("Secrets Found: 80.0%"));
+        assertEquals(-1, DungeonSecretCounts.personal("Party > Beng114: Secrets Found: 12"));
+        assertNull(DungeonSecretCounts.party("4/10 Secrets"));
+        assertNull(DungeonSecretCounts.party("Beng114 Secrets: 12/55"));
+        assertEquals(new DungeonSecretCounts.Fraction(12, 55), DungeonSecretCounts.party("Secrets: 12/55"));
+        assertEquals(44, DungeonSecretCounts.fromPercent(80.0, 55));
+        assertEquals(-1, DungeonSecretCounts.fromPercent(80.0, 56));
+        assertEquals(-1, DungeonSecretCounts.fromPercent(101, 55));
+    }
+
+    @Test public void loggedPartyEchoDoesNotRegisterPartyOrCreditADeath() {
+        var stats = run();
+        stats.observeMessage(null, "Party > [VIP+] guans: [Skyblocker] ☠ Bdlt was killed by Crypt Dreadlord and became a ghost.", 100L);
+        assertEquals(0, stats.deaths());
+        assertFalse(stats.isKnownDungeonPlayer("Party"));
+        assertNull(stats.dungeonPlayerUuid("Party"));
+        stats.observeTabLine(null, "Team Deaths: 1", null);
+        stats.observeMessage(null, "☠ Awesomeness_Boy died and became a ghost.", 200L);
+        stats.observeTabLine(null, "Team Deaths: 1", null);
+        assertEquals(1, stats.deaths());
+        assertEquals(1, stats.playerStats(TEAMMATE).deaths());
+        assertEquals(0, stats.playerStats(SELF).deaths());
+        stats.observeMessage(null, "☠ You died and became a ghost.", 300L, DungeonDeathTracker.MessageSource.CHAT);
+        assertEquals(1, stats.deaths());
+    }
+
+    @Test public void finalServerScoreWinsOverEstimateAndLaterGenericScore() {
+        var stats = run();
+        stats.observeStatLine(null, "Team Score: 301 (S+)");
+        assertEquals(301, stats.score());
+        assertEquals(301, stats.score(null, 55));
+        stats.observeStatLine(null, "Score: 298");
+        stats.observeStatLine(null, "Party > guans: Team Score: 400 (S+)");
+        assertEquals(301, stats.score());
+        stats.reset();
+        assertNotEquals(301, stats.score());
+    }
+
+    @Test public void onlyKnownPlayersOwnSyncReportsCanSupplyPersonalSecrets() {
+        var stats = run();
+        stats.observeTabLine(null, "Secrets Found: 7", null);
+        stats.mergeRemoteLivePlayers(List.of(
+            report("Party", 50, "Party", 10),
+            report("Awesomeness_Boy", 99, "Beng114", 10),
+            report("Beng114", 90, "Beng114", 10),
+            report("Awesomeness_Boy", -1, "Awesomeness_Boy", 11)));
+        assertFalse(stats.playerStats(TEAMMATE).hasSecretsFound());
+        assertEquals(7, stats.playerStats(SELF).secretsFound());
+        assertNull(stats.dungeonPlayerUuid("Party"));
+        stats.mergeRemoteLivePlayers(List.of(report("Awesomeness_Boy", 9, "Awesomeness_Boy", 12)));
+        assertEquals(9, stats.playerStats(TEAMMATE).secretsFound());
+        assertEquals(16, stats.partySecretsFound(stats.summaryPlayers()));
+    }
+
+    @Test public void missingRemoteCountsAreUnknownInsteadOfZero() {
+        var stats = run();
+        assertTrue(DungeonRunStats.playerStatsSummaryLine(stats.playerStats(TEAMMATE), 44).contains("?/44 Secrets"));
+        stats.observeTabLine(null, "Secrets Found: 0", null);
+        assertTrue(DungeonRunStats.playerStatsSummaryLine(stats.playerStats(SELF), 44).contains("0/44 Secrets"));
+    }
+
+    private static DungeonRoomDataSyncClient.LivePlayerReport report(String name, int count, String source, long time) {
+        return new DungeonRoomDataSyncClient.LivePlayerReport(name, count, 0, source, time);
+    }
+}

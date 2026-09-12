@@ -101,7 +101,7 @@ public enum KungUpdater {
                 return;
             }
 
-            Path source = Path.of(sourceValue);
+            Path source = com.github.beng420.kung.runtime.KungPaths.fileLayout().relocatedUpdateSource(Path.of(sourceValue));
             Path target = Path.of(targetValue);
             if (!Files.isRegularFile(source)) {
                 Files.deleteIfExists(marker);
@@ -510,7 +510,7 @@ public enum KungUpdater {
     }
 
     private static Path updateDirectory() {
-        return FabricLoader.getInstance().getGameDir().resolve("kung-updates");
+        return com.github.beng420.kung.runtime.KungPaths.fileLayout().updateDirectory();
     }
 
     private static Path pendingMarkerPath() {

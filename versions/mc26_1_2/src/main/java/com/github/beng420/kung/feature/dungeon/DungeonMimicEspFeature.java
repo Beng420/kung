@@ -59,6 +59,7 @@ public final class DungeonMimicEspFeature extends ConfigurableFeature<DungeonCon
     private final DungeonStateTracker tracker;
     private final DungeonMimicChestScanner chestScanner = new DungeonMimicChestScanner();
     private final DungeonMimicChestMemory chestMemory = new DungeonMimicChestMemory();
+    private final DungeonMimicStaticChests staticChests = new DungeonMimicStaticChests();
     private List<BlockPos> mimicChestPositions = List.of();
     private List<BlockPos> lastKnownMimicChestPositions = List.of();
     private Set<Integer> observedMimicEntityIds = Set.of();
@@ -73,6 +74,7 @@ public final class DungeonMimicEspFeature extends ConfigurableFeature<DungeonCon
     private String lastRenderLogState = "";
     private String lastLoggedState = "";
     private DungeonMapSnapshot.GridKey observedMimicMapRoom;
+    private String mimicMapReason = "no-candidates";
 
     public DungeonMimicEspFeature(DungeonStateTracker tracker) {
         super(config -> config.dungeon);
@@ -120,6 +122,7 @@ public final class DungeonMimicEspFeature extends ConfigurableFeature<DungeonCon
         }
 
         long nowTick = tracker.dungeonTick();
+        staticChests.prepare();
         chestScanner.tick(client.level, client.player.blockPosition(), nowTick);
         DungeonLiveMapWriter.CellKey playerRoom = currentPlayerRoom(client);
         boolean enteredNewRoom = playerRoom != null && !playerRoom.equals(lastPlayerRoom);
@@ -133,7 +136,7 @@ public final class DungeonMimicEspFeature extends ConfigurableFeature<DungeonCon
         mimicChestPositions = findMimicChests(client);
         observeOpenedMimicChest(client, previousChestPositions, mimicChestPositions, nowTick);
         DungeonLiveMapWriter.MatchRenderPlan renderPlan = tracker.renderPlan();
-        chestMemory.observe(mimicChestPositions, pos -> isAllowedMimicRoom(renderPlan, pos));
+        chestMemory.observe(mimicChestPositions, pos -> isAllowedMimicPosition(client, renderPlan, pos));
         lastKnownMimicChestPositions = chestMemory.positions();
         observeMimicRooms();
         observeMimicEntityState(client);
@@ -211,20 +214,23 @@ public final class DungeonMimicEspFeature extends ConfigurableFeature<DungeonCon
         return List.copyOf(result);
     }
 
-    private static boolean isMimicChest(
+    private boolean isMimicChest(
         Minecraft client,
         DungeonLiveMapWriter.MatchRenderPlan renderPlan,
         BlockPos pos
     ) {
         BlockState state = client.level.getBlockState(pos);
-        return isAllowedMimicRoom(renderPlan, pos) && state.is(Blocks.TRAPPED_CHEST);
+        return state.is(Blocks.TRAPPED_CHEST) && isAllowedMimicPosition(client, renderPlan, pos);
     }
 
-    private static boolean isAllowedMimicRoom(DungeonLiveMapWriter.MatchRenderPlan renderPlan, BlockPos pos) {
+    private boolean isAllowedMimicPosition(Minecraft client, DungeonLiveMapWriter.MatchRenderPlan renderPlan, BlockPos pos) {
         DungeonScanUtils.GridPosition grid = DungeonScanUtils.getRoomGridPosition(pos);
-        return isInsideDungeonGrid(grid)
-            && renderPlan.roomTypeAt(grid.gridX(), grid.gridZ()) != RoomType.TRAP
-            && !isKnownStaticTrappedChestRoom(renderPlan, grid.gridX(), grid.gridZ());
+        if (!isInsideDungeonGrid(grid) || renderPlan.roomTypeAt(grid.gridX(), grid.gridZ()) == RoomType.TRAP) return false;
+        var decision = staticChests.check(tracker, client.level, pos, tracker.dungeonTick());
+        // Existing room-wide exclusions remain only for variants without confirmed positions.
+        // Once a variant has a template, an additional chest in Buttons/Slime is a candidate too.
+        return !decision.fixed() && (decision.hasPattern()
+            || !isKnownStaticTrappedChestRoom(renderPlan, grid.gridX(), grid.gridZ()));
     }
 
     private static boolean isInsideDungeonGrid(DungeonScanUtils.GridPosition grid) {
@@ -257,6 +263,7 @@ public final class DungeonMimicEspFeature extends ConfigurableFeature<DungeonCon
         DungeonLiveMapWriter.MatchRenderPlan renderPlan = tracker.renderPlan();
         BlockPos pos = chestMemory.mapChest(chest -> roomKey(renderPlan, chest));
         if (pos == null) {
+            mimicMapReason = lastKnownMimicChestPositions.isEmpty() ? "no-candidates" : "ambiguous-candidate-rooms";
             forgetObservedMimicMapRoom("mimic-candidate-ambiguous");
             return;
         }
@@ -271,6 +278,7 @@ public final class DungeonMimicEspFeature extends ConfigurableFeature<DungeonCon
             );
         }
         observedMimicMapRoom = room;
+        mimicMapReason = "single-candidate-room";
         tracker.mapSnapshot().observeMimicRoom(
             grid.gridX(),
             grid.gridZ(),
@@ -301,7 +309,8 @@ public final class DungeonMimicEspFeature extends ConfigurableFeature<DungeonCon
         }
         DungeonLiveMapWriter.MatchRenderPlan renderPlan = tracker.renderPlan();
         for (BlockPos previous : previousPositions) {
-            if (currentPositions.contains(previous) || !playerInSameRoom(client, renderPlan, previous)) {
+            if (currentPositions.contains(previous) || !playerInSameRoom(client, renderPlan, previous)
+                || !isAllowedMimicPosition(client, renderPlan, previous)) {
                 continue;
             }
             if (!client.level.hasChunk(previous.getX() >> 4, previous.getZ() >> 4)
@@ -660,6 +669,8 @@ public final class DungeonMimicEspFeature extends ConfigurableFeature<DungeonCon
         tracker.mapSnapshot().clearMimicRooms("mimic-clear");
         chestScanner.clear();
         chestMemory.clear();
+        staticChests.clear();
+        mimicMapReason = "no-candidates";
         mimicChestPositions = List.of();
         lastKnownMimicChestPositions = List.of();
         observedMimicEntityIds = Set.of();
@@ -703,6 +714,9 @@ public final class DungeonMimicEspFeature extends ConfigurableFeature<DungeonCon
             + " killed=" + tracker.runStats().mimicKilled()
             + " chests=" + mimicChestPositions.size()
             + " known=" + lastKnownMimicChestPositions.size()
+            + " mapReason=" + mimicMapReason
+            + " mapRoom=" + (observedMimicMapRoom == null ? "none"
+                : observedMimicMapRoom.gridX() + "," + observedMimicMapRoom.gridZ())
             + " entities=" + observedMimicEntityIds.size()
             + " room=" + (lastPlayerRoom == null ? "none" : lastPlayerRoom.x() + "," + lastPlayerRoom.z())
             + " active=" + mimicEncounterActive

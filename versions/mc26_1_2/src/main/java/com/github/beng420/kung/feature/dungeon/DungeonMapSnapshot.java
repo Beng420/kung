@@ -530,7 +530,9 @@ public final class DungeonMapSnapshot {
             return next;
         }
         String name = previous.name() == null || previous.name().isBlank() ? next.name() : previous.name();
-        RoomType type = previous.type() == null || previous.type() == RoomType.UNKNOWN ? next.type() : previous.type();
+        RoomType type = previous.type() == null || previous.type() == RoomType.UNKNOWN
+            || (previous.type() == RoomType.NORMAL && next.type() == RoomType.RARE)
+            ? next.type() : previous.type();
         int secrets = Math.max(previous.secrets(), next.secrets());
         int crypts = Math.max(previous.crypts(), next.crypts());
         int roomSecretsMax = Math.max(previous.roomSecretsMax(), next.roomSecretsMax());

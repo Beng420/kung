@@ -54,7 +54,7 @@ public final class DungeonKnownRoomCatalog {
         Map.entry(canonicalNameKey("Withermancers"), new CanonicalRoomMetadata("Withermancer", RoomType.NORMAL, 4, 6, true)),
         Map.entry(canonicalNameKey("Dino Dig Site"), new CanonicalRoomMetadata("Dino Site", RoomType.NORMAL, 4, 4, false)),
         Map.entry(canonicalNameKey("Super Tall"), new CanonicalRoomMetadata("Supertall", RoomType.NORMAL, 6, 6, true)),
-        Map.entry(canonicalNameKey("Haning Vines"), new CanonicalRoomMetadata("Hanging Vines", RoomType.NORMAL, 1, 0, false)),
+        Map.entry(canonicalNameKey("Haning Vines"), new CanonicalRoomMetadata("Hanging Vines", RoomType.RARE, 1, 0, false)),
         Map.entry(canonicalNameKey("Rail Track"), new CanonicalRoomMetadata("Rails", RoomType.NORMAL, 9, 1, false)),
         Map.entry(canonicalNameKey("Lots of Floors"), new CanonicalRoomMetadata("Lots Of Floors", RoomType.NORMAL, 3, 1, false)),
         Map.entry(canonicalNameKey("Midas"), new CanonicalRoomMetadata("King Midas", RoomType.YELLOW, 0, 1, false)),
@@ -74,6 +74,12 @@ public final class DungeonKnownRoomCatalog {
         Map.entry(canonicalNameKey("Teleport Maze"), new CanonicalRoomMetadata("Teleport Maze", RoomType.PUZZLE, 0, 0, false)),
         Map.entry(canonicalNameKey("Boulder"), new CanonicalRoomMetadata("Boulder", RoomType.PUZZLE, 0, 0, false)),
         Map.entry(canonicalNameKey("Ice Path"), new CanonicalRoomMetadata("Ice Path", RoomType.PUZZLE, 0, 0, false))
+    );
+    // Exact Rare names from docs/reference/catacombs-rooms.json (wiki revision 795866).
+    // The ambiguous wiki Lava Pit name does not identify the bundled NORMAL room (user correction 2026-09-12).
+    private static final Set<String> RARE_ROOM_NAMES = canonicalNameSet(
+        "Vinny 8 Ball", "Pillars", "Sand Dragon", "Tombstone", "Stone Window",
+        "Mini Rail Track", "Trinity", "Hanging Vines"
     );
     private static final Set<String> LEGACY_PRINCE_ROOM_NAMES = canonicalNameSet(
         "Big Red Flag",
@@ -1769,9 +1775,28 @@ public final class DungeonKnownRoomCatalog {
         boolean prince
     ) {
         CanonicalRoomMetadata override = CANONICAL_METADATA_OVERRIDES.get(canonicalNameKey(name));
-        return override == null
+        CanonicalRoomMetadata metadata = override == null
             ? new CanonicalRoomMetadata(name, type, secrets, Math.max(0, crypts), prince)
             : override;
+        RoomType correctedType = canonicalRoomType(metadata.name(), metadata.type());
+        if (correctedType != metadata.type()) {
+            return new CanonicalRoomMetadata(
+                metadata.name(), correctedType, metadata.secrets(), metadata.crypts(), metadata.prince()
+            );
+        }
+        return metadata;
+    }
+
+    static RoomType canonicalRoomType(String name, RoomType type) {
+        if (type != RoomType.NORMAL && type != RoomType.UNKNOWN && type != RoomType.RARE) return type;
+        String key = canonicalNameKey(name);
+        CanonicalRoomMetadata alias = CANONICAL_METADATA_OVERRIDES.get(key);
+        String resolvedKey = alias == null ? key : canonicalNameKey(alias.name());
+        // Repair NORMAL -> RARE records written by the earlier name-only wiki import.
+        if (resolvedKey.equals("lavapit")) return RoomType.NORMAL;
+        if (type == RoomType.RARE) return type;
+        return RARE_ROOM_NAMES.contains(key) || (alias != null && alias.type() == RoomType.RARE)
+            ? RoomType.RARE : type;
     }
 
     private static LearnedRoom canonicalLearnedRoom(LearnedRoom room) {

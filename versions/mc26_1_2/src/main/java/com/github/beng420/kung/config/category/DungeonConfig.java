@@ -20,6 +20,10 @@ public final class DungeonConfig extends ConfigCategory {
     private boolean deathMessagesEnabled = false;
     private boolean deathMessagesShareTotalEnabled = false;
     private boolean deathMessagesShareIndividualEnabled = false;
+    private boolean extraScoreMessagesEnabled = false;
+    private boolean mimicMessageEnabled = true;
+    private boolean princeMessageEnabled = true;
+    private boolean batMessageEnabled = true;
     private boolean debugRoomCrypts = false;
     private boolean debugRoomMatches = false;
     private boolean localRoomDataEnabled = false;
@@ -63,6 +67,14 @@ public final class DungeonConfig extends ConfigCategory {
     public void setDeathMessagesShareTotalEnabled(boolean value) { deathMessagesShareTotalEnabled = value; save(); }
     public boolean deathMessagesShareIndividualEnabled() { return deathMessagesShareIndividualEnabled; }
     public void setDeathMessagesShareIndividualEnabled(boolean value) { deathMessagesShareIndividualEnabled = value; save(); }
+    public boolean extraScoreMessagesEnabled() { return extraScoreMessagesEnabled; }
+    public void setExtraScoreMessagesEnabled(boolean value) { extraScoreMessagesEnabled = value; save(); }
+    public boolean mimicMessageEnabled() { return mimicMessageEnabled; }
+    public void setMimicMessageEnabled(boolean value) { mimicMessageEnabled = value; save(); }
+    public boolean princeMessageEnabled() { return princeMessageEnabled; }
+    public void setPrinceMessageEnabled(boolean value) { princeMessageEnabled = value; save(); }
+    public boolean batMessageEnabled() { return batMessageEnabled; }
+    public void setBatMessageEnabled(boolean value) { batMessageEnabled = value; save(); }
     public boolean debugRoomCrypts() { return debugRoomCrypts; }
     public void setDebugRoomCrypts(boolean value) { debugRoomCrypts = value; save(); }
     public boolean debugRoomMatches() { return debugRoomMatches; }

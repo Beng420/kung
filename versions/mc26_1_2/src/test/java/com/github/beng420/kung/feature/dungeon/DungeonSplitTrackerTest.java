@@ -5,11 +5,310 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
+import com.github.beng420.kung.util.ServerTickSequence;
 import java.util.Arrays;
+import java.util.ArrayList;
 import java.util.concurrent.atomic.AtomicLong;
 import org.junit.Test;
 
 public final class DungeonSplitTrackerTest {
+    @Test
+    public void additionalBundlePingsBeforeACompleteStallCannotPrepayItsLostTime() {
+        AtomicLong clock = new AtomicLong();
+        var diagnostics = new ArrayList<String>();
+        DungeonSplitTracker tracker = new DungeonSplitTracker(clock::get, diagnostics::add);
+        tracker.startRun(0L, 7, true);
+        ServerTickSequence sequence = new ServerTickSequence();
+        for (int tick = 1; tick <= 60; tick++) {
+            clock.set(tick * 50L);
+            if (sequence.accept(-tick, false)) tracker.serverTick(clock.get());
+            if (sequence.accept(1000 + tick, true)) tracker.serverTick(clock.get());
+        }
+        clock.set(6_000L); // No server progress for a full three seconds.
+        assertEquals(3_000L, tracker.currentTotalServerDurationMillis());
+        assertEquals(-1L, DungeonSplitsOverlayFeature.settledTotalLostTimeMillis(tracker));
+        tracker.mark("Blood Clear", 0L);
+        assertEquals(3_000L, DungeonSplitsOverlayFeature.settledTotalLostTimeMillis(tracker));
+        assertTrue(diagnostics.stream().anyMatch(line -> line.contains("phaseTicks=60 maxAppliedGapMs=3000")
+            && line.contains("phaseStartTicks=0 totalTicks=60 boundary=\"manual:Blood Clear\"")));
+    }
+
+    @Test
+    public void aKnownStreamCanStallFromTheStartOfTheRun() {
+        AtomicLong clock = new AtomicLong();
+        DungeonSplitTracker tracker = new DungeonSplitTracker(clock::get);
+        tracker.serverTick(clock.get()); // Observed in this instance's start room.
+        tracker.startRun(0L, 7, true);
+        clock.set(3_000L);
+        tracker.mark("Blood Clear", 0L);
+        assertEquals(0L, tracker.completedSplits().getFirst().serverSplitDurationMillis());
+        assertEquals(3_000L, DungeonSplitsOverlayFeature.settledTotalLostTimeMillis(tracker));
+        tracker.reset();
+        tracker.startRun(0L, 7, true);
+        assertEquals(-1L, tracker.currentTotalServerDurationMillis());
+    }
+
+    @Test
+    public void sixtySecondsAtTenTpsLosesThirtySecondsIncludingDeliveryBatches() {
+        for (int batchSize : new int[] {1, 10, 100, 600}) {
+            AtomicLong clock = new AtomicLong();
+            DungeonSplitTracker tracker = new DungeonSplitTracker(clock::get);
+            ServerTickSequence sequence = new ServerTickSequence();
+            tracker.startRun(0L, 7, true);
+            for (int endTick = batchSize; endTick <= 600; endTick += batchSize) {
+                clock.set(endTick * 100L);
+                for (int tick = endTick - batchSize + 1; tick <= endTick; tick++) {
+                    for (int id : new int[] {-tick, 0, -tick}) {
+                        if (sequence.accept(id)) tracker.serverTick(clock.get());
+                    }
+                }
+                assertEquals(-1L, DungeonSplitsOverlayFeature.settledTotalLostTimeMillis(tracker));
+            }
+            tracker.mark("Blood Clear", 0L);
+            assertEquals(60_000L, tracker.completedSplits().getFirst().splitDurationMillis());
+            assertEquals(30_000L, tracker.completedSplits().getFirst().serverSplitDurationMillis());
+            assertEquals(30_000L, DungeonSplitsOverlayFeature.settledTotalLostTimeMillis(tracker));
+        }
+    }
+
+    @Test
+    public void resumedPacketsAfterAStallOnlyCreditTheTicksThatActuallyArrive() {
+        AtomicLong clock = new AtomicLong();
+        DungeonSplitTracker tracker = new DungeonSplitTracker(clock::get);
+        tracker.startRun(0L, 7, true);
+        advanceTicks(tracker, clock, 20, 1_000L);
+        clock.set(4_000L);
+        assertEquals(1_000L, tracker.currentTotalServerDurationMillis());
+        clock.set(5_000L);
+        for (int tick = 0; tick < 20; tick++) tracker.serverTick(clock.get());
+        tracker.mark("Blood Clear", 0L);
+        assertEquals(2_000L, tracker.completedSplits().getFirst().serverSplitDurationMillis());
+        assertEquals(3_000L, DungeonSplitsOverlayFeature.settledTotalLostTimeMillis(tracker));
+        var settled = tracker.completedSplits().getFirst();
+        for (int tick = 0; tick < 60; tick++) tracker.serverTick(clock.get());
+        clock.set(8_000L);
+        tracker.mark("Portal Entry", 0L);
+        assertEquals(settled, tracker.completedSplits().getFirst());
+        assertEquals(3_000L, DungeonSplitsOverlayFeature.settledTotalLostTimeMillis(tracker));
+    }
+
+    @Test
+    public void healthyTwentyTpsRemainsLosslessWhenDeliveryIsDelayedForThreeSeconds() {
+        AtomicLong clock = new AtomicLong();
+        DungeonSplitTracker tracker = new DungeonSplitTracker(clock::get);
+        tracker.startRun(0L, 7, true);
+        advanceTicks(tracker, clock, 20, 1_000L);
+        clock.set(4_000L);
+        assertEquals(1_000L, tracker.currentTotalServerDurationMillis());
+        for (int tick = 0; tick < 60; tick++) tracker.serverTick(clock.get());
+        advanceTicks(tracker, clock, 1120, 60_000L);
+        tracker.mark("Blood Clear", 0L);
+        assertEquals(60_000L, tracker.completedSplits().getFirst().serverSplitDurationMillis());
+        assertEquals(0L, DungeonSplitsOverlayFeature.settledTotalLostTimeMillis(tracker));
+    }
+
+    @Test
+    public void clockQueriesCannotChangeTheResultOrConsumePendingLoss() {
+        for (boolean sample : new boolean[] {false, true}) {
+            AtomicLong clock = new AtomicLong();
+            DungeonSplitTracker tracker = new DungeonSplitTracker(clock::get);
+            tracker.startRun(0L, 7, true);
+            for (int tick = 1; tick <= 60; tick++) {
+                clock.set(tick * 50L);
+                tracker.serverTick(clock.get());
+                if (sample) tracker.currentTimings();
+            }
+            clock.set(6_000L);
+            tracker.mark("Blood Clear", 0L);
+            assertEquals(3_000L, DungeonSplitsOverlayFeature.settledTotalLostTimeMillis(tracker));
+        }
+    }
+
+    @Test
+    public void zeroPingsAndRepeatedTicksCannotInflateHealthyOrSlowSplits() {
+        AtomicLong clock = new AtomicLong();
+        DungeonSplitTracker tracker = new DungeonSplitTracker(clock::get);
+        ServerTickSequence sequence = new ServerTickSequence();
+        tracker.startRun(0L, 7, true);
+        for (int tick = 1; tick <= 300; tick++) {
+            // First phase: 200 ticks in 10 s; second phase: 100 ticks in 10 s.
+            clock.set(tick <= 200 ? tick * 50L : 10_000L + (tick - 200) * 100L);
+            for (int id : new int[] {-tick, 0, -tick, 0}) {
+                if (sequence.accept(id)) tracker.serverTick(clock.get());
+            }
+            if (tick == 200) tracker.mark("Blood Clear", 0L);
+        }
+        tracker.mark("Portal Entry", 0L);
+        var open = tracker.completedSplits().getFirst();
+        var clear = tracker.completedSplits().getLast();
+        assertEquals(10_000L, open.serverSplitDurationMillis());
+        assertEquals(5_000L, clear.serverSplitDurationMillis());
+        assertEquals(15_000L, clear.serverTotalDurationMillis());
+        assertEquals(5_000L, DungeonSplitsOverlayFeature.settledTotalLostTimeMillis(tracker));
+    }
+
+    @Test
+    public void extraBundlePingsAreRejectedBeforeClockMeasurement() {
+        AtomicLong clock = new AtomicLong();
+        var diagnostics = new ArrayList<String>();
+        DungeonSplitTracker tracker = new DungeonSplitTracker(clock::get, diagnostics::add);
+        tracker.startRun(0L, 7, false);
+        ServerTickSequence sequence = new ServerTickSequence();
+        for (int tick = 1; tick <= 723; tick++) {
+            clock.set(tick * 50L);
+            if (sequence.accept(-tick, false)) tracker.serverTick(clock.get());
+            if (tick <= 117 && sequence.accept(1000 + tick, true)) tracker.serverTick(clock.get());
+        }
+        var live = tracker.currentTimings();
+        assertEquals(36_150L, live.splitMillis());
+        assertEquals(36_150L, live.serverSplitMillis());
+        assertEquals(live.totalMillis(), live.serverTotalMillis());
+        tracker.observeMessage("The BLOOD DOOR has been opened!", 0L);
+        var bloodOpen = tracker.completedSplits().getFirst();
+        assertEquals(live.serverSplitMillis(), bloodOpen.serverSplitDurationMillis());
+        assertEquals(live.serverTotalMillis(), bloodOpen.serverTotalDurationMillis());
+        assertTrue(diagnostics.stream().anyMatch(line -> line.contains("phaseStartTicks=0 totalTicks=723")));
+    }
+
+    @Test
+    public void acceptedTicksStayInTheirPhaseEvenWhenItsNominalTickTimeExceedsWallTime() {
+        AtomicLong clock = new AtomicLong();
+        DungeonSplitTracker tracker = new DungeonSplitTracker(clock::get);
+        tracker.startRun(0L, 7, true);
+        advanceTicks(tracker, clock, 300, 10_000L);
+        tracker.mark("Blood Clear", 0L);
+        advanceTicks(tracker, clock, 100, 20_000L);
+        tracker.mark("Portal Entry", 0L);
+        assertEquals(15_000L, tracker.completedSplits().getFirst().serverSplitDurationMillis());
+        assertEquals(5_000L, tracker.completedSplits().getLast().serverSplitDurationMillis());
+        assertEquals(20_000L, tracker.currentTotalServerDurationMillis());
+        assertEquals(0L, DungeonSplitsOverlayFeature.settledTotalLostTimeMillis(tracker));
+    }
+
+    @Test
+    public void catchUpInNextPhaseChangesTotalLossOnlyWhenThatPhaseSettles() {
+        AtomicLong clock = new AtomicLong();
+        DungeonSplitTracker tracker = new DungeonSplitTracker(clock::get);
+        tracker.startRun(0L, 7, true);
+        advanceTicks(tracker, clock, 100, 10_000L);
+        tracker.mark("Blood Clear", 0L);
+        var open = tracker.completedSplits().getFirst();
+        advanceTicks(tracker, clock, 300, 20_000L);
+        var live = tracker.currentTimings();
+        assertEquals(15_000L, live.serverSplitMillis());
+        assertEquals(20_000L, live.serverTotalMillis());
+        assertEquals(5_000L, DungeonSplitsOverlayFeature.settledTotalLostTimeMillis(tracker));
+        tracker.mark("Portal Entry", 0L);
+        var clear = tracker.completedSplits().getLast();
+        assertEquals(15_000L, clear.serverSplitDurationMillis());
+        assertEquals(open, tracker.completedSplits().getFirst());
+        assertEquals(0L, DungeonSplitsOverlayFeature.settledTotalLostTimeMillis(tracker));
+    }
+
+    @Test
+    public void delayedTickBatchRecoversWithinItsPhaseWithoutFabricatingLag() {
+        AtomicLong clock = new AtomicLong();
+        DungeonSplitTracker tracker = new DungeonSplitTracker(clock::get);
+        tracker.startRun(0L, 7, true);
+        for (int batch = 1; batch <= 100; batch++) {
+            clock.set(batch * 100L);
+            tracker.serverTick(clock.get());
+            tracker.serverTick(clock.get());
+        }
+        tracker.mark("Blood Clear", 0L);
+        assertEquals(10_000L, tracker.completedSplits().getFirst().serverSplitDurationMillis());
+        assertEquals(0L, DungeonSplitsOverlayFeature.settledTotalLostTimeMillis(tracker));
+    }
+
+    @Test
+    public void wipeFreezesCountedClocksAndNextRunHasNoTickCredit() {
+        AtomicLong clock = new AtomicLong();
+        DungeonSplitTracker tracker = new DungeonSplitTracker(clock::get);
+        tracker.startRun(0L, 7, true);
+        advanceTicks(tracker, clock, 300, 10_000L);
+        tracker.observeMessage("Team Score: 11 (D)", 0L);
+        assertEquals(15_000L, tracker.stoppedCurrentSplit().serverSplitDurationMillis());
+        assertEquals(15_000L, tracker.currentTotalServerDurationMillis());
+        clock.set(30_000L);
+        tracker.serverTick(clock.get());
+        assertEquals(15_000L, tracker.currentTotalServerDurationMillis());
+        tracker.startRun(0L, 1, false);
+        assertEquals(-1L, tracker.currentTotalServerDurationMillis());
+        advanceTicks(tracker, clock, 100, 40_000L);
+        tracker.stopRun();
+        assertEquals(5_000L, tracker.currentTotalServerDurationMillis());
+        assertEquals(5_000L, DungeonSplitsOverlayFeature.settledTotalLostTimeMillis(tracker));
+    }
+
+    private static void advanceTicks(DungeonSplitTracker tracker, AtomicLong clock, int ticks, long endMillis) {
+        long start = clock.get();
+        for (int tick = 1; tick <= ticks; tick++) {
+            clock.set(start + (endMillis - start) * tick / ticks);
+            tracker.serverTick(clock.get());
+            var timing = tracker.currentTimings();
+            assertEquals(0L, timing.serverSplitMillis() % 50L);
+            assertEquals(0L, timing.serverTotalMillis() % 50L);
+        }
+    }
+
+    @Test
+    public void missingTickStreamDoesNotLabelAllElapsedTimeAsLag() {
+        AtomicLong clock = new AtomicLong();
+        DungeonSplitTracker tracker = new DungeonSplitTracker(clock::get);
+        tracker.startRun(0L, 7, true);
+        clock.set(10_000L);
+        tracker.mark("Blood Clear", 0L);
+        var bloodOpen = tracker.completedSplits().getLast();
+        assertEquals(-1L, bloodOpen.serverSplitDurationMillis());
+        assertEquals(-1L, bloodOpen.serverTotalDurationMillis());
+        assertEquals("", DungeonSplitsOverlayFeature.lostTimeSuffix(bloodOpen.splitDurationMillis(), bloodOpen.serverSplitDurationMillis()));
+        assertEquals(-1L, DungeonSplitsOverlayFeature.settledTotalLostTimeMillis(tracker));
+        tracker.stopRun();
+        assertEquals(-1L, DungeonSplitsOverlayFeature.settledTotalLostTimeMillis(tracker));
+    }
+
+    @Test
+    public void maxorDialogueAtTwentyTpsAddsEqualWallAndServerTimeWithoutLoss() {
+        AtomicLong clock = new AtomicLong();
+        var diagnostics = new ArrayList<String>();
+        DungeonSplitTracker tracker = new DungeonSplitTracker(clock::get, diagnostics::add);
+        tracker.startRun(0L, 7, true);
+        tracker.mark("Maxor", 0L);
+        for (int tick = 1; tick <= 200; tick++) {
+            clock.set(tick * 50L);
+            tracker.serverTick(clock.get());
+            if (tick == 100) {
+                assertFalse(tracker.observeMessage("[BOSS] Maxor: I'M TOO YOUNG TO DIE AGAIN!", 0L));
+                assertEquals("Maxor", tracker.currentSplitName());
+            }
+        }
+        assertTrue(tracker.observeMessage("[BOSS] Storm: Pathetic Maxor, just like expected.", 0L));
+        var maxor = tracker.completedSplits().getLast();
+        assertEquals("Maxor", maxor.name());
+        assertEquals(10_000L, maxor.splitDurationMillis());
+        assertEquals(10_000L, maxor.serverSplitDurationMillis());
+        assertEquals("", DungeonSplitsOverlayFeature.lostTimeSuffix(maxor.splitDurationMillis(), maxor.serverSplitDurationMillis()));
+        assertTrue(diagnostics.stream().anyMatch(line -> line.contains("phase-end name=Maxor wallMs=10000 serverMs=10000")
+            && line.contains("phaseTicks=200 maxAppliedGapMs=50")));
+        clock.set(20_000L);
+        assertEquals(maxor, tracker.completedSplits().getLast());
+    }
+
+    @Test
+    public void aSlowTickStreamDuringDialogueStillCountsMeasuredLoss() {
+        AtomicLong clock = new AtomicLong();
+        DungeonSplitTracker tracker = new DungeonSplitTracker(clock::get);
+        tracker.startRun(0L, 7, true);
+        tracker.mark("Maxor", 0L);
+        for (int tick = 1; tick <= 100; tick++) {
+            clock.set(tick * 100L);
+            tracker.serverTick(clock.get());
+        }
+        tracker.observeMessage("[BOSS] Storm: Pathetic Maxor, just like expected.", 0L);
+        var maxor = tracker.completedSplits().getLast();
+        assertEquals("-5.0s", DungeonSplitsOverlayFeature.lostTimeSuffix(maxor.splitDurationMillis(), maxor.serverSplitDurationMillis()));
+    }
+
     @Test
     public void startRoomFloorMetadataSurvivesTheTimerResetWhenCountdownHasNoFloor() {
         AtomicLong clock = new AtomicLong(1_000L);
@@ -71,7 +370,7 @@ public final class DungeonSplitTrackerTest {
         AtomicLong clock = new AtomicLong();
         DungeonSplitTracker tracker = new DungeonSplitTracker(clock::get);
         tracker.startRun(0L, 7, true);
-        for (int tick = 0; tick < 1100; tick++) tracker.serverTick(0L);
+        advanceTicks(tracker, clock, 1100, 55_000L);
         clock.set(57_600L);
         // Actual trace: a wipe before Blood prints the result score without any boss banner.
         assertTrue(tracker.observeMessage("Team Score: 11 (D)", 0L));

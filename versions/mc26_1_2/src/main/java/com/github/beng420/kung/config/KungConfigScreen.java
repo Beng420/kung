@@ -710,6 +710,28 @@ public final class KungConfigScreen extends Screen {
                 )
             ),
             new FeatureEntry(
+                "Extra Score Messages",
+                config.dungeon::extraScoreMessagesEnabled,
+                () -> config.dungeon.setExtraScoreMessagesEnabled(!config.dungeon.extraScoreMessagesEnabled()),
+                List.of(
+                    SettingEntry.toggle(
+                        "Mimic",
+                        config.dungeon::mimicMessageEnabled,
+                        () -> config.dungeon.setMimicMessageEnabled(!config.dungeon.mimicMessageEnabled())
+                    ),
+                    SettingEntry.toggle(
+                        "Prince",
+                        config.dungeon::princeMessageEnabled,
+                        () -> config.dungeon.setPrinceMessageEnabled(!config.dungeon.princeMessageEnabled())
+                    ),
+                    SettingEntry.toggle(
+                        "Bat",
+                        config.dungeon::batMessageEnabled,
+                        () -> config.dungeon.setBatMessageEnabled(!config.dungeon.batMessageEnabled())
+                    )
+                )
+            ),
+            new FeatureEntry(
                 "Crypts",
                 () -> config.dungeon.debugRoomCrypts()
                     || config.dungeon.cryptProgressPartyMessageEnabled()

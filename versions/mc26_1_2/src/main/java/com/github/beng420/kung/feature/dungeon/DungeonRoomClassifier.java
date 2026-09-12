@@ -79,7 +79,7 @@ public final class DungeonRoomClassifier {
         try (Writer writer = Files.newBufferedWriter(file, StandardCharsets.UTF_8)) {
             properties.store(
                 writer,
-                "Kung dungeon scan room type hints. Format: coreHash=ROOM_TYPE. Types: START, NORMAL, YELLOW, PUZZLE, BLOOD, FAIRY, TRAP, UNKNOWN."
+                "Kung dungeon scan room type hints. Format: coreHash=ROOM_TYPE. Types: START, NORMAL, RARE, YELLOW, PUZZLE, BLOOD, FAIRY, TRAP, UNKNOWN."
             );
         }
     }
@@ -113,7 +113,7 @@ public final class DungeonRoomClassifier {
         try (Writer writer = Files.newBufferedWriter(file, StandardCharsets.UTF_8)) {
             properties.store(
                 writer,
-                "Kung dungeon scan room type hints. Format: coreHash=ROOM_TYPE. Types: START, NORMAL, YELLOW, PUZZLE, BLOOD, FAIRY, TRAP, UNKNOWN."
+                "Kung dungeon scan room type hints. Format: coreHash=ROOM_TYPE. Types: START, NORMAL, RARE, YELLOW, PUZZLE, BLOOD, FAIRY, TRAP, UNKNOWN."
             );
         }
     }
@@ -171,7 +171,9 @@ public final class DungeonRoomClassifier {
         for (String key : properties.stringPropertyNames()) {
             int coreHash = Integer.parseInt(key.trim());
             RoomType roomType = RoomType.valueOf(properties.getProperty(key).trim().toUpperCase());
-            roomTypes.put(coreHash, roomType);
+            // Old profiles saved rare rooms as NORMAL before RARE existed.
+            roomTypes.merge(coreHash, roomType,
+                (previous, next) -> previous == RoomType.RARE && next == RoomType.NORMAL ? previous : next);
         }
     }
 
@@ -184,7 +186,7 @@ public final class DungeonRoomClassifier {
         try (Writer writer = Files.newBufferedWriter(file, StandardCharsets.UTF_8)) {
             properties.store(
                 writer,
-                "Kung dungeon scan room type hints. Format: coreHash=ROOM_TYPE. Types: START, NORMAL, YELLOW, PUZZLE, BLOOD, FAIRY, TRAP, UNKNOWN."
+                "Kung dungeon scan room type hints. Format: coreHash=ROOM_TYPE. Types: START, NORMAL, RARE, YELLOW, PUZZLE, BLOOD, FAIRY, TRAP, UNKNOWN."
             );
         }
     }

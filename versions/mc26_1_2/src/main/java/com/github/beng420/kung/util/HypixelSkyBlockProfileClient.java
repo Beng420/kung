@@ -16,7 +16,9 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.EnumMap;
+import java.util.HashMap;
 import java.util.Locale;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
 public final class HypixelSkyBlockProfileClient {
@@ -26,17 +28,27 @@ public final class HypixelSkyBlockProfileClient {
         URI.create("https://api.minecraftservices.com/minecraft/profile/lookup/name/");
     private static final URI HYPIXEL_PLAYER_API = URI.create("https://api.hypixel.net/v2/player");
     private static final URI HYPIXEL_PROFILES_API = URI.create("https://api.hypixel.net/v2/skyblock/profiles");
-    private static final URI ADJECTILS_PLAYER_API =
-        URI.create("https://adjectilsbackend.adjectivenoun3215.workers.dev/player");
     private static final URI ADJECTILS_PROFILES_API =
         URI.create("https://adjectilsbackend.adjectivenoun3215.workers.dev/v2/skyblock/profiles");
     private static final int API_ATTEMPTS = 3;
+    // Bonzo / Catacombs Explorer is Epic. API stacks count cumulative syphoned shards.
+    private static final int[] EXPLORER_SHARD_THRESHOLDS = {1, 2, 4, 6, 9, 12, 16, 20, 25, 32};
 
     private final HttpClient httpClient = HttpClient.newBuilder()
         .connectTimeout(Duration.ofSeconds(5))
         .build();
 
     private HypixelSkyBlockProfileClient() {
+    }
+
+    /** Shared by the chat commands and calculator screen, including their fallback policy. */
+    public CompletableFuture<ProfileResult> loadCalculatorPlayer(String username) {
+        if (!KungConfig.get().misc.directHypixelApiEnabled()) {
+            return loadPlayerFromAdjectils(username);
+        }
+        return loadPlayer(username).thenCompose(result -> result.success()
+            ? CompletableFuture.completedFuture(result)
+            : loadPlayerFromAdjectils(username));
     }
 
     public CompletableFuture<ProfileResult> loadPlayer(String username) {
@@ -52,7 +64,8 @@ public final class HypixelSkyBlockProfileClient {
             return CompletableFuture.completedFuture(ProfileResult.error("invalid username"));
         }
         return resolveUsername(normalized)
-            .thenCompose(profile -> loadHypixel(profile, key));
+            .thenCompose(profile -> loadHypixel(profile, key))
+            .exceptionally(throwable -> ProfileResult.error(shortError(throwable)));
     }
 
     public CompletableFuture<SecretResult> loadTotalSecrets(String username) {
@@ -107,16 +120,16 @@ public final class HypixelSkyBlockProfileClient {
     }
 
     private CompletableFuture<ProfileResult> loadHypixel(MinecraftProfile profile, String apiKey) {
-        CompletableFuture<JsonObject> playerFuture = loadHypixelObject(HYPIXEL_PLAYER_API, "uuid", profile.uuid(), apiKey);
-        CompletableFuture<JsonObject> profilesFuture = loadHypixelObject(HYPIXEL_PROFILES_API, "uuid", profile.uuid(), apiKey);
-        return playerFuture.thenCombine(profilesFuture, (playerRoot, profilesRoot) -> parse(profile, playerRoot, profilesRoot))
+        return loadHypixelObject(HYPIXEL_PROFILES_API, "uuid", profile.uuid(), apiKey)
+            .thenApply(profilesRoot -> parse(profile, new JsonObject(), profilesRoot).withSource("hypixel"))
             .exceptionally(throwable -> ProfileResult.error(shortError(throwable)));
     }
 
     private CompletableFuture<ProfileResult> loadAdjectils(MinecraftProfile profile) {
-        CompletableFuture<JsonObject> playerFuture = loadAdjectilsObject(ADJECTILS_PLAYER_API, "uuid", profile.uuid());
-        CompletableFuture<JsonObject> profilesFuture = loadAdjectilsObject(ADJECTILS_PROFILES_API, "uuid", profile.uuid());
-        return playerFuture.thenCombine(profilesFuture, (playerRoot, profilesRoot) -> parse(profile, playerRoot, profilesRoot));
+        // The calculator needs only profiles. An unrelated player/stats request must
+        // not delay or prevent displaying valid dungeon XP.
+        return loadAdjectilsObject(ADJECTILS_PROFILES_API, "uuid", profile.uuid())
+            .thenApply(profilesRoot -> parse(profile, new JsonObject(), profilesRoot).withSource("adjectils"));
     }
 
     private CompletableFuture<JsonObject> loadAdjectilsObject(URI baseUri, String parameter, String value) {
@@ -257,6 +270,13 @@ public final class HypixelSkyBlockProfileClient {
     }
 
     private ProfileResult parse(MinecraftProfile minecraftProfile, JsonObject playerRoot, JsonObject profilesRoot) {
+        return parseProfiles(minecraftProfile.uuid(), minecraftProfile.name(), playerRoot, profilesRoot);
+    }
+
+    static ProfileResult parseProfiles(String uuid, String name, JsonObject playerRoot, JsonObject profilesRoot) {
+        if (profilesRoot == null || !bool(profilesRoot, "success")) {
+            return ProfileResult.error("Profile API returned no successful data");
+        }
         int secrets = totalSecrets(playerRoot);
         JsonElement profilesElement = profilesRoot.get("profiles");
         if (profilesElement == null || !profilesElement.isJsonArray()) {
@@ -264,9 +284,10 @@ public final class HypixelSkyBlockProfileClient {
         }
 
         java.util.ArrayList<ProfileData> profiles = new java.util.ArrayList<>();
-        int selectedIndex = 0;
-        long bestLastSave = Long.MIN_VALUE;
-        String memberKey = minecraftProfile.uuid().replace("-", "").toLowerCase(Locale.ROOT);
+        int selectedIndex = -1;
+        int fallbackIndex = 0;
+        double bestDungeonXp = -1.0;
+        String memberKey = uuid.replace("-", "").toLowerCase(Locale.ROOT);
         for (JsonElement element : profilesElement.getAsJsonArray()) {
             if (element == null || !element.isJsonObject()) {
                 continue;
@@ -279,18 +300,20 @@ public final class HypixelSkyBlockProfileClient {
             ProfileData profile = parseProfile(profileObject, member);
             int index = profiles.size();
             profiles.add(profile);
-            long lastSave = (long) number(member, "last_save", 0.0);
-            if (profile.selected()) {
+            if (profile.selected() && selectedIndex < 0) {
                 selectedIndex = index;
-            } else if (profiles.size() == 1 || lastSave > bestLastSave) {
-                bestLastSave = lastSave;
-                selectedIndex = index;
+            }
+            // last_save is absent from current responses. Never let a later empty profile
+            // replace selected=true; without that flag use the strongest dungeon profile.
+            if (profile.totalDungeonXp() > bestDungeonXp) {
+                bestDungeonXp = profile.totalDungeonXp();
+                fallbackIndex = index;
             }
         }
         if (profiles.isEmpty()) {
             return ProfileResult.error("no SkyBlock profile found");
         }
-        return ProfileResult.ok(new PlayerData(minecraftProfile.name(), profiles, selectedIndex), secrets);
+        return ProfileResult.ok(new PlayerData(name, profiles, selectedIndex >= 0 ? selectedIndex : fallbackIndex), secrets);
     }
 
     private static int totalSecrets(JsonObject playerRoot) {
@@ -298,7 +321,7 @@ public final class HypixelSkyBlockProfileClient {
             "skyblock_treasure_hunter", -1.0);
     }
 
-    private ProfileData parseProfile(JsonObject profileObject, JsonObject member) {
+    private static ProfileData parseProfile(JsonObject profileObject, JsonObject member) {
         JsonObject dungeons = objectMember(member, "dungeons");
         JsonObject dungeonTypes = objectMember(dungeons, "dungeon_types");
         JsonObject catacombs = objectMember(dungeonTypes, "catacombs");
@@ -316,8 +339,58 @@ public final class HypixelSkyBlockProfileClient {
             bool(profileObject, "selected"),
             number(catacombs, "experience", 0.0),
             classXp,
-            classPerks
+            classPerks,
+            parseDungeonStats(dungeons, member)
         );
+    }
+
+    private static CatacombsAverageCalculator.DungeonStats parseDungeonStats(JsonObject dungeons, JsonObject member) {
+        JsonObject types = objectMember(dungeons, "dungeon_types");
+        JsonObject daily = objectMember(dungeons, "daily_runs");
+        long today = Math.floorDiv(System.currentTimeMillis(), 86_400_000L);
+        int dailyRuns = (long) number(daily, "current_day_stamp", -1) == today
+            ? (int) number(daily, "completed_runs_count", 0) : 0;
+        JsonObject journal = objectMember(dungeons, "dungeon_journal");
+        JsonElement unlocked = journal == null ? null : journal.get("unlocked_journals");
+        DungeonClass selectedClass = null;
+        String selectedId = string(dungeons, "selected_dungeon_class", "");
+        for (DungeonClass value : DungeonClass.values()) {
+            if (value.id().equals(selectedId)) selectedClass = value;
+        }
+        return new CatacombsAverageCalculator.DungeonStats(dungeons != null, selectedClass,
+            (long) number(dungeons, "secrets", -1), dailyRuns,
+            unlocked != null && unlocked.isJsonArray() ? unlocked.getAsJsonArray().size() : 0,
+            parseFloorStats(objectMember(types, "catacombs")),
+            parseFloorStats(objectMember(types, "master_catacombs")), explorerAttributeLevel(member));
+    }
+
+    static int explorerAttributeLevel(JsonObject member) {
+        JsonObject stacks = objectMember(objectMember(member, "attributes"), "stacks");
+        if (stacks == null) return -1;
+        double syphoned = number(stacks, "catacombs_explorer", 0);
+        int level = 0;
+        while (level < EXPLORER_SHARD_THRESHOLDS.length && syphoned >= EXPLORER_SHARD_THRESHOLDS[level]) level++;
+        return level;
+    }
+
+    private static CatacombsAverageCalculator.FloorStats parseFloorStats(JsonObject object) {
+        return new CatacombsAverageCalculator.FloorStats(
+            intMap(objectMember(object, "best_score")),
+            intMap(objectMember(object, "milestone_completions")),
+            intMap(objectMember(object, "fastest_time_s_plus")),
+            intMap(objectMember(object, "fastest_time_s")));
+    }
+
+    private static Map<String, Integer> intMap(JsonObject object) {
+        Map<String, Integer> values = new HashMap<>();
+        if (object != null) {
+            for (var entry : object.entrySet()) {
+                if (entry.getValue().isJsonPrimitive() && entry.getValue().getAsJsonPrimitive().isNumber()) {
+                    values.put(entry.getKey(), entry.getValue().getAsInt());
+                }
+            }
+        }
+        return Map.copyOf(values);
     }
 
     private static String classId(DungeonClass dungeonClass) {
@@ -392,13 +465,17 @@ public final class HypixelSkyBlockProfileClient {
         return message == null || message.isBlank() ? cause.getClass().getSimpleName() : message;
     }
 
-    public record ProfileResult(boolean success, PlayerData player, int secretsFound, String error) {
+    public record ProfileResult(boolean success, PlayerData player, int secretsFound, String error, String source) {
+        ProfileResult withSource(String source) {
+            return new ProfileResult(success, player, secretsFound, error, source);
+        }
+
         static ProfileResult ok(PlayerData player, int secretsFound) {
-            return new ProfileResult(true, player, secretsFound, "");
+            return new ProfileResult(true, player, secretsFound, "", "");
         }
 
         static ProfileResult error(String error) {
-            return new ProfileResult(false, null, -1, error);
+            return new ProfileResult(false, null, -1, error, "");
         }
     }
 

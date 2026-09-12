@@ -4,6 +4,31 @@ Scope: the active Minecraft 26.1.2 module. Existing updater changes and the park
 26.2 module were left alone. The follow-up adds the requested map accessibility
 controls and updates the splits overlay.
 
+The subsequent September 12 corrections and validation are recorded in
+[FOLLOWUP_FIXES_2026_09_12.md](FOLLOWUP_FIXES_2026_09_12.md).
+
+## Rare room follow-up
+
+Crypt confirmation (2026-09-11): the user verified the existing Admin = 34 and
+Buttons = 21 crypt totals. The values are unchanged. Removed the obsolete
+room-name-specific uncertainty fallback and recorded the confirmation separately
+from the original wiki snapshot. Full active-module build and 188 tests pass.
+
+- Added blue `RARE` room type, now applied to eight matched Rare names. The initial
+  ninth migration, Lava Pit, was corrected on 2026-09-12: that bundled room is NORMAL,
+  as confirmed by the user; duplicate wiki names do not establish hash identity.
+  Bundled migration changes only types; existing hashes and other
+  room metadata remain intact. Legacy NORMAL imports/remote reports migrate too.
+- User-confirmed core `-1005518830` is a type-only Rare hint. No speculative
+  Lava Pool/Lava Pit alias or unverified secret count was bundled.
+- Render projections refine old NORMAL labels without mutating catalog matches;
+  rooms without an identified name can show blue with `?`. Rare rooms retain
+  ordinary doors, Blood Rush behavior, and clear/score counting.
+- Type learning invalidates the cached plan so its color updates immediately.
+- Validation: full active-module build passed with 188 tests, including nine new
+  catalog/render/remote migration regressions. Data audit found zero hash conflicts;
+  converter and sync payload fixtures preserve RARE. Live Minecraft visual check pending.
+
 ## Evidence
 
 - The supplied traces repeatedly report Mimic searches across 215–225 loaded
@@ -44,6 +69,11 @@ controls and updates the splits overlay.
   after 57.6 seconds, while still in instance `m64ar`. Its active Blood Open time
   became `--` because completion required the last boss phase. Preserve this
   interrupted phase's measured progress and the Boss Entry progress display.
+- `kung-trace-20260911-012208.log` contains a forwarded Skyblocker death message
+  in Party chat. The broad regex captured `Party` as a name and registered a false
+  death. At the end Hypixel reports Team Score 301, but Kung still displays its
+  estimate 298. Personal integer Secret fields were not handled separately from
+  party percentages; API/sync merging could also preserve or duplicate wrong counts.
 
 ## Changes
 
@@ -180,9 +210,33 @@ counters; genuine instance resets still clear them and invalidate pending reques
 Player Tracking requests bounded room scanning even when the map is disabled.
 First-clear witnesses determine estimated minimum/maximum rooms. Late recognition
 merges room cells without double-counting, and Start/Fairy/Blood are excluded.
-The summary displays each tracked party player's run secrets and estimated room
-range, plus total Party Secrets (server counter when available, otherwise observed
-player totals). Optional P/M/B suffixes require explicit named claims or an actual
+Displayed cleared/opened/total room counts now use `DungeonRoomProgress` and logical
+owners, excluding Start/Fairy/Blood from all three. White checkmarks count as clears
+even when secrets remain. The summary keeps each player's room range without the
+`estimated min-max` wording. Secret columns align using the active font's measured
+name widths and a one-pixel spacing font.
+
+`DungeonDeathTracker` only accepts actual system death lines for known players and
+reconciles exact Team Deaths fields with individual events. Copied/social messages
+cannot register players or change death totals. Final Team Score now wins over the
+estimate and remains authoritative when later generic Score fields arrive.
+
+Personal integer `Secrets Found: n` fields belong to the local player, irrespective
+of preceding party rows. Party percentages/fractions and room actionbar fractions
+remain separate. Room/party changes no longer guess who found a secret.
+`DungeonSecretCounter` prioritizes personal tab, verified remote self-report, then
+valid API deltas; repeated aliases do not add counts and authoritative corrections
+can lower stale values. Missing personal values display `?`. Sync publishes only
+the local player's known personal count and accepts only a known player's own
+report; arbitrary relayed or missing values cannot overwrite it. Missing negative
+API totals and late baselines are rejected. This API issue was found by code audit;
+the latest trace contains no API enrichment events.
+
+Party Secrets uses exact server totals when available. Otherwise it uses a
+percentage with a compatible catalogue total (every observed clearable room needs
+metadata), or sums a complete set of known personal counts. Incomplete data stays
+unknown. Summary and map share this logic and catalogue totals are cached per plan.
+Optional P/M/B suffixes require explicit named claims or an actual
 observed Mimic damage-source player. A global Prince/Bat event or generic party
 `Mimic dead!` message does not identify a killer and produces no player suffix.
 
@@ -196,8 +250,8 @@ volume/pitch controls remain intact.
 
 ## Validation and live follow-up
 
-The 26.1.2 Gradle build passed with 138 tests, zero failures, errors and skipped tests.
-The produced artifact is `versions/mc26_1_2/build/libs/kung-26.1.2-0.2.8.jar`. Regression
+The 26.1.2 Gradle build passed with 179 tests, zero failures, errors and skipped tests.
+The produced artifact is `versions/mc26_1_2/build/libs/kung-26.1.2-0.2.9.jar`. Regression
 coverage includes hash-only updates, preloads and conflicts, scan scheduling,
 feature demand, mid-run entrance preservation, room boundaries, Fairy exits,
 unknown solid door blocks, incomplete paths and title wording. Follow-up coverage
@@ -212,6 +266,10 @@ named P/M/B claims.
 The latest tests cover the logged M7 wipe, retained interrupted-phase values,
 frozen floor metadata, phase-boundary-only loss updates, Minutes/Seconds formatting,
 saved settings/default migration, and editor bounds with loss disabled.
+Statistics regression coverage includes the actual forwarded Party death and final
+301 score, personal/party/room secret separation, duplicate deaths and UUID aliases,
+API sentinel validation, remote provenance, unknown-versus-zero values, filtered
+room counts and pixel-aligned chat under different font metrics.
 
 `tools/audit-dungeon-traces.mjs <kung-debug directory>` reads trace hashes and
 compares them with bundled room data without writing to the profile.
@@ -230,3 +288,28 @@ sounds while moving quickly. Also complete F1 through Bonzo and check that both
 overlays stay visible, splits begin with the selected floor, and Run Stats appears
 after Team Score, including when immediately leaving. The build and tests do not establish live packet
 ordering, visual readability on the friend's display, sound-device behavior or FPS.
+
+## Layers connected-room rendering — September 11 follow-up
+
+The screenshot shows Layers split into separate labels and shapes. The underlying
+render plan already merges adjacent cells with the same identity into a logical
+owner, but the map still drew the original catalog matches individually. When a
+separator is scanned as OPEN, catalog matching can conservatively split Layers
+into one cell plus a two-cell column while the resolved topology reunites them.
+The renderer then skipped the resolved internal separator without drawing its fill.
+
+`DungeonRoomRenderLayout` now supplies one shared projection for room fills,
+connections and labels from final ownership and internal connections. It includes
+core hints and keeps unknown connected cells with their identified room. Room
+state is inherited from the already expanded owner state. Layouts are cached by
+render-plan identity; room hashes, catalog matching and learning remain unchanged.
+Wither/Blood separators and unrelated owners remain boundaries, and oversized
+groups retain the four-cell safety limit. Interior corners require all four
+internal connections, preserving the missing quadrant of an L-shaped room.
+
+Four regressions use the bundled Layers L hashes to reproduce the single-plus-two
+split, verify one three-cell render shape with one 8-secret label, check locked-door
+boundaries, exercise hint-only recognition, and preserve a remote secret maximum
+reported on another cell without changing the original hints. The synthetic OPEN separator
+reproduces the screenshot symptom; no saved trace establishes the exact separator
+state in that screenshot. In-game visual verification remains outstanding.

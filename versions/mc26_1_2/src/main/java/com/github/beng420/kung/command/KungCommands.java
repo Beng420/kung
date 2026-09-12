@@ -18,6 +18,7 @@ public final class KungCommands {
             LiteralArgumentBuilder<FabricClientCommandSource> root = literal("kung")
                 .executes(KungCommandActions::openSettings);
             RoomLearningCommandGroup.register(root, tracker);
+            MimicCommandGroup.register(root, tracker);
             RoomSyncCommandGroup.register(root, tracker);
             DungeonDebugCommandGroup.register(root, tracker);
             UserCommandGroup.register(root, tracker);

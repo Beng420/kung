@@ -740,7 +740,7 @@ public final class DungeonStateTracker {
 
     void serverTick() {
         if (dungeonInstanceActive) {
-            splitTracker.serverTick(System.currentTimeMillis());
+            splitTracker.serverTick(System.nanoTime() / 1_000_000L);
             if (realRunStarted) {
                 bloodRushHelper.serverTick();
             }
@@ -785,7 +785,7 @@ public final class DungeonStateTracker {
 
     void observeChatMessage(Component message) {
         try {
-            observeDungeonMessage(Minecraft.getInstance(), message.getString(), false);
+            observeDungeonMessage(Minecraft.getInstance(), message.getString(), false, DungeonDeathTracker.MessageSource.CHAT);
         } catch (RuntimeException | LinkageError exception) {
             KungMod.LOGGER.warn("Failed to process dungeon chat message.", exception);
             reportRunError(Minecraft.getInstance(), "Chat message", exception);
@@ -793,12 +793,17 @@ public final class DungeonStateTracker {
     }
 
     private void observeDungeonMessage(Minecraft client, String text, boolean overlay) {
+        observeDungeonMessage(client, text, overlay, overlay
+            ? DungeonDeathTracker.MessageSource.ACTIONBAR : DungeonDeathTracker.MessageSource.SYSTEM);
+    }
+
+    private void observeDungeonMessage(Minecraft client, String text, boolean overlay, DungeonDeathTracker.MessageSource source) {
         observeRunStartSignal(client, text);
         if (!canProcessDungeonRunMessage(client)) {
             return;
         }
         DungeonWorkload workload = DungeonWorkload.current();
-        if (workload.players()) runStats.observeMessage(client, text, dungeonTick);
+        if (workload.players()) runStats.observeMessage(client, text, dungeonTick, source);
         bloodRushHelper.observeMessage(client, text, realRunStarted, this);
         if (overlay && workload.rooms()) {
             runStats.observeRoomSecretOverlay(client, text, renderPlan());
@@ -816,6 +821,7 @@ public final class DungeonStateTracker {
 
         try {
             DungeonRoomClassifier.learnRoomType(currentRoomCore.coreHash(), roomType);
+            cachedRenderPlan = null;
         } catch (IOException | IllegalArgumentException exception) {
             KungMod.LOGGER.warn("Failed to learn dungeon room type.", exception);
             return LearnRoomTypeResult.failed("Could not save the room type. See latest.log.");

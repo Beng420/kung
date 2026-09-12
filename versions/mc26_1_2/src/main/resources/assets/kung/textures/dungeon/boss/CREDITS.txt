@@ -1,0 +1,19 @@
+Boss-map artwork: BetterMap contributors.
+Map selection/calibration data and distribution: Stella / Eclipse-5214.
+
+These twelve original PNGs are included unchanged, with calibration data from:
+https://github.com/Eclipse-5214/ether/tree/30a1b4bcdd82ef4b2e1ac45bf6b981ff564b900c/stellanav
+
+Stella's asset repository credits BetterMap for the boss-map images:
+https://github.com/Eclipse-5214/ether/blob/30a1b4bcdd82ef4b2e1ac45bf6b981ff564b900c/README.md
+The PNGs also match the originals at:
+https://github.com/BetterMap/BetterMap/tree/b4b24512f99cbe3e8febfc2e30e6d7f793b4663f/assets
+
+Stella renderer reference:
+https://github.com/Eclipse-5214/stella/tree/6ddec7c7a957781749b020f006d6f38809eb44ff
+
+Retrieved 2026-09-12. These are third-party assets, not original Kung artwork.
+Kung 0.2.13 corrects imagedata.json f7_boss_s4.heightInWorld from 94 to 114,
+aligning Necron's square arena with its original image. Other metadata is unchanged.
+No separate artwork license was supplied in the inspected Ether/BetterMap trees.
+Stella's code license is not asserted here as a license for these images.

@@ -14,10 +14,12 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.TreeMap;
 import net.minecraft.client.Minecraft;
 
 public final class KungDebugRecorder {
     private static final int MAX_EVENTS = 2500;
+    private static final int MAX_SPLIT_EVENTS = 128;
     private static final int MAX_EVENT_LENGTH = 900;
     private static final long DEFAULT_DEDUPE_MILLIS = 15_000L;
     private static final DateTimeFormatter CLOCK_FORMAT =
@@ -25,6 +27,8 @@ public final class KungDebugRecorder {
     private static final DateTimeFormatter FILE_FORMAT =
         DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss", Locale.ROOT).withZone(ZoneId.systemDefault());
     private static final ArrayDeque<String> EVENTS = new ArrayDeque<>(MAX_EVENTS);
+    /** Preserve low-volume timing boundaries when room/map traffic fills the general ring. */
+    private static final ArrayDeque<String> SPLIT_EVENTS = new ArrayDeque<>(MAX_SPLIT_EVENTS);
     private static final Map<String, AreaState> AREA_STATES = new HashMap<>();
 
     private static long sequence;
@@ -66,14 +70,19 @@ public final class KungDebugRecorder {
             }
 
             sequence++;
-            EVENTS.addLast(String.format(
+            String line = String.format(
                 Locale.ROOT,
                 "%06d %s [%s] %s",
                 sequence,
                 CLOCK_FORMAT.format(Instant.now()),
                 cleanArea,
                 cleanMessage
-            ));
+            );
+            EVENTS.addLast(line);
+            if (cleanArea.equals("dungeon-splits")) {
+                SPLIT_EVENTS.addLast(line);
+                while (SPLIT_EVENTS.size() > MAX_SPLIT_EVENTS) SPLIT_EVENTS.removeFirst();
+            }
             state.recorded++;
             state.lastFingerprint = fingerprint;
             state.lastRecordedAtMillis = nowMillis;
@@ -86,6 +95,7 @@ public final class KungDebugRecorder {
     public static void clear() {
         synchronized (EVENTS) {
             EVENTS.clear();
+            SPLIT_EVENTS.clear();
             AREA_STATES.clear();
             sequence = 0L;
             suppressedTotal = 0L;
@@ -94,37 +104,56 @@ public final class KungDebugRecorder {
     }
 
     public static String dump() {
-        return dump(MAX_EVENTS);
+        return dump(MAX_EVENTS, true);
     }
 
     public static String dump(int maxLines) {
+        return dump(maxLines, false);
+    }
+
+    private static String dump(int maxLines, boolean includeSplitHistory) {
         int limit = Math.max(1, maxLines);
         List<String> snapshot;
+        int storedCount;
         synchronized (EVENTS) {
             snapshot = new ArrayList<>(EVENTS);
+            storedCount = snapshot.size();
+            snapshot = new ArrayList<>(snapshot.subList(Math.max(0, storedCount - limit), storedCount));
+            if (includeSplitHistory) {
+                // Sequence keys deduplicate boundaries still in the general ring
+                // and keep older retained entries in their original packet order.
+                var ordered = new TreeMap<Long, String>();
+                for (String line : snapshot) ordered.put(eventSequence(line), line);
+                for (String line : SPLIT_EVENTS) ordered.put(eventSequence(line), line);
+                snapshot = new ArrayList<>(ordered.values());
+                storedCount = snapshot.size();
+            }
         }
 
-        int from = Math.max(0, snapshot.size() - limit);
         StringBuilder builder = new StringBuilder(snapshot.size() * 96);
         builder.append("Kung Trace\n");
         builder.append("created=").append(Instant.now()).append('\n');
-        builder.append("entries=").append(snapshot.size() - from).append('/').append(snapshot.size()).append('\n');
+        builder.append("entries=").append(snapshot.size()).append('/').append(storedCount).append('\n');
         builder.append("storedLimit=").append(MAX_EVENTS).append('\n');
+        builder.append("reservedSplitLimit=").append(MAX_SPLIT_EVENTS).append('\n');
         builder.append("suppressed=").append(suppressedTotal).append('\n');
         builder.append("focus=door-title,map-change,map-check,map-discovery,map-topology,mimic-esp,player-markers,player-slots,dungeon-state,context-state\n");
         appendAreaSummary(builder);
         builder.append('\n');
-        for (int index = from; index < snapshot.size(); index++) {
-            builder.append(snapshot.get(index)).append('\n');
-        }
+        for (String line : snapshot) builder.append(line).append('\n');
         return builder.toString();
+    }
+
+    private static long eventSequence(String line) {
+        return Long.parseLong(line.substring(0, line.indexOf(' ')));
     }
 
     public static Path saveToFile(Minecraft client) throws IOException {
         Path gameDirectory = client == null
             ? Path.of(".")
             : client.gameDirectory.toPath();
-        Path directory = gameDirectory.resolve("kung-debug");
+        Path directory = new com.github.beng420.kung.runtime.KungFileLayout(gameDirectory,
+            gameDirectory.resolve("config")).logDirectory();
         Files.createDirectories(directory);
         Path path = directory.resolve("kung-trace-" + FILE_FORMAT.format(Instant.now()) + ".log");
         Files.writeString(path, dump(), StandardCharsets.UTF_8);

@@ -12,6 +12,7 @@ record DungeonWorkload(boolean rooms, boolean mapData, boolean players, boolean 
         boolean rooms = dungeon.enabled() || config.bloodRush.enabled() || dungeon.playerTrackingEnabled() || sync;
         boolean players = rooms || config.splits.enabled() || dungeon.playerTrackingEnabled()
             || dungeon.deathMessagesEnabled() || dungeon.fiveCryptPartyMessageEnabled()
+            || dungeon.extraScoreMessagesEnabled()
             || dungeon.cryptProgressPartyMessageEnabled() || dungeon.fiveCryptTitleEnabled();
         return new DungeonWorkload(rooms, rooms, players, sync);
     }

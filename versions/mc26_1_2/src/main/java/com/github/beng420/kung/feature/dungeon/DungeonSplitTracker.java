@@ -1,10 +1,13 @@
 package com.github.beng420.kung.feature.dungeon;
 
+import com.github.beng420.kung.util.KungDebugRecorder;
+import com.github.beng420.kung.util.ServerTpsTracker;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.function.Consumer;
 import java.util.function.LongSupplier;
 import java.util.regex.Pattern;
 
@@ -30,6 +33,7 @@ public final class DungeonSplitTracker {
     );
 
     private final LongSupplier clock;
+    private final Consumer<String> diagnostics;
     private final List<CompletedSplit> completed = new ArrayList<>();
     private List<CompletedSplit> completedView = List.of();
     private String[] splitNames = DEFAULT_SPLITS;
@@ -39,7 +43,11 @@ public final class DungeonSplitTracker {
     private boolean started;
     private long startedAtMillis;
     private long stoppedElapsedMillis;
+    /** Conserved accepted tick time; arrival jitter must not remove fractions of ticks. */
     private long serverElapsedMillis;
+    private boolean serverClockAvailable;
+    private long lastServerTickAtMillis = Long.MIN_VALUE;
+    private long largestPhaseTickGapMillis;
     private long currentSplitStartMillis;
     private long currentSplitStartServerMillis;
     private String currentSplitName = FIRST_SPLIT;
@@ -49,11 +57,17 @@ public final class DungeonSplitTracker {
     private String awaitingCompletionAfter;
 
     public DungeonSplitTracker() {
-        this(System::currentTimeMillis);
+        this(() -> System.nanoTime() / 1_000_000L,
+            event -> KungDebugRecorder.event("dungeon-splits", event + " " + ServerTpsTracker.INSTANCE.diagnostics()));
     }
 
     DungeonSplitTracker(LongSupplier clock) {
+        this(clock, ignored -> { });
+    }
+
+    DungeonSplitTracker(LongSupplier clock, Consumer<String> diagnostics) {
         this.clock = Objects.requireNonNull(clock);
+        this.diagnostics = Objects.requireNonNull(diagnostics);
     }
 
     public void startRun(long nowTick, int floor, boolean masterMode) {
@@ -62,11 +76,14 @@ public final class DungeonSplitTracker {
         boolean suppliedFloor = floor >= 1 && floor <= 7;
         int resolvedFloor = suppliedFloor ? floor : !started && hasKnownFloor() ? this.floor : -1;
         boolean resolvedMaster = suppliedFloor ? masterMode : !started && hasKnownFloor() && this.masterMode;
+        boolean preparedTickStream = !started && serverClockAvailable;
         reset();
+        serverClockAvailable = preparedTickStream;
         configureKnownFloor(resolvedFloor, resolvedMaster);
         started = true;
         running = true;
         startedAtMillis = clock.getAsLong();
+        diagnostics.accept("run-start floor=" + this.floor + " master=" + this.masterMode);
     }
 
     public void configureForFloor(int floor, boolean masterMode) {
@@ -96,8 +113,9 @@ public final class DungeonSplitTracker {
     public void stopRun() {
         if (!running) return;
         stoppedElapsedMillis = currentTotalDurationMillis();
-        captureStoppedCurrentSplit(stoppedElapsedMillis);
+        captureStoppedCurrentSplit(stoppedElapsedMillis, "stopRun");
         running = false;
+        traceStopped("run-stop", "stopRun");
     }
 
     public void reset() {
@@ -111,6 +129,9 @@ public final class DungeonSplitTracker {
         startedAtMillis = 0L;
         stoppedElapsedMillis = 0L;
         serverElapsedMillis = 0L;
+        serverClockAvailable = false;
+        lastServerTickAtMillis = Long.MIN_VALUE;
+        largestPhaseTickGapMillis = 0L;
         currentSplitStartMillis = 0L;
         currentSplitStartServerMillis = 0L;
         currentSplitName = FIRST_SPLIT;
@@ -126,7 +147,7 @@ public final class DungeonSplitTracker {
             currentSplitName = normalizedName;
             return;
         }
-        if (!currentSplitName.equals(normalizedName)) completeCurrentAndStart(normalizedName, true);
+        if (!currentSplitName.equals(normalizedName)) completeCurrentAndStart(normalizedName, true, "manual:" + normalizedName);
     }
 
     public boolean markIfCurrent(String currentName, String nextSplitName, long nowTick) {
@@ -136,19 +157,38 @@ public final class DungeonSplitTracker {
     }
 
     public void serverTick(long realNowMillis) {
-        if (running) serverElapsedMillis += 50L;
+        // Start-room evidence distinguishes a stall immediately after countdown
+        // from a connection on which no usable tick stream has ever been seen.
+        if (!started) {
+            serverClockAvailable = true;
+            return;
+        }
+        if (!running) return;
+        serverClockAvailable = true;
+        // Source filtering establishes progress; wall time only measures receipt.
+        // Even a burst spanning chat boundaries must preserve every accepted tick.
+        serverElapsedMillis += 50L;
+        long gapStart = lastServerTickAtMillis != Long.MIN_VALUE ? lastServerTickAtMillis : startedAtMillis;
+        largestPhaseTickGapMillis = Math.max(largestPhaseTickGapMillis, realNowMillis - gapStart);
+        lastServerTickAtMillis = realNowMillis;
     }
 
     public boolean observeMessage(String message, long nowTick) {
-        if (!running || message == null || message.isBlank()) return false;
+        if (message == null || message.isBlank()) return false;
         String clean = DungeonLifecycleSignals.clean(message);
+        if (DungeonLifecycleSignals.isRunStart(clean)
+            || clean.equals("[NPC] Mort: Here, I found this map when I first entered the dungeon.")) {
+            diagnostics.accept("start-candidate message=\"" + clean + "\" running=" + running
+                + " wallMs=" + currentTotalDurationMillis() + " totalTicks=" + serverElapsedMillis / 50L);
+        }
+        if (!running) return false;
         if (DungeonLifecycleSignals.isRunStart(clean)) {
             // The lifecycle owner already starts this timer. A repeated countdown
             // must never erase completed splits, even if delivered much later.
             return false;
         }
         if (DungeonLifecycleSignals.isRunFinished(clean)) {
-            finish();
+            finish(clean);
             return true;
         }
         if (clean.startsWith("[BOSS] Wither King:") || clean.startsWith("[BOSS] The Wither King:")) {
@@ -157,10 +197,10 @@ public final class DungeonSplitTracker {
         }
         if (clean.equals("[BOSS] Necron: All this, for nothing...")) {
             configureForFloor(7, masterMode);
-            if (!masterMode) return completeBoss("Necron");
+            if (!masterMode) return completeBoss("Necron", clean);
         }
         if (clean.equals("[BOSS] Wither King: Incredible. You did what I couldn't do myself.")) {
-            return completeBoss("Dragons");
+            return completeBoss("Dragons", clean);
         }
         if (!hasCurrentSplit()) return false;
         int entryFloor = bossEntryFloor(clean);
@@ -176,12 +216,14 @@ public final class DungeonSplitTracker {
         if (nextIndex <= currentIndex || nextIndex < 0) return false;
         // Missing phase messages leave an unknown boundary. Preserve total time,
         // but do not label the entire elapsed span as an accurate single phase.
-        completeCurrentAndStart(next, nextIndex == currentIndex + 1);
+        completeCurrentAndStart(next, nextIndex == currentIndex + 1, clean);
         return true;
     }
 
     public boolean running() { return running; }
     public boolean started() { return started; }
+    /** Boss progress remains evidence after completion; this does not establish instance membership. */
+    public boolean hasEnteredBoss() { return started && indexOf(currentSplitName) >= DEFAULT_SPLITS.length; }
     public boolean hasKnownFloor() { return floor >= 0 && floor <= 7; }
     public boolean hasCurrentSplit() { return running && awaitingCompletionAfter == null; }
     public String currentSplitName() { return currentSplitName; }
@@ -192,9 +234,16 @@ public final class DungeonSplitTracker {
         return running ? Math.max(0L, clock.getAsLong() - startedAtMillis) : stoppedElapsedMillis;
     }
     public long currentSplitServerDurationMillis() {
-        return Math.max(0L, serverElapsedMillis - currentSplitStartServerMillis);
+        return splitServerDurationMillis();
     }
-    public long currentTotalServerDurationMillis() { return serverElapsedMillis; }
+    /** No observed tick stream is an unavailable measurement, never a zero-TPS run. */
+    public long currentTotalServerDurationMillis() { return totalServerDurationMillis(); }
+    /** Sample both clocks at one instant so a frame cannot combine different wall-time bounds. */
+    public Timings currentTimings() {
+        long elapsed = currentTotalDurationMillis();
+        return new Timings(Math.max(0L, elapsed - currentSplitStartMillis), elapsed,
+            splitServerDurationMillis(), totalServerDurationMillis());
+    }
     public List<CompletedSplit> completedSplits() { return completedView; }
     public CompletedSplit stoppedCurrentSplit() { return stoppedCurrentSplit; }
     public String[] splitNames() { return splitNames.clone(); }
@@ -204,51 +253,88 @@ public final class DungeonSplitTracker {
         return namesFor(7, true);
     }
 
-    private void completeCurrentAndStart(String next, boolean timingKnown) {
+    private void completeCurrentAndStart(String next, boolean timingKnown, String boundary) {
         long elapsed = currentTotalDurationMillis();
-        if (hasCurrentSplit()) completeCurrent(elapsed, timingKnown);
+        if (hasCurrentSplit()) completeCurrent(elapsed, timingKnown, boundary);
         awaitingCompletionAfter = null;
         currentSplitName = next;
-        currentSplitStartMillis = elapsed;
-        currentSplitStartServerMillis = serverElapsedMillis;
+        startClockSegment(elapsed);
     }
 
-    private void completeCurrent(long elapsed, boolean timingKnown) {
+    private long splitServerDurationMillis() {
+        if (!serverClockAvailable) return -1L;
+        return serverElapsedMillis - currentSplitStartServerMillis;
+    }
+
+    private long totalServerDurationMillis() {
+        return serverClockAvailable ? serverElapsedMillis : -1L;
+    }
+
+    private void startClockSegment(long elapsed) {
+        currentSplitStartMillis = elapsed;
+        currentSplitStartServerMillis = serverElapsedMillis;
+        largestPhaseTickGapMillis = 0L;
+    }
+
+    private void completeCurrent(long elapsed, boolean timingKnown, String boundary) {
         completed.add(new CompletedSplit(
             currentSplitName,
             timingKnown ? Math.max(0L, elapsed - currentSplitStartMillis) : -1L,
             elapsed,
-            timingKnown ? Math.max(0L, serverElapsedMillis - currentSplitStartServerMillis) : -1L,
-            serverElapsedMillis
+            timingKnown ? splitServerDurationMillis() : -1L,
+            totalServerDurationMillis()
         ));
         completedView = List.copyOf(completed);
+        tracePhase("phase-end", completed.getLast(), boundary);
     }
 
-    private void finish() {
+    private void finish(String boundary) {
         long elapsed = currentTotalDurationMillis();
         if (hasCurrentSplit()) {
-            if (indexOf(currentSplitName) == splitNames.length - 1) completeCurrent(elapsed, true);
-            else captureStoppedCurrentSplit(elapsed);
+            if (indexOf(currentSplitName) == splitNames.length - 1) completeCurrent(elapsed, true, boundary);
+            else captureStoppedCurrentSplit(elapsed, boundary);
         }
         stoppedElapsedMillis = elapsed;
         running = false;
+        traceStopped("run-finished", boundary);
     }
 
-    private void captureStoppedCurrentSplit(long elapsed) {
+    private void captureStoppedCurrentSplit(long elapsed, String boundary) {
         if (!hasCurrentSplit()) return;
         stoppedCurrentSplit = new CompletedSplit(currentSplitName,
             Math.max(0L, elapsed - currentSplitStartMillis), elapsed,
-            Math.max(0L, serverElapsedMillis - currentSplitStartServerMillis), serverElapsedMillis);
+            splitServerDurationMillis(), totalServerDurationMillis());
+        tracePhase("phase-stop", stoppedCurrentSplit, boundary);
     }
 
-    private boolean completeBoss(String finalSplitName) {
+    private void tracePhase(String event, CompletedSplit split, String boundary) {
+        diagnostics.accept(event + " name=" + split.name() + " wallMs=" + split.splitDurationMillis()
+            + " serverMs=" + split.serverSplitDurationMillis()
+            + " totalWallMs=" + split.totalDurationMillis() + " totalServerMs=" + split.serverTotalDurationMillis()
+            + " phaseTicks=" + (serverElapsedMillis - currentSplitStartServerMillis) / 50L
+            + " maxAppliedGapMs=" + largestPhaseTickGapMillis(split.totalDurationMillis())
+            + " phaseStartTicks=" + currentSplitStartServerMillis / 50L
+            + " totalTicks=" + serverElapsedMillis / 50L + " boundary=\"" + boundary + "\"");
+    }
+
+    private long largestPhaseTickGapMillis(long elapsed) {
+        long gapStart = lastServerTickAtMillis != Long.MIN_VALUE ? lastServerTickAtMillis : startedAtMillis;
+        return Math.max(largestPhaseTickGapMillis, startedAtMillis + elapsed - gapStart);
+    }
+
+    private void traceStopped(String event, String boundary) {
+        diagnostics.accept(event + " totalWallMs=" + stoppedElapsedMillis
+            + " totalServerMs=" + totalServerDurationMillis()
+            + " totalTicks=" + serverElapsedMillis / 50L + " boundary=\"" + boundary + "\"");
+    }
+
+    private boolean completeBoss(String finalSplitName, String boundary) {
         if (!hasCurrentSplit()) return false;
         long elapsed = currentTotalDurationMillis();
-        completeCurrent(elapsed, currentSplitName.equals(finalSplitName));
+        completeCurrent(elapsed, currentSplitName.equals(finalSplitName), boundary);
         awaitingCompletionAfter = finalSplitName;
         // Keep this boundary so late M7 metadata can resume Relics at Necron's death.
-        currentSplitStartMillis = elapsed;
-        currentSplitStartServerMillis = serverElapsedMillis;
+        startClockSegment(elapsed);
         return true;
     }
 
@@ -318,6 +404,8 @@ public final class DungeonSplitTracker {
             default -> 0;
         };
     }
+
+    public record Timings(long splitMillis, long totalMillis, long serverSplitMillis, long serverTotalMillis) { }
 
     public record CompletedSplit(
         String name,

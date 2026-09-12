@@ -37,6 +37,7 @@ public final class DungeonApiEnrichment {
     }
 
     public void startFinalFetch(long nowTick) {
+        if (finalFetchStarted) return;
         finalFetchStarted = true;
         finalFetchStartTick = nowTick;
     }
@@ -67,11 +68,16 @@ public final class DungeonApiEnrichment {
         Consumer<HypixelSkyBlockProfileClient.SecretResult> onSuccess
     ) {
         String requestedName = key(name);
-        if (!requestedBaselines.add(requestedName)) {
+        if (finalFetchStarted || !requestedBaselines.add(requestedName)) {
             return;
         }
         request(client, name, "run-secret baseline", result -> {
+            if (finalFetchStarted) {
+                KungDebugRecorder.event("player-stats", "run-secret baseline ignored after finish player=" + name);
+                return;
+            }
             baselines.put(resultKey(result, name), result.secretsFound());
+            baselines.put(requestedName, result.secretsFound());
             onSuccess.accept(result);
         }, () -> { });
     }
@@ -85,16 +91,11 @@ public final class DungeonApiEnrichment {
         if (!requestedFinals.add(requestedName)) {
             return;
         }
+        // Only a start snapshot established before the final request can be compared.
+        Integer baseline = baselines.get(requestedName);
         pendingFinalFetches++;
         request(client, name, "run-secret final", result -> {
-            Integer baseline = baselines.get(resultKey(result, name));
-            if (baseline == null) {
-                baseline = baselines.get(requestedName);
-            }
-            int delta = baseline != null && result.secretsFound() >= baseline
-                ? result.secretsFound() - baseline
-                : -1;
-            onSuccess.accept(result, delta);
+            onSuccess.accept(result, runSecretDelta(baseline, result.secretsFound()));
         }, () -> pendingFinalFetches = Math.max(0, pendingFinalFetches - 1));
     }
 
@@ -115,9 +116,10 @@ public final class DungeonApiEnrichment {
                             + " error=" + throwable.getClass().getSimpleName());
                         return;
                     }
-                    if (!result.success()) {
+                    if (result == null || !result.success() || result.secretsFound() < 0) {
                         KungDebugRecorder.event("player-stats", operation + " failed player=" + name
-                            + " error=" + result.error());
+                            + " error=" + (result == null ? "empty response"
+                                : !result.success() ? result.error() : "total secrets unavailable"));
                         return;
                     }
                     onSuccess.accept(result);
@@ -126,6 +128,12 @@ public final class DungeonApiEnrichment {
                 }
             })
         );
+    }
+
+    static int runSecretDelta(Integer baseline, int finalTotal) {
+        // Missing achievements use -1, not zero. Subtracting that sentinel would
+        // turn the entire lifetime counter into a fabricated run contribution.
+        return baseline != null && baseline >= 0 && finalTotal >= baseline ? finalTotal - baseline : -1;
     }
 
     private static String resultKey(HypixelSkyBlockProfileClient.SecretResult result, String fallbackName) {

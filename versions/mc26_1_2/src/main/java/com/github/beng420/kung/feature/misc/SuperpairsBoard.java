@@ -1,0 +1,182 @@
+package com.github.beng420.kung.feature.misc;
+
+import java.util.Comparator;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
+import java.util.regex.Pattern;
+
+/** Remembers revealed fields without mistaking the server's changing button prompts for cards. */
+public final class SuperpairsBoard {
+    private static final Pattern FORMATTING = Pattern.compile("§[0-9a-fk-or]", Pattern.CASE_INSENSITIVE);
+    private static final Pattern WHITESPACE = Pattern.compile("\\s+");
+    private final Set<Integer> boardSlots = new HashSet<>();
+    private final Map<Integer, Card> rewards = new LinkedHashMap<>();
+    private final Set<Integer> bonuses = new HashSet<>();
+    private long revision;
+    private long cachedRevision = -1;
+    private List<CardCount> cachedCards = List.of();
+    private PairStats cachedSummary = new PairStats(0, 0, 0, 0, -1);
+
+    public enum Kind { IGNORED, MARKER, REWARD, BONUS }
+
+    /** The supported 54-slot menu has a seven-by-four playing area inside its border. */
+    public static boolean isBoardSlot(int topSlotCount, int slot) {
+        if (topSlotCount != 54 || slot < 0 || slot >= topSlotCount) {
+            return false;
+        }
+        int row = slot / 9;
+        int column = slot % 9;
+        return row >= 1 && row <= 4 && column >= 1 && column <= 7;
+    }
+
+    public static Kind classify(String itemId, String label) {
+        String item = itemPath(itemId);
+        if (item.isEmpty() || item.equals("air")) {
+            return Kind.IGNORED;
+        }
+        // These names change on every move, including when a real bonus is selected elsewhere.
+        if (item.endsWith("_stained_glass")) {
+            return Kind.MARKER;
+        }
+        if (item.contains("glass_pane") || item.equals("barrier") || item.equals("clock")
+            || item.equals("bookshelf")) {
+            return Kind.IGNORED;
+        }
+        String name = clean(label).toLowerCase(Locale.ROOT);
+        if (name.isBlank()) {
+            return Kind.IGNORED;
+        }
+        String prompt = name.endsWith("!") ? name.substring(0, name.length() - 1) : name;
+        if (prompt.equals("?") || prompt.equals("click any button")
+            || prompt.equals("click a second button") || prompt.equals("next button is instantly rewarded")) {
+            return Kind.MARKER;
+        }
+        if (item.equals("diamond") || prompt.equals("instant find") || prompt.equals("extra clicks")
+            || prompt.equals("extra click") || prompt.equals("free click") || prompt.equals("free clicks")
+            || prompt.equals("bonus click") || prompt.equals("bonus clicks")) {
+            return Kind.BONUS;
+        }
+        if (name.contains("superpairs") || name.contains("remaining") || name.contains("timer")) {
+            return Kind.IGNORED;
+        }
+        return Kind.REWARD;
+    }
+
+    /** Empty/hidden replacements never erase a remembered reveal. Observing a slot twice is idempotent. */
+    public Kind observe(int topSlotCount, int slot, String itemId, String label, int count) {
+        if (!isBoardSlot(topSlotCount, slot) || count <= 0) {
+            return Kind.IGNORED;
+        }
+        Kind kind = classify(itemId, label);
+        if (kind == Kind.IGNORED) {
+            return kind;
+        }
+        boolean changed = boardSlots.add(slot);
+        if (kind == Kind.REWARD) {
+            Card card = card(itemId, label, count);
+            changed |= !card.equals(rewards.put(slot, card));
+            changed |= bonuses.remove(slot);
+        } else if (kind == Kind.BONUS) {
+            changed |= bonuses.add(slot);
+            changed |= rewards.remove(slot) != null;
+        }
+        if (changed) {
+            revision++;
+        }
+        return kind;
+    }
+
+    public int boardSlotCount() {
+        return boardSlots.size();
+    }
+
+    public int bonusSlotCount() {
+        return bonuses.size();
+    }
+
+    public int rewardSlotCount() {
+        return rewards.size();
+    }
+
+    public long revision() {
+        return revision;
+    }
+
+    public List<CardCount> cards() {
+        refreshSummary();
+        return cachedCards;
+    }
+
+    public PairStats summary() {
+        refreshSummary();
+        return cachedSummary;
+    }
+
+    public void reset() {
+        boardSlots.clear();
+        rewards.clear();
+        bonuses.clear();
+        revision++;
+    }
+
+    private void refreshSummary() {
+        if (cachedRevision == revision) {
+            return;
+        }
+        Map<String, CardCount> counts = new LinkedHashMap<>();
+        for (Card card : rewards.values()) {
+            CardCount previous = counts.get(card.key());
+            counts.put(card.key(), new CardCount(card.key(), card.label(), previous == null ? 1 : previous.count() + 1));
+        }
+        cachedCards = counts.values().stream()
+            .sorted(Comparator.comparingInt((CardCount card) -> card.complete() ? 1 : 0)
+                .thenComparing(CardCount::label, String.CASE_INSENSITIVE_ORDER))
+            .toList();
+        int pairs = 0;
+        int singles = 0;
+        for (CardCount card : cachedCards) {
+            pairs += card.pairs();
+            singles += card.singles();
+        }
+        int unknown = Math.max(0, boardSlots.size() - rewards.size() - bonuses.size());
+        int maximumPairs = Math.max(0, (boardSlots.size() - bonuses.size()) / 2);
+        int exactPairs = !boardSlots.isEmpty() && unknown == 0 && rewards.size() % 2 == 0
+            ? rewards.size() / 2 : -1;
+        cachedSummary = new PairStats(pairs, singles, unknown, maximumPairs, exactPairs);
+        cachedRevision = revision;
+    }
+
+    private static Card card(String itemId, String label, int count) {
+        String name = clean(label);
+        String amount = count > 1 ? " x" + count : "";
+        return new Card(itemPath(itemId) + "|" + name.toLowerCase(Locale.ROOT) + "|" + count, name + amount);
+    }
+
+    private static String itemPath(String itemId) {
+        if (itemId == null) {
+            return "";
+        }
+        String normalized = itemId.trim().toLowerCase(Locale.ROOT);
+        int colon = normalized.indexOf(':');
+        return colon < 0 ? normalized : normalized.substring(colon + 1);
+    }
+
+    private static String clean(String value) {
+        return value == null ? "" : WHITESPACE.matcher(FORMATTING.matcher(value).replaceAll("")).replaceAll(" ").trim();
+    }
+
+    private record Card(String key, String label) { }
+
+    public record CardCount(String key, String label, int count) {
+        public int pairs() { return count / 2; }
+        public int singles() { return count % 2; }
+        public boolean complete() { return count > 0 && singles() == 0; }
+    }
+
+    /** Known pairs are identities seen twice, not a claim that Hypixel awarded their rewards. */
+    public record PairStats(int knownPairs, int singleCards, int unknownFields, int maximumTotalPairs, int exactTotalPairs) { }
+}

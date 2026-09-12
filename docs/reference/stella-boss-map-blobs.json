@@ -1,0 +1,68 @@
+[
+  {
+    "file": "imagedata.json",
+    "exactGitBlob": false,
+    "blob": "addc05b5efa98848e2681b9814984b926b03c23d",
+    "localChanges": "Kung 0.2.13: f7_boss_s4.heightInWorld corrected from 94 to 114. Blob identifies the original upstream file."
+  },
+  {
+    "file": "boss/f1_boss.png",
+    "exactGitBlob": true,
+    "blob": "259c3fc98b3e447ac8fbcee1eadf1fd9c45848e7"
+  },
+  {
+    "file": "boss/f2_boss.png",
+    "exactGitBlob": true,
+    "blob": "7201ec2e2269eff60102be1bf6941f0e3a8e5fa1"
+  },
+  {
+    "file": "boss/f3_boss.png",
+    "exactGitBlob": true,
+    "blob": "2d840f5c80bef961e51d58c63299b99e517828ae"
+  },
+  {
+    "file": "boss/f4_boss.png",
+    "exactGitBlob": true,
+    "blob": "fb77858eb375deffed75840b6dfb237bafcc7985"
+  },
+  {
+    "file": "boss/f5_boss.png",
+    "exactGitBlob": true,
+    "blob": "1d40e30db9d601136d05db95e00b1b6ea0c02505"
+  },
+  {
+    "file": "boss/f6_boss.png",
+    "exactGitBlob": true,
+    "blob": "53564153930504957c925d44e2709eeabc42d57c"
+  },
+  {
+    "file": "boss/f7_boss_end.png",
+    "exactGitBlob": true,
+    "blob": "ccd250e656ca0468722aeffc6cb1e310664065f1"
+  },
+  {
+    "file": "boss/f7_boss_s1.png",
+    "exactGitBlob": true,
+    "blob": "76defd8a6e7d503fc35452f0c58e2df0d16587d8"
+  },
+  {
+    "file": "boss/f7_boss_s2.png",
+    "exactGitBlob": true,
+    "blob": "af25210c5ed6db6a64a191833ea49e37624f377e"
+  },
+  {
+    "file": "boss/f7_boss_s3.png",
+    "exactGitBlob": true,
+    "blob": "1cdef95d1bdaa0eafd0c8fec2a7c8d5423378dca"
+  },
+  {
+    "file": "boss/f7_boss_s4.png",
+    "exactGitBlob": true,
+    "blob": "7c3c8ab33ba2e9bd62db3c01c684b3b01a89e5ab"
+  },
+  {
+    "file": "boss/f7_boss_s5.png",
+    "exactGitBlob": true,
+    "blob": "f20c9b496fbd96c87d5dc722ef270e5a621fd6ec"
+  }
+]

@@ -38,6 +38,10 @@ def kungProfileDir = providers.gradleProperty("kungProfileDir")
     "${appData}\\ModrinthApp\\profiles\\Dungeons 26.1.2"
   })
 def bundledDungeonScanDir = layout.projectDirectory.dir("src/main/resources/kung-dungeon-scans")
+def localDungeonScanDir = kungProfileDir.map { profileDir ->
+  File current = file("${profileDir}/config/kung/dungeon-data")
+  current.isDirectory() ? current : file("${profileDir}/kung-dungeon-scans")
+}
 def kungPrivateRoomSyncDefaults = providers.gradleProperty("kungPrivateRoomSyncDefaults")
   .orElse(providers.environmentVariable("KUNG_PRIVATE_ROOM_SYNC_DEFAULTS"))
   .orElse("false")
@@ -46,7 +50,8 @@ def kungRoomSyncProfileDefault = { String key ->
     if (!kungPrivateRoomSyncDefaults.get().toBoolean()) {
       return null
     }
-    File configFile = file("${kungProfileDir.get()}\\config\\kung.json")
+    File configFile = file("${kungProfileDir.get()}/config/kung/kung.json")
+    if (!configFile.exists()) configFile = file("${kungProfileDir.get()}/config/kung.json")
     if (!configFile.exists()) {
       return null
     }
@@ -106,18 +111,18 @@ tasks.register("syncLocalDungeonRoomData") {
   group = "kung"
   description = "Copies locally learned dungeon room data from the active Modrinth profile into bundled jar resources."
 
-  inputs.files(kungProfileDir.map { profileDir ->
+  inputs.files(localDungeonScanDir.map { scanDir ->
     files(
-      "${profileDir}/kung-dungeon-scans/known-rooms.json",
-      "${profileDir}/kung-dungeon-scans/known-rooms.jsonl",
-      "${profileDir}/kung-dungeon-scans/known-room-preloads.jsonl",
-      "${profileDir}/kung-dungeon-scans/known-room-types.properties"
+      new File(scanDir, "known-rooms.json"),
+      new File(scanDir, "known-rooms.jsonl"),
+      new File(scanDir, "known-room-preloads.jsonl"),
+      new File(scanDir, "known-room-types.properties")
     )
   }).withPropertyName("localDungeonRoomData").optional()
   outputs.dir(bundledDungeonScanDir)
 
   doLast {
-    File profileScanDir = file("${kungProfileDir.get()}/kung-dungeon-scans")
+    File profileScanDir = localDungeonScanDir.get()
     File resourceScanDir = bundledDungeonScanDir.asFile
     if (!profileScanDir.exists()) {
       logger.lifecycle("No local dungeon room data found at ${profileScanDir}.")

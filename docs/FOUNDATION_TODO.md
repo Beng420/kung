@@ -1,6 +1,9 @@
 # Kung 26.1.2 Foundation Todo
 
-This is the implementation queue for future chats, AIs, and maintainers. Work only in
+This preserves the foundation backlog and earlier completion notes. It is not a
+complete audit of today's code or an instruction to implement every unchecked item.
+Read [current status](AI_HANDOFF.md) and the [code map](CODE_MAP.md) first. Reassess
+an item against existing implementation/tests before starting it. Work only in
 `versions/mc26_1_2` unless the user explicitly requests another version.
 
 ## Goal
@@ -11,20 +14,24 @@ calls for a behavior change.
 
 ## Working Rules
 
-- Read `docs/AI_HANDOFF.md` before changing dungeon behavior.
+- Read the current handoff and the relevant topic linked from the code map.
 - Keep feature master toggles disabled by default.
 - Keep all player-visible UI, chat, command, status, and error text in English.
 - Prefer compatibility facades and incremental migrations over project-wide rewrites.
 - Add characterization tests before splitting large behavior-heavy classes.
 - Do not mix database content changes with architecture changes.
-- Keep the full `:versions:mc26_1_2:build` green after every completed phase.
+- Keep the full `:versions:mc26_1_2:build` green after completed code changes;
+  documentation-only changes need documentation checks.
 
 ## P0 - Mimic ESP
 
-- [ ] Add Mimic ESP as a dungeon feature for 26.1.2.
-- [ ] Detect Mimic state from reliable dungeon signals without requiring the Dungeon Map overlay to be enabled.
-- [ ] Keep rendering isolated behind a feature toggle and reuse shared HUD/message/rendering utilities.
-- [ ] Add tests or a small harness for detection state transitions before polishing visuals.
+- [x] Add Mimic ESP as a dungeon feature for 26.1.2.
+- [x] Detect Mimic state without requiring the Dungeon Map overlay to be enabled.
+- [x] Keep rendering isolated behind a feature toggle.
+- [x] Add detection/persistence and static-chest regression tests.
+- [x] Capture and bundle the first real static-chest templates: Buttons and Dueces.
+- [ ] Live-verify repeated recognition in differently rotated rooms. See
+  [MIMIC_STATIC_CHESTS.md](MIMIC_STATIC_CHESTS.md).
 
 ## P0 - Wish Reminder
 
@@ -99,8 +106,8 @@ calls for a behavior change.
 - [x] Show a progress title every time a tracked Wither/Blood door opens, even when the rendered path estimate has
   not changed yet.
 - [x] Keep the `+` suffix while the helper only knows a lower bound, for example `2+ doors`.
-- [x] Drop the `+` only when all map-visible rooms are recognized or when an uninterrupted Start-to-Blood path is
-  visible from the current map data.
+- [x] Drop the `+` only with an uninterrupted recognized Start-to-Blood path supported
+  by observed map/room data; matching door totals alone are not proof.
 - [x] Add focused tests for locked door transitions, lower-bound counting, and exact-count readiness.
 - [ ] Add a small title-output harness so repeated door opening title decisions are tested without a live Minecraft GUI.
 
@@ -132,7 +139,7 @@ calls for a behavior change.
 - [ ] Disabled features cause no feature-specific background processing, while shared context remains ready for
   correct mid-session activation.
 
-## Current Status
+## Earlier foundation status
 
 The September 10 dungeon hardening pass added bounded room/Mimic scans, consumer
 gates, cached room matching and Blood Rush paths, preload transition tests, and

@@ -8,6 +8,7 @@ import com.github.beng420.kung.config.category.DungeonConfig;
 import com.github.beng420.kung.feature.ConfigurableFeature;
 import com.github.beng420.kung.feature.Feature;
 import com.github.beng420.kung.feature.dungeon.room.RoomType;
+import com.github.beng420.kung.skyblock.HypixelInstanceTracker;
 import com.github.beng420.kung.util.KungDebugRecorder;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -25,6 +26,7 @@ import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.multiplayer.PlayerInfo;
 import net.minecraft.client.player.AbstractClientPlayer;
 import net.minecraft.client.resources.DefaultPlayerSkin;
+import net.minecraft.client.renderer.RenderPipelines;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.entity.player.PlayerSkin;
 import net.minecraft.world.level.saveddata.maps.MapDecoration;
@@ -79,10 +81,17 @@ public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> 
     private static final Map<String, SmoothedMarker> SMOOTHED_PLAYER_MARKERS = new HashMap<>();
     private static final Map<UUID, PlayerSkin> LAST_PLAYER_SKINS = new HashMap<>();
     private static final Map<LabelLineKey, List<String>> LABEL_LINE_CACHE = new HashMap<>();
+    private static DungeonLiveMapWriter.MatchRenderPlan roomLayoutPlan;
+    private static DungeonRoomRenderLayout roomLayout;
     private static long playerMarkerFrame;
     private static long lastPlayerMarkerLogMillis;
     private static String lastPlayerMarkerLogState = "";
     private final DungeonStateTracker dungeonStateTracker;
+    private final DungeonBossMapSelection bossMapSelection = new DungeonBossMapSelection();
+    private final Map<String, Identifier> bossMapTextures = new HashMap<>();
+    private DungeonBossMapCatalog bossMapCatalog;
+    private String lastBossMapImage = "";
+    private long lastBossMapEpoch = Long.MIN_VALUE;
 
     public DungeonMapFeature(DungeonStateTracker dungeonStateTracker) {
         super(config -> config.dungeon);
@@ -91,6 +100,17 @@ public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> 
 
     @Override
     protected void onInitialize() {
+        try {
+            bossMapCatalog = DungeonBossMapCatalog.loadBundled();
+            for (int floor = 1; floor <= 7; floor++) {
+                for (var arena : bossMapCatalog.arenas(floor)) {
+                    bossMapTextures.put(arena.image(), Identifier.fromNamespaceAndPath(KungMod.MOD_ID,
+                        "textures/dungeon/boss/" + arena.image() + ".png"));
+                }
+            }
+        } catch (java.io.IOException | RuntimeException exception) {
+            KungMod.LOGGER.warn("Unable to load bundled boss maps; keeping the clear map.", exception);
+        }
         HudElementRegistry.attachElementBefore(
             VanillaHudElements.PLAYER_LIST,
             HUD_ID,
@@ -132,6 +152,25 @@ public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> 
 
         DungeonMapSnapshot snapshot = dungeonStateTracker.mapSnapshot();
         DungeonLiveMapWriter.MatchRenderPlan renderPlan = dungeonStateTracker.renderPlan();
+        Minecraft client = Minecraft.getInstance();
+        DungeonBossMapCatalog.Arena bossMap = null;
+        if (bossMapCatalog != null && client.player != null) {
+            var context = HypixelInstanceTracker.INSTANCE;
+            bossMap = bossMapSelection.update(bossMapCatalog, context.instanceEpoch(),
+                dungeonStateTracker.runStats().floor(), context.catacombs(), context.positionKnown(),
+                dungeonStateTracker.splitTracker().hasEnteredBoss(),
+                client.player.getX(), client.player.getY(), client.player.getZ());
+        }
+        if (!config.showInBoss()) bossMap = null;
+        String image = bossMap == null ? "clear" : bossMap.image();
+        long epoch = HypixelInstanceTracker.INSTANCE.instanceEpoch();
+        if (!image.equals(lastBossMapImage) || lastBossMapEpoch != epoch) {
+            lastBossMapImage = image;
+            lastBossMapEpoch = epoch;
+            KungDebugRecorder.event("dungeon-boss-map", "image=" + image + " floor="
+                + dungeonStateTracker.runStats().floor() + " epoch=" + epoch
+                + " position=" + (client.player == null ? "unknown" : client.player.blockPosition()));
+        }
         float scale = effectiveScale(config);
         graphics.pose().pushMatrix();
         try {
@@ -140,7 +179,9 @@ public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> 
             int left = 0;
             int top = 0;
             int gridTop = top;
-            drawGrid(
+            if (bossMap != null) {
+                drawBossMap(graphics, left, gridTop, bossMap, dungeonStateTracker.runStats(), renderPartialTick());
+            } else drawGrid(
                 graphics,
                 left,
                 gridTop,
@@ -171,6 +212,57 @@ public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> 
         } finally {
             graphics.pose().popMatrix();
         }
+    }
+
+    private void drawBossMap(GuiGraphicsExtractor graphics, int left, int top,
+                             DungeonBossMapCatalog.Arena arena, DungeonRunStats stats, float partialTick) {
+        Minecraft client = Minecraft.getInstance();
+        if (client.level == null || client.player == null) return;
+        Vec3 cameraPosition = client.player.getPosition(partialTick);
+        var view = arena.view(cameraPosition.x, cameraPosition.z);
+        drawBorder(graphics, left - 3, top - 3, GRID_PIXEL_SIZE + 6, GRID_PIXEL_SIZE + 6, MAP_BORDER);
+        graphics.pose().pushMatrix();
+        try {
+            graphics.pose().translate(left, top);
+            float mapScale = GRID_PIXEL_SIZE / (float) DungeonBossMapCatalog.VIEW_SIZE;
+            graphics.pose().scale(mapScale, mapScale);
+            graphics.enableScissor(0, 0, DungeonBossMapCatalog.VIEW_SIZE, DungeonBossMapCatalog.VIEW_SIZE);
+            try {
+                graphics.blit(RenderPipelines.GUI_TEXTURED, bossMapTextures.get(arena.image()),
+                    -(int) view.viewX(), -(int) view.viewZ(), 0F, 0F,
+                    view.textureWidth(), view.textureHeight(), view.textureWidth(), view.textureHeight(),
+                    view.textureWidth(), view.textureHeight());
+                // Clear-map decorations have no valid boss-world coordinates. Preserve slot
+                // identity, but only draw teammates whose current world entity is available.
+                Set<UUID> drawn = new HashSet<>();
+                for (var slot : stats.dungeonPlayerSlots(client)) {
+                    AbstractClientPlayer player = playerByUuid(client, slot.uuid());
+                    if (player == null || !drawn.add(player.getUUID())) continue;
+                    boolean self = player.getUUID().equals(client.player.getUUID());
+                    if (!self && (!player.isAlive()
+                        || !arena.bounds().contains(player.getX(), player.getY(), player.getZ()))) continue;
+                    drawBossPlayerMarker(graphics, player, view, stats, partialTick, self);
+                    if (drawn.size() >= MAX_PLAYER_MARKERS) break;
+                }
+                if (!drawn.contains(client.player.getUUID())) {
+                    drawBossPlayerMarker(graphics, client.player, view, stats, partialTick, true);
+                }
+            } finally {
+                graphics.disableScissor();
+            }
+        } finally {
+            graphics.pose().popMatrix();
+        }
+    }
+
+    private static void drawBossPlayerMarker(GuiGraphicsExtractor graphics, AbstractClientPlayer player,
+                                             DungeonBossMapCatalog.View view,
+                                             DungeonRunStats stats, float partialTick, boolean self) {
+        Vec3 position = player.getPosition(partialTick);
+        var classInfo = classRenderInfoFor(stats, player.getUUID(), player.getName().getString(),
+            DungeonRunStats.DungeonClass.UNKNOWN);
+        drawFallbackPlayerMarker(graphics, view.playerX(position.x), view.playerY(position.z), player.getSkin(),
+            player.getViewYRot(partialTick), classInfo.color(), self ? PLAYER_HEAD_SIZE : TEAMMATE_HEAD_SIZE);
     }
 
     private static void drawGrid(
@@ -210,6 +302,14 @@ public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> 
         fill(graphics, x + width - 1, y, x + width, y + height, color);
     }
 
+    static DungeonRoomRenderLayout roomLayoutFor(DungeonLiveMapWriter.MatchRenderPlan renderPlan) {
+        if (roomLayoutPlan != renderPlan) {
+            roomLayout = DungeonRoomRenderLayout.from(renderPlan);
+            roomLayoutPlan = renderPlan;
+        }
+        return roomLayout;
+    }
+
     private static void drawGridContent(
         GuiGraphicsExtractor graphics,
         DungeonMapSnapshot snapshot,
@@ -217,13 +317,14 @@ public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> 
         DungeonRunStats stats,
         GridViewport viewport
     ) {
+        DungeonRoomRenderLayout layout = roomLayoutFor(renderPlan);
         for (int gridZ = 0; gridZ < DungeonScanUtils.SCAN_GRID_SIZE; gridZ++) {
             for (int gridX = 0; gridX < DungeonScanUtils.SCAN_GRID_SIZE; gridX++) {
                 if (!viewport.containsScanCell(gridX, gridZ)) {
                     continue;
                 }
                 if (DungeonScanUtils.isRoomScanPoint(gridX, gridZ)
-                    && renderPlan.isMatchedRoomCell(gridX / 2, gridZ / 2)) {
+                    && layout.cells().contains(new DungeonLiveMapWriter.CellKey(gridX / 2, gridZ / 2))) {
                     continue;
                 }
 
@@ -408,7 +509,8 @@ public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> 
         DungeonRunStats stats,
         GridViewport viewport
     ) {
-        for (DungeonKnownRoomCatalog.MatchedRoom match : renderPlan.matches()) {
+        DungeonRoomRenderLayout layout = roomLayoutFor(renderPlan);
+        for (DungeonKnownRoomCatalog.MatchedRoom match : layout.rooms()) {
             if (viewport.containsMatch(match)) {
                 drawMatchedRoomLabel(graphics, 0, 0, match, stats, renderPlan);
             }
@@ -417,7 +519,7 @@ public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> 
         for (int gridZ = 0; gridZ < DungeonScanUtils.SCAN_GRID_SIZE; gridZ += 2) {
             for (int gridX = 0; gridX < DungeonScanUtils.SCAN_GRID_SIZE; gridX += 2) {
                 if (!viewport.containsScanCell(gridX, gridZ)
-                    || renderPlan.isMatchedRoomCell(gridX / 2, gridZ / 2)) {
+                    || layout.cells().contains(new DungeonLiveMapWriter.CellKey(gridX / 2, gridZ / 2))) {
                     continue;
                 }
                 drawHintLabel(graphics, snapshot, renderPlan, stats, gridX, gridZ);
@@ -449,7 +551,7 @@ public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> 
         DungeonLiveMapWriter.MatchRenderPlan renderPlan,
         GridViewport viewport
     ) {
-        for (DungeonKnownRoomCatalog.MatchedRoom match : renderPlan.matches()) {
+        for (DungeonKnownRoomCatalog.MatchedRoom match : roomLayoutFor(renderPlan).rooms()) {
             if (!viewport.containsMatch(match)) {
                 continue;
             }
@@ -530,6 +632,9 @@ public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> 
 
                 int doorGridX = first.roomGridX() + second.roomGridX();
                 int doorGridZ = first.roomGridZ() + second.roomGridZ();
+                if (!renderPlan.isInternalDoor(doorGridX, doorGridZ)) {
+                    continue;
+                }
                 int x = left + scanGridToPixel(doorGridX);
                 int y = top + scanGridToPixel(doorGridZ);
                 boolean visited = renderPlan.isVisitedRoom(first.roomGridX(), first.roomGridZ())
@@ -559,6 +664,12 @@ public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> 
                 filledCorners += match.contains(roomGridX, roomGridZ + 1) ? 1 : 0;
                 filledCorners += match.contains(roomGridX + 1, roomGridZ + 1) ? 1 : 0;
                 if (filledCorners != 4) {
+                    continue;
+                }
+                if (!renderPlan.isInternalDoor(roomGridX * 2 + 1, roomGridZ * 2)
+                    || !renderPlan.isInternalDoor(roomGridX * 2 + 1, roomGridZ * 2 + 2)
+                    || !renderPlan.isInternalDoor(roomGridX * 2, roomGridZ * 2 + 1)
+                    || !renderPlan.isInternalDoor(roomGridX * 2 + 2, roomGridZ * 2 + 1)) {
                     continue;
                 }
 
@@ -869,13 +980,17 @@ public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> 
             return;
         }
 
-        RoomType roomType = snapshot.isStartRoom(gridX, gridZ) ? RoomType.START : RoomType.UNKNOWN;
-        if (roomType == RoomType.UNKNOWN) {
-            drawCenteredText(graphics, "?", x + size / 2, y + size / 2 - 4, MUTED_TEXT, false);
-            return;
+        RoomType roomType = snapshot.isStartRoom(gridX, gridZ) ? RoomType.START
+            : renderPlan.roomTypeAt(gridX / 2, gridZ / 2);
+        if (roomType == RoomType.START) {
+            fill(graphics, x, y, x + size, y + size, roomType.color());
+        } else if (roomType != RoomType.UNKNOWN) {
+            drawRoomFill(graphics, x, y, size, size, roomType.color(),
+                renderPlan.isVisitedRoom(gridX / 2, gridZ / 2));
         }
-
-        fill(graphics, x, y, x + size, y + size, roomType.color());
+        if (roomType != RoomType.START) {
+            drawCenteredText(graphics, "?", x + size / 2, y + size / 2 - 4, MUTED_TEXT, false);
+        }
     }
 
     private static void drawHintLabel(
@@ -1005,7 +1120,7 @@ public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> 
             textLines.add(new RoomTextLine(Math.min(secretsFound, secrets) + "/" + secrets, ROOM_SECRET_SCALE));
         }
         if (KungConfig.get().dungeon.debugRoomCrypts()) {
-            textLines.add(new RoomTextLine("Crypts " + roomCryptText(label, crypts), ROOM_SECRET_SCALE));
+            textLines.add(new RoomTextLine("Crypts " + Math.max(0, crypts), ROOM_SECRET_SCALE));
         }
         if (KungConfig.get().dungeon.debugRoomMatches()) {
             for (String debugLine : debugLines) {
@@ -1920,7 +2035,8 @@ public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> 
         x = drawLegendItem(graphics, left, top + 12, RoomType.FAIRY, "fairy");
         x = drawLegendItem(graphics, x, top + 12, RoomType.TRAP, "trap");
         drawLegendItem(graphics, x, top + 12, RoomType.BLOOD, "blood");
-        drawLegendItem(graphics, left, top + 24, RoomType.YELLOW, "yellow");
+        x = drawLegendItem(graphics, left, top + 24, RoomType.YELLOW, "yellow");
+        drawLegendItem(graphics, x, top + 24, RoomType.RARE, "rare");
     }
 
     private static int drawLegendItem(GuiGraphicsExtractor graphics, int x, int y, RoomType roomType, String label) {
@@ -1939,7 +2055,7 @@ public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> 
         DungeonLiveMapWriter.MatchRenderPlan renderPlan
     ) {
         fill(graphics, left - 3, top, left + GRID_PIXEL_SIZE + 3, top + FOOTER_HEIGHT - 4, PANEL);
-        int estimatedSecretsAvailable = estimatedSecretTotal(renderPlan);
+        int estimatedSecretsAvailable = stats.catalogSecretsAvailable(renderPlan);
         int fullSecrets = bestSecretTotal(stats, estimatedSecretsAvailable);
         int foundSecrets = displayedSecretsFound(stats, fullSecrets);
         int sPlusSecrets = stats.sPlusSecretsRemaining(renderPlan, fullSecrets);
@@ -1948,7 +2064,7 @@ public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> 
         int x = left + 2;
         int firstLineY = top + 4;
         x = drawFooterText(graphics, "Secrets: ", x, firstLineY, TEXT);
-        x = drawFooterText(graphics, String.valueOf(foundSecrets), x, firstLineY, SECRET_FOUND_TEXT);
+        x = drawFooterText(graphics, foundSecrets >= 0 ? String.valueOf(foundSecrets) : "?", x, firstLineY, SECRET_FOUND_TEXT);
         x = drawFooterText(graphics, "-", x, firstLineY, TEXT);
         x = drawFooterText(graphics, sPlusSecrets >= 0 ? String.valueOf(sPlusSecrets) : "?", x, firstLineY, SECRET_TARGET_TEXT);
         x = drawFooterText(graphics, "-", x, firstLineY, TEXT);
@@ -1973,23 +2089,7 @@ public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> 
     }
 
     private static int displayedSecretsFound(DungeonRunStats stats, int secretsAvailable) {
-        if (stats.hasServerSecretsFound()) {
-            if (secretsAvailable > 0) {
-                return Math.clamp(stats.secretsFound(), 0, secretsAvailable);
-            }
-            return Math.max(0, stats.secretsFound());
-        }
-        if (secretsAvailable > 0 && stats.secretsPercent() >= 0.0) {
-            return Math.clamp(
-                (int) Math.round(secretsAvailable * stats.secretsPercent() / 100.0),
-                0,
-                secretsAvailable
-            );
-        }
-        if (secretsAvailable > 0) {
-            return Math.clamp(stats.secretsFound(), 0, secretsAvailable);
-        }
-        return Math.max(0, stats.secretsFound());
+        return stats.displayedSecretsFound(secretsAvailable);
     }
 
     private static int bestSecretTotal(DungeonRunStats stats, int estimatedSecretsAvailable) {
@@ -2339,17 +2439,6 @@ public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> 
         }
     }
 
-    private static int estimatedSecretTotal(DungeonLiveMapWriter.MatchRenderPlan renderPlan) {
-        int total = 0;
-        for (DungeonKnownRoomCatalog.MatchedRoom match : renderPlan.matches()) {
-            total += match.template().secrets();
-        }
-        for (DungeonKnownRoomCatalog.KnownCoreHint hint : renderPlan.hints().values()) {
-            total += hint.secrets();
-        }
-        return total;
-    }
-
     private static CryptEstimate estimatedCryptTotal(
         DungeonMapSnapshot snapshot,
         DungeonLiveMapWriter.MatchRenderPlan renderPlan
@@ -2357,30 +2446,12 @@ public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> 
         int knownTotal = 0;
         boolean hasUnknownRooms = renderPlan.hasUnknownRooms(snapshot);
         for (DungeonKnownRoomCatalog.MatchedRoom match : renderPlan.matches()) {
-            if (hasUncertainWikiCrypts(match.template().name(), match.template().crypts())) {
-                hasUnknownRooms = true;
-            }
             knownTotal += Math.max(0, match.template().crypts());
         }
         for (DungeonKnownRoomCatalog.KnownCoreHint hint : renderPlan.hints().values()) {
-            if (hasUncertainWikiCrypts(hint.name(), hint.crypts())) {
-                hasUnknownRooms = true;
-            }
             knownTotal += Math.max(0, hint.crypts());
         }
         return new CryptEstimate(knownTotal, hasUnknownRooms);
-    }
-
-    private static boolean hasUncertainWikiCrypts(String roomName, int crypts) {
-        return crypts <= 0
-            && (roomName.equalsIgnoreCase("Admin")
-                || roomName.equalsIgnoreCase("Buttons"));
-    }
-
-    private static String roomCryptText(String roomName, int crypts) {
-        return hasUncertainWikiCrypts(roomName, crypts)
-            ? "?"
-            : String.valueOf(Math.max(0, crypts));
     }
 
     private record CryptEstimate(int knownTotal, boolean hasUnknownRooms) {

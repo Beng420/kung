@@ -443,7 +443,7 @@ public final class DungeonRoomDataSyncClient {
             }
             JsonObject clientObject = clientElement.getAsJsonObject();
             String source = string(clientObject, "player", "remote");
-            long updatedAt = longValue(clientObject, "updatedAt", System.currentTimeMillis());
+            long updatedAt = longValue(clientObject, "updatedAt", 0L);
             JsonElement roomsElement = clientObject.get("rooms");
             if (roomsElement == null || !roomsElement.isJsonArray()) {
                 continue;
@@ -500,8 +500,8 @@ public final class DungeonRoomDataSyncClient {
                 JsonObject playerObject = playerElement.getAsJsonObject();
                 players.add(new LivePlayerReport(
                     string(playerObject, "name", ""),
-                    intValue(playerObject, "secretsFound", 0),
-                    intValue(playerObject, "deaths", 0),
+                    intValue(playerObject, "secretsFound", -1),
+                    intValue(playerObject, "deaths", -1),
                     source,
                     updatedAt
                 ));

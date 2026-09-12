@@ -16,6 +16,7 @@ public final class DungeonLiveMapWriter {
     private static boolean isSpecialDoorTarget(RoomType roomType) {
         return roomType != null
             && roomType != RoomType.NORMAL
+            && roomType != RoomType.RARE
             && roomType != RoomType.START
             && roomType != RoomType.UNKNOWN;
     }
@@ -173,11 +174,29 @@ public final class DungeonLiveMapWriter {
                 roomOwners.putIfAbsent(roomCell, "map:" + mapRoom.gridX() + "," + mapRoom.gridZ());
             }
 
+            // A verified type hash can identify a rare room before its name/secrets are known.
+            // Also refine older NORMAL catalog records without changing their learned metadata.
+            for (CellKey roomCell : roomOwners.keySet()) {
+                DungeonMapSnapshot.ObservedPoint observed = snapshot.pointAt(roomCell.x() * 2, roomCell.z() * 2);
+                if (observed == null || observed.point().kind() != DungeonScanPointKind.ROOM) continue;
+                RoomType current = roomTypes.getOrDefault(roomCell, RoomType.UNKNOWN);
+                RoomIdentity identity = roomIdentities.get(roomCell);
+                if ((current == RoomType.NORMAL || current == RoomType.UNKNOWN)
+                    && (identity == null || DungeonKnownRoomCatalog.canonicalRoomType(identity.name(), RoomType.RARE) == RoomType.RARE)
+                    && DungeonRoomClassifier.classifyRoom(observed.point().coreHash()) == RoomType.RARE) {
+                    roomTypes.put(roomCell, RoomType.RARE);
+                    if (identity != null) {
+                        roomIdentities.put(roomCell, RoomIdentity.of(identity.name(), RoomType.RARE, identity.secrets()));
+                    }
+                }
+            }
+
             for (DungeonMapSnapshot.RemoteRoom remoteRoom : snapshot.remoteRooms()) {
                 CellKey roomCell = new CellKey(remoteRoom.roomGridX(), remoteRoom.roomGridZ());
                 remoteRoomCells.add(roomCell);
                 RoomType remoteType = remoteRoom.type() == null ? RoomType.UNKNOWN : remoteRoom.type();
                 String remoteName = remoteRoom.name() == null ? "" : remoteRoom.name().trim();
+                remoteType = DungeonKnownRoomCatalog.canonicalRoomType(remoteName, remoteType);
                 int remoteSecretsMax = remoteRoom.roomSecretsMax() > 0
                     ? remoteRoom.roomSecretsMax()
                     : remoteRoom.secrets();
@@ -214,6 +233,16 @@ public final class DungeonLiveMapWriter {
                 } else {
                     roomTypes.putIfAbsent(roomCell, RoomType.UNKNOWN);
                     roomOwners.putIfAbsent(roomCell, "remote:" + compactName(remoteRoom.source()));
+                }
+                RoomIdentity localIdentity = roomIdentities.get(roomCell);
+                if (remoteType == RoomType.RARE && roomTypes.get(roomCell) == RoomType.NORMAL
+                    && (localIdentity == null
+                        || DungeonKnownRoomCatalog.canonicalRoomType(localIdentity.name(), RoomType.RARE) == RoomType.RARE)) {
+                    roomTypes.put(roomCell, RoomType.RARE);
+                    RoomIdentity identity = roomIdentities.get(roomCell);
+                    if (identity != null) {
+                        roomIdentities.put(roomCell, RoomIdentity.of(identity.name(), RoomType.RARE, identity.secrets()));
+                    }
                 }
                 if (remoteRoom.visited()) {
                     visitedRooms.add(roomCell);

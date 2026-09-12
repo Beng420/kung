@@ -6340,7 +6340,7 @@
     },
     {
       "name": "Vinny 8 Ball",
-      "type": "NORMAL",
+      "type": "RARE",
       "secrets": 1,
       "crypts": 10,
       "variants": [],
@@ -6348,7 +6348,7 @@
     },
     {
       "name": "Pillars",
-      "type": "NORMAL",
+      "type": "RARE",
       "secrets": 1,
       "crypts": 0,
       "variants": [
@@ -6373,7 +6373,7 @@
     },
     {
       "name": "Sand Dragon",
-      "type": "NORMAL",
+      "type": "RARE",
       "secrets": 1,
       "crypts": 1,
       "variants": [
@@ -6398,7 +6398,7 @@
     },
     {
       "name": "Tombstone",
-      "type": "NORMAL",
+      "type": "RARE",
       "secrets": 2,
       "crypts": 0,
       "variants": [],
@@ -6406,7 +6406,7 @@
     },
     {
       "name": "Stone Window",
-      "type": "NORMAL",
+      "type": "RARE",
       "secrets": 2,
       "crypts": 1,
       "variants": [
@@ -6468,7 +6468,7 @@
     },
     {
       "name": "Mini Rail Track",
-      "type": "NORMAL",
+      "type": "RARE",
       "secrets": 3,
       "crypts": 3,
       "variants": [],
@@ -6476,7 +6476,7 @@
     },
     {
       "name": "Trinity",
-      "type": "NORMAL",
+      "type": "RARE",
       "secrets": 4,
       "crypts": 0,
       "variants": [
@@ -6501,7 +6501,7 @@
     },
     {
       "name": "Hanging Vines",
-      "type": "NORMAL",
+      "type": "RARE",
       "secrets": 1,
       "crypts": 0,
       "variants": [

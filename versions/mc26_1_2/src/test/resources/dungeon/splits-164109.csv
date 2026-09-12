@@ -1,0 +1,5 @@
+# Kung 0.2.17 trace 2026-09-12 16:41:09; phase-end counters, not a raw packet capture.
+# Phase,real milliseconds,old phase ping count,bundled ping delta,Noamm ideal milliseconds
+Storm,54923,1239,188,52550
+Terminals,64569,1327,122,60250
+Goldor,9702,179,12,8350

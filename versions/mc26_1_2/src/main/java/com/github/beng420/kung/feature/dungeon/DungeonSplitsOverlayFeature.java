@@ -51,6 +51,7 @@ public final class DungeonSplitsOverlayFeature extends ConfigurableFeature<Split
         boolean example = editing && !tracker.started();
         String[] names = displayedNames(tracker);
         List<DungeonSplitTracker.CompletedSplit> completed = tracker.completedSplits();
+        var timings = tracker.currentTimings();
         float scale = config.scale() / 100.0F;
         graphics.pose().pushMatrix();
         try {
@@ -70,8 +71,8 @@ public final class DungeonSplitsOverlayFeature extends ConfigurableFeature<Split
                     wall = split.splitDurationMillis();
                     server = split.serverSplitDurationMillis();
                 } else if (current) {
-                    wall = tracker.currentSplitDurationMillis();
-                    server = tracker.currentSplitServerDurationMillis();
+                    wall = timings.splitMillis();
+                    server = timings.serverSplitMillis();
                 }
                 drawRow(graphics, y, name, wall, server, current ? ACTIVE : TEXT,
                     wall >= 0L ? phaseColor(name) : MUTED, config, example || split != null);
@@ -81,12 +82,12 @@ public final class DungeonSplitsOverlayFeature extends ConfigurableFeature<Split
             DungeonSplitTracker.CompletedSplit portal = completedSplit("Portal Entry", completed);
             boolean inClear = tracker.started() && isClearSplit(tracker.currentSplitName());
             drawRow(graphics, y, "Boss Entry",
-                example ? 110_000L : portal != null ? portal.totalDurationMillis() : inClear ? tracker.currentTotalDurationMillis() : -1L,
-                example ? 107_000L : portal != null ? portal.serverTotalDurationMillis() : inClear ? tracker.currentTotalServerDurationMillis() : -1L,
+                example ? 110_000L : portal != null ? portal.totalDurationMillis() : inClear ? timings.totalMillis() : -1L,
+                example ? 107_000L : portal != null ? portal.serverTotalDurationMillis() : inClear ? timings.serverTotalMillis() : -1L,
                 TEXT, 0xFF7777FF, config, false);
             y += ROW_HEIGHT;
-            long totalWall = example ? 360_000L : tracker.started() ? tracker.currentTotalDurationMillis() : -1L;
-            long totalServer = example ? 352_000L : tracker.started() ? tracker.currentTotalServerDurationMillis() : -1L;
+            long totalWall = example ? 360_000L : tracker.started() ? timings.totalMillis() : -1L;
+            long totalServer = example ? 352_000L : tracker.started() ? timings.serverTotalMillis() : -1L;
             drawRow(graphics, y, "Total", totalWall, totalServer,
                 tracker.running() ? ACTIVE : TEXT, 0xFF55FFFF, config, false);
             if (config.timeLost()) {

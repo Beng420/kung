@@ -141,7 +141,8 @@ public final class DungeonRunSummaryTest {
         alice.setRoomClearBounds(2, 4);
         String plain = DungeonRunStats.playerStatsSummaryLine(alice, 17);
         assertTrue(plain.contains("6/17 Secrets"));
-        assertTrue(plain.contains("2-4 Rooms (estimated min-max)"));
+        assertTrue(plain.contains("2-4 Rooms"));
+        assertFalse(plain.contains("estimated"));
         assertTrue(plain.endsWith("0 Deaths"));
         alice.addBonus(DungeonBonusContribution.BAT);
         alice.addBonus(DungeonBonusContribution.PRINCE);
