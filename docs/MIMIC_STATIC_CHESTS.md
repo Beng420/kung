@@ -99,6 +99,43 @@ abgeleitet und keine Raum-Metadaten überschrieben.
 
 ## Prüfung
 
+### Trace vom 13.09.2026, 01:56:28
+
+`kung-trace-20260913-015628.log` belegt zwei Kandidaten: zuerst
+`-135,69,-150` in **Redstone_Key** (Zelle `2,1`), danach `-48,78,-14` in
+**Mines** (Zelle `4,5` im erkannten 2×2-Raum). Ab 01:55:28.890 wird die
+Kartenmarkierung deshalb als `ambiguous-candidate-rooms` entfernt. Der
+2D-Waypoint in Mines bleibt aktiv. Dass der andere Kandidat später nicht
+mehr geladen ist, darf dessen gespeicherte Raumevidenz nicht löschen.
+
+Für Redstone Key fehlt eine genaue Static-Chest-Aufnahme. Die vorhandenen
+Buttons-/Dueces-Vorlagen decken diesen Raum nicht ab. Aus den Weltkoordinaten
+allein entsteht keine rotationssichere Vorlage. Benötigt wird die explizite
+Aufnahme der festen Trapped Chest mit `/kung mimic ignore`, anschließend der
+Text aus `/kung mimic copy`. Ein pauschaler Ausschluss des gesamten Raums würde
+auch einen zusätzlichen echten Mimic dort verbergen.
+
+Um 01:56:12.693 trifft `Party > [MVP+] starziiiii: Mimic Killed!` ein;
+danach zeigt die Score-Berechnung `mimic=true`. Eine Party-Meldung erzeugt keine
+Rückmeldung an die Party. Die später ausgelesene Profilkonfiguration hat
+`extraScoreMessagesEnabled=false`; das ist kein gespeicherter Einstellungsstand
+vom Kill-Zeitpunkt. Ein eigener Todes-Paketnachweis vor der Party-Meldung ist
+im alten Trace nicht dokumentiert. Ein eigener Erkennungsfehler ist damit nicht
+bewiesen. Die Entfernung des 3D-Renderers änderte weder Kandidatenfilter noch
+Kill-Erkennung.
+
+Die ergänzte Diagnostik schreibt bei Änderungen alle Kandidaten mit Position,
+Raum und Ladezustand nach `mimic-candidates`. `mimic-kill` erfasst Baby-Zombie-
+Todespakete mit Klassifikation sowie Kill-Quelle, erste/weitere Evidenz und die
+Nachrichtenschalter zum Ereigniszeitpunkt. Nach dem nächsten eigenen Kill direkt
+`/kung log save` ausführen; kein Debug-Chat-Schalter ist nötig. Ein Kill wird
+weiterhin nur aufgrund der bisherigen Evidenz erkannt, nicht aufgrund bloßen
+Verschwindens. Für gewünschte Meldungen vorher **Extra Score Messages > Mimic**
+einschalten. Die neue Regression prüft unterdrückte eigene Meldungen sowie eine
+Party-Meldung vor nachfolgender eigener Evidenz, ohne doppelt zu senden.
+
+### Frühere Static-Chest-Validierung (0.2.15)
+
 Vollständiger Build für Minecraft 26.1.2: **262 Tests erfolgreich**, keine Fehler
 oder übersprungenen Tests. Die 18 Static-Chest-Tests prüfen unter anderem die
 beiden echten Aufnahmen aus den Ressourcen, alle Drehungen/Verschiebungen,

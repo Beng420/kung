@@ -21,6 +21,7 @@ final class UserCommandGroup {
                         StringArgumentType.getString(context, "username")
                     ))))
             .then(literal("settings").executes(KungCommandActions::openSettings))
+            .then(literal("updates").executes(KungCommandActions::openUpdates))
             .then(literal("hud").executes(context -> KungCommandActions.openHudEditor(context, tracker)));
     }
 }

@@ -75,13 +75,21 @@ public final class KungConfigScreen extends Screen {
     }
 
     public KungConfigScreen(String expandedFeatureName) {
-        super(Component.literal("Kung Settings"));
+        super(Component.literal("Kung - v" + KungUpdater.currentVersion()));
         categories = createCategories();
         FeatureEntry initialFeature = findFeature(expandedFeatureName);
         if (initialFeature != null) {
             expandedFeatures.add(initialFeature);
         }
         KungUpdater.INSTANCE.checkForUpdatesAsync();
+    }
+
+    public static KungConfigScreen updates() {
+        KungConfigScreen screen = new KungConfigScreen();
+        screen.search = "Updates:";
+        FeatureEntry updater = screen.findFeature(KungUpdater.INSTANCE.buttonLabel());
+        if (updater != null) screen.expandedFeatures.add(updater);
+        return screen;
     }
 
     @Override
@@ -235,7 +243,7 @@ public final class KungConfigScreen extends Screen {
     }
 
     private void drawTitle(GuiGraphicsExtractor graphics) {
-        String title = "Kung";
+        String title = getTitle().getString();
         graphics.text(font, title, width / 2 - font.width(title) / 2, UiSpacing.MD,
             TEXT_STYLE.color(), TEXT_STYLE.shadow());
     }

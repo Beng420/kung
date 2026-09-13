@@ -964,19 +964,33 @@ public final class DungeonRunStats {
         if (entity == null) {
             return;
         }
-        if (isMimicEntity(entity)) {
+        boolean mimic = isMimicEntity(entity);
+        if (entity instanceof Zombie zombie && zombie.isBaby()) {
+            KungDebugRecorder.event("mimic-kill", "death-packet id=" + entity.getId()
+                + " pos=" + entity.blockPosition().toShortString() + " floor=" + floor
+                + " mimicCandidate=" + mimic + " alreadyKilled=" + mimicKilled
+                + " armor=" + java.util.Arrays.stream(EquipmentSlot.values())
+                    .filter(slot -> slot.getType() == EquipmentSlot.Type.HUMANOID_ARMOR)
+                    .filter(slot -> !zombie.getItemBySlot(slot).isEmpty())
+                    .map(Enum::name).toList());
+        }
+        if (mimic) {
             var damage = ((Zombie) entity).getLastDamageSource();
             if (damage != null && damage.getEntity() instanceof net.minecraft.world.entity.player.Player killer
                 && isKnownStatsUuid(killer.getUUID())) {
                 recordBonusContributor(killer.getUUID(), DungeonBonusContribution.MIMIC);
             }
-            markMimicKilled(client, true);
+            markMimicKilled(client, true, "entity-death");
             updateEstimatedScore();
         }
     }
 
     public void observeMimicEspKill(Minecraft client) {
-        markMimicKilled(client, true);
+        observeMimicEspKill(client, "esp");
+    }
+
+    void observeMimicEspKill(Minecraft client, String source) {
+        markMimicKilled(client, true, source);
         updateEstimatedScore();
     }
 
@@ -2263,13 +2277,13 @@ public final class DungeonRunStats {
                 recordBonusContributor(uuid, claim.bonus());
                 switch (claim.bonus()) {
                     case PRINCE -> markPrinceKilled(client, false);
-                    case MIMIC -> markMimicKilled(client, false);
+                    case MIMIC -> markMimicKilled(client, false, "chat");
                     case BAT -> markBatScoreKilled(client, false);
                 }
             }
         }
         if (MIMIC_KILL_PATTERN.matcher(message).matches()) {
-            markMimicKilled(client, false);
+            markMimicKilled(client, false, "chat");
         }
         if (PRINCE_KILL_PATTERN.matcher(message).matches() || message.equals(HYPIXEL_PRINCE_KILL_MESSAGE)) {
             markPrinceKilled(client, message.equals(HYPIXEL_PRINCE_KILL_MESSAGE));
@@ -2286,12 +2300,18 @@ public final class DungeonRunStats {
         KungDebugRecorder.event("player-stats", "bonus contributor=" + stats.name() + " bonus=" + bonus.marker());
     }
 
-    private void markMimicKilled(Minecraft client, boolean announce) {
+    private void markMimicKilled(Minecraft client, boolean announce, String source) {
+        var config = KungConfig.get().dungeon;
+        String suppressed = mimicKilled ? "already-killed" : !announce ? "reported-kill"
+            : !config.extraScoreMessagesEnabled() ? "extra-score-messages-off"
+            : !config.mimicMessageEnabled() ? "mimic-message-off" : "none";
+        KungDebugRecorder.event("mimic-kill", "evidence source=" + source + " first=" + !mimicKilled
+            + " extraScoreMessages=" + config.extraScoreMessagesEnabled()
+            + " mimicMessage=" + config.mimicMessageEnabled() + " suppressed=" + suppressed);
         if (mimicKilled) {
             return;
         }
         mimicKilled = true;
-        var config = KungConfig.get().dungeon;
         announce &= config.extraScoreMessagesEnabled() && config.mimicMessageEnabled();
         if (announce && client != null && client.player != null) {
             client.player.sendSystemMessage(KungMessages.info("Dungeon", "mimic killed"));

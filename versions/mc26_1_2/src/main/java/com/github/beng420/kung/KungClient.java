@@ -28,6 +28,7 @@ public final class KungClient implements ClientModInitializer {
             ServiceRegistry.shutdown();
         });
         KungUpdater.INSTANCE.installPendingUpdateIfReady();
+        KungUpdater.INSTANCE.initializeClientNotifications();
         KungUpdater.INSTANCE.checkForUpdatesAsync();
         KungMod.LOGGER.info("Kung client entrypoint ready.");
     }

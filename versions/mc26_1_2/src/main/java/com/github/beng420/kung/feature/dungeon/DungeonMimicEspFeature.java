@@ -63,6 +63,7 @@ public final class DungeonMimicEspFeature extends ConfigurableFeature<DungeonCon
     private long lastRenderLogTick = Long.MIN_VALUE;
     private String lastRenderLogState = "";
     private String lastLoggedState = "";
+    private String lastCandidateLogState = "";
     private DungeonMapSnapshot.GridKey observedMimicMapRoom;
     private String mimicMapReason = "no-candidates";
 
@@ -128,6 +129,7 @@ public final class DungeonMimicEspFeature extends ConfigurableFeature<DungeonCon
         chestMemory.observe(mimicChestPositions, pos -> isAllowedMimicPosition(client, renderPlan, pos));
         lastKnownMimicChestPositions = chestMemory.positions();
         observeMimicRooms();
+        logCandidateState(renderPlan);
         observeMimicEntityState(client);
         logState();
     }
@@ -397,7 +399,7 @@ public final class DungeonMimicEspFeature extends ConfigurableFeature<DungeonCon
             return;
         }
         KungDebugRecorder.event("mimic-esp", "mimic complete source=" + source);
-        tracker.runStats().observeMimicEspKill(client);
+        tracker.runStats().observeMimicEspKill(client, source);
         tracker.mapSnapshot().clearMimicRooms(source);
         clear();
     }
@@ -561,6 +563,7 @@ public final class DungeonMimicEspFeature extends ConfigurableFeature<DungeonCon
         lastRenderLogTick = Long.MIN_VALUE;
         lastRenderLogState = "";
         lastLoggedState = "";
+        lastCandidateLogState = "";
         observedMimicMapRoom = null;
     }
 
@@ -584,6 +587,20 @@ public final class DungeonMimicEspFeature extends ConfigurableFeature<DungeonCon
         }
         lastRenderLogState = state;
         KungDebugRecorder.event("mimic-esp", state);
+    }
+
+    private void logCandidateState(DungeonLiveMapWriter.MatchRenderPlan renderPlan) {
+        String state = "candidates=" + lastKnownMimicChestPositions.stream().map(pos -> {
+            var grid = DungeonScanUtils.getRoomGridPosition(pos);
+            var match = matchContaining(renderPlan, grid.gridX(), grid.gridZ());
+            var hint = renderPlan.hintAt(grid.gridX(), grid.gridZ());
+            String name = match != null ? match.template().name() : hint != null ? hint.name() : "unknown";
+            return pos.toShortString() + " room=" + name + " cell=" + grid.gridX() + "," + grid.gridZ()
+                + " loadedCandidate=" + mimicChestPositions.contains(pos);
+        }).toList() + " mapReason=" + mimicMapReason;
+        if (state.equals(lastCandidateLogState)) return;
+        lastCandidateLogState = state;
+        KungDebugRecorder.event("mimic-candidates", state);
     }
 
     private void logState() {

@@ -29,6 +29,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
+import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.loader.api.FabricLoader;
 import net.fabricmc.loader.api.ModContainer;
 import net.fabricmc.loader.api.metadata.ModOrigin;
@@ -53,6 +55,29 @@ public enum KungUpdater {
     private final AtomicBoolean checking = new AtomicBoolean();
     private final AtomicBoolean installing = new AtomicBoolean();
     private final AtomicReference<State> state = new AtomicReference<>(State.checking(currentVersion()));
+    private final KungUpdateNotification notification = new KungUpdateNotification();
+
+    public void initializeClientNotifications() {
+        ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> {
+            var server = client.getCurrentServer();
+            if (notification.joined(handler.getConnection(), server == null ? null : server.ip)) {
+                checkForUpdatesAsync();
+            }
+        });
+        ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
+            // Reconfiguration can replace the play listener while retaining the connection.
+            if (!handler.getConnection().isConnected()) notification.disconnected(handler.getConnection());
+        });
+        ClientTickEvents.END_CLIENT_TICK.register(client -> {
+            var handler = client.getConnection();
+            State snapshot = state.get();
+            if (notification.shouldNotify(handler == null ? null : handler.getConnection(),
+                client.player != null && client.level != null, snapshot.status() == Status.UPDATE_AVAILABLE)) {
+                client.player.sendSystemMessage(KungUpdateNotification.message(
+                    snapshot.currentVersion(), snapshot.latestVersion()));
+            }
+        });
+    }
 
     public void checkForUpdatesAsync() {
         Status status = state.get().status();
@@ -457,7 +482,7 @@ public enum KungUpdater {
         return Files.isRegularFile(path) && path.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".jar");
     }
 
-    private static String currentVersion() {
+    public static String currentVersion() {
         return FabricLoader.getInstance()
             .getModContainer(KungMod.MOD_ID)
             .map(container -> container.getMetadata().getVersion().getFriendlyString())

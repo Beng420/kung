@@ -56,6 +56,7 @@ Prefer the exact user-supplied path and time over scanning every saved log.
 | Secrets, score, target mismatch | `score-calc` |
 | Extra summary players / missing personal secrets | `run-statistics` summary roster/count/source/API state, `player-slots`, `player-stats` API outcomes; include the five actual names |
 | Superpairs reveals or counts | `superpairs` |
+| Mimic marker / missing kill announcement | `mimic-candidates` positions/rooms, `mimic-kill` death packet/evidence/source/switches, `mimic-esp`, `mimic-static`; save immediately after the kill |
 | Missing overlays or resets | Instance/lifecycle events around the supplied time |
 | Split loss | `dungeon-splits`: real/ideal clocks, `phaseStartTicks`, `phaseTicks`, `totalTicks`, exact `boundary`, `start-candidate`, `receivedTicks` and `ignoredBundledPings` |
 

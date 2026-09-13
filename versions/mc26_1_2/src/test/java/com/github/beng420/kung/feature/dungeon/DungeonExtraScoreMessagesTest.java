@@ -4,10 +4,42 @@ import static org.junit.Assert.*;
 
 import com.github.beng420.kung.config.KungConfig;
 import com.github.beng420.kung.config.category.DungeonConfig;
+import com.github.beng420.kung.util.KungDebugRecorder;
 import com.google.gson.Gson;
 import org.junit.Test;
 
 public final class DungeonExtraScoreMessagesTest {
+    @Test
+    public void mimicTraceSeparatesDisabledOwnDetectionFromPartyEvidenceWithoutEchoes() throws Exception {
+        var previous = KungConfig.get().dungeon;
+        var config = new DungeonConfig();
+        KungConfig.get().dungeon = config;
+        KungDebugRecorder.clear();
+        try {
+            var ownKill = new DungeonRunStats();
+            ownKill.observeMimicEspKill(null, "mimic-entity-dead");
+            assertTrue(ownKill.mimicKilled());
+            assertFalse(requested(ownKill, "mimicMessageSent"));
+            assertTrue(KungDebugRecorder.dump().contains("source=mimic-entity-dead first=true"));
+            assertTrue(KungDebugRecorder.dump().contains("suppressed=extra-score-messages-off"));
+
+            config.setExtraScoreMessagesEnabled(true);
+            var reportedKill = new DungeonRunStats();
+            reportedKill.observeMessage(null, "Party > [MVP+] starziiiii: Mimic Killed!", 100L);
+            reportedKill.observeMimicEspKill(null, "entity-death");
+            assertTrue(reportedKill.mimicKilled());
+            assertFalse(requested(reportedKill, "mimicMessageSent"));
+            String trace = KungDebugRecorder.dump();
+            assertTrue(trace.contains("source=chat first=true"));
+            assertTrue(trace.contains("suppressed=reported-kill"));
+            assertTrue(trace.contains("source=entity-death first=false"));
+            assertTrue(trace.contains("suppressed=already-killed"));
+        } finally {
+            KungConfig.get().dungeon = previous;
+            KungDebugRecorder.clear();
+        }
+    }
+
     @Test
     public void switchesGateEachAnnouncementWithoutSuppressingBonusTracking() throws Exception {
         var previous = KungConfig.get().dungeon;

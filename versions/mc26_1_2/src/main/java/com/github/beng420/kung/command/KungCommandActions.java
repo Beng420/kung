@@ -718,6 +718,13 @@ final class KungCommandActions {
         return 1;
     }
 
+    static int openUpdates(CommandContext<FabricClientCommandSource> context) {
+        Minecraft client = context.getSource().getClient();
+        // Chat finishes handling the click before the new screen is opened.
+        client.schedule(() -> client.setScreen(KungConfigScreen.updates()));
+        return 1;
+    }
+
     static int debugInstanceContext(CommandContext<FabricClientCommandSource> context) {
         HypixelInstanceTracker tracker = HypixelInstanceTracker.INSTANCE;
         context.getSource().sendFeedback(commandMessage(
