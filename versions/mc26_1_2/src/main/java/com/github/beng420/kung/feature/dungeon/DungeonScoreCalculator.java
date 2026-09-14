@@ -4,8 +4,9 @@ public final class DungeonScoreCalculator {
     private DungeonScoreCalculator() {
     }
 
-    public static int skillScore(int completedRoomScore, int deaths, int failedPuzzles) {
-        int puzzlePenalty = Math.max(0, failedPuzzles) * 14;
+    public static int skillScore(int completedRoomScore, int deaths, int unfinishedPuzzles) {
+        // The missing room-clear contribution is already absent from completedRoomScore.
+        int puzzlePenalty = Math.max(0, unfinishedPuzzles) * 10;
         return 20 + Math.clamp(completedRoomScore - deathPenalty(deaths) - puzzlePenalty, 0, 80);
     }
 

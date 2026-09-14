@@ -15,6 +15,7 @@ import com.github.beng420.kung.feature.dungeon.DungeonSplitTracker;
 import com.github.beng420.kung.feature.dungeon.room.RoomType;
 import com.github.beng420.kung.skyblock.HypixelInstanceTracker;
 import com.github.beng420.kung.message.KungMessages;
+import com.github.beng420.kung.update.KungUpdater;
 import com.github.beng420.kung.util.KungDebugRecorder;
 import com.mojang.brigadier.arguments.BoolArgumentType;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
@@ -722,6 +723,18 @@ final class KungCommandActions {
         Minecraft client = context.getSource().getClient();
         // Chat finishes handling the click before the new screen is opened.
         client.schedule(() -> client.setScreen(KungConfigScreen.updates()));
+        return 1;
+    }
+
+    static int previewUpdateNotification(CommandContext<FabricClientCommandSource> context) {
+        Minecraft client = context.getSource().getClient();
+        client.schedule(() -> KungUpdater.INSTANCE.previewNotification(client));
+        return 1;
+    }
+
+    static int openChangelog(CommandContext<FabricClientCommandSource> context) {
+        Minecraft client = context.getSource().getClient();
+        client.schedule(() -> client.setScreen(KungConfigScreen.changelog()));
         return 1;
     }
 

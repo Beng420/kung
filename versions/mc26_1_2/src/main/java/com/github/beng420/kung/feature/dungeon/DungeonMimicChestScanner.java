@@ -1,5 +1,6 @@
 package com.github.beng420.kung.feature.dungeon;
 
+import com.github.beng420.kung.util.KungDebugRecorder;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
@@ -21,12 +22,14 @@ final class DungeonMimicChestScanner {
     private final Map<Integer, ChunkChests> chunks = new HashMap<>();
     private ClientLevel level;
     private int fallbackScans;
+    private int checkedBlockEntityPositions;
 
     void clear() {
         chunks.clear();
         schedule.reset();
         level = null;
         fallbackScans = 0;
+        checkedBlockEntityPositions = 0;
     }
 
     void tick(ClientLevel currentLevel, BlockPos playerPos, long tick) {
@@ -35,6 +38,7 @@ final class DungeonMimicChestScanner {
             level = currentLevel;
         }
         fallbackScans = 0;
+        checkedBlockEntityPositions = 0;
         long started = System.nanoTime();
         long deadline = started + 2_000_000L;
         // Nearby block entities are cheap and give immediate discovery when entering a room.
@@ -62,15 +66,20 @@ final class DungeonMimicChestScanner {
             return;
         }
         ChunkChests previous = chunks.get(key);
+        if (previous != null && previous.chunk() != chunk) previous = null;
         Set<BlockPos> found = new LinkedHashSet<>();
         long lastFallback = Long.MIN_VALUE;
-        if (previous != null && previous.chunk() == chunk) {
+        if (previous != null) {
             lastFallback = previous.fallbackTick();
             for (BlockPos pos : previous.positions()) {
                 if (chunk.getBlockState(pos).is(Blocks.TRAPPED_CHEST)) found.add(pos);
             }
         }
-        for (BlockPos pos : chunk.getBlockEntities().keySet()) {
+        // The complete index also contains serialized block entities awaiting initialization.
+        // Those chests must not wait for the slower full-block fallback.
+        Set<BlockPos> indexedPositions = chunk.getBlockEntitiesPos();
+        checkedBlockEntityPositions += indexedPositions.size();
+        for (BlockPos pos : indexedPositions) {
             if (chunk.getBlockState(pos).is(Blocks.TRAPPED_CHEST)) found.add(pos.immutable());
         }
         if (allowFallback && DungeonScanSchedule.due(tick, lastFallback, 100)) {
@@ -78,7 +87,18 @@ final class DungeonMimicChestScanner {
             lastFallback = tick;
             fallbackScans++;
         }
-        chunks.put(key, new ChunkChests(chunk, List.copyOf(found), lastFallback));
+        long firstSeenTick = previous == null ? tick : previous.firstSeenTick();
+        for (BlockPos pos : found) {
+            if (previous != null && previous.positions().contains(pos)) continue;
+            String source = !indexedPositions.contains(pos) ? "block-state-fallback"
+                : chunk.getBlockEntities().containsKey(pos) ? "block-entity" : "pending-block-entity";
+            KungDebugRecorder.event("mimic-discovery", "pos=" + pos.toShortString()
+                + " source=" + source + " tick=" + tick + " chunkFirstSeenTick=" + firstSeenTick
+                + " previousInspectTick=" + (previous == null ? "none" : previous.inspectionTick())
+                + " previousFullScanTick=" + (previous == null || previous.fallbackTick() == Long.MIN_VALUE
+                    ? "none" : previous.fallbackTick()));
+        }
+        chunks.put(key, new ChunkChests(chunk, List.copyOf(found), lastFallback, firstSeenTick, tick));
     }
 
     List<BlockPos> positions() {
@@ -94,6 +114,8 @@ final class DungeonMimicChestScanner {
 
     int fallbackScans() { return fallbackScans; }
     int cachedChunks() { return chunks.size(); }
+    int checkedBlockEntityPositions() { return checkedBlockEntityPositions; }
 
-    private record ChunkChests(LevelChunk chunk, List<BlockPos> positions, long fallbackTick) { }
+    private record ChunkChests(LevelChunk chunk, List<BlockPos> positions, long fallbackTick,
+                               long firstSeenTick, long inspectionTick) { }
 }

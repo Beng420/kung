@@ -50,6 +50,15 @@ public record UiTheme(
         0xFF527CCB
     );
 
+    private static final UiTheme MENU = new UiTheme(
+        0x33000000, 0xFF1B1B1B, 0xFF1B1B1B, 0xFF282828,
+        0xFF242424, 0xFF343434, 0xFF121212, 0xFFFFFFFF,
+        0xFFB8BEC6, 0xFFFF7777, 0xFF77D69B, 0xFFFFD166,
+        0xFF3498DB, 0xFF236C9B
+    );
+
+    public static UiTheme menu() { return MENU; }
+
     public static UiTheme settings() {
         return SETTINGS;
     }

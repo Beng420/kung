@@ -10,7 +10,7 @@ public final class DungeonScoreCalculatorTest {
         assertEquals(0, DungeonScoreCalculator.deathPenalty(0));
         assertEquals(1, DungeonScoreCalculator.deathPenalty(1));
         assertEquals(5, DungeonScoreCalculator.deathPenalty(3));
-        assertEquals(85, DungeonScoreCalculator.skillScore(80, 1, 1));
+        assertEquals(89, DungeonScoreCalculator.skillScore(80, 1, 1));
         assertEquals(20, DungeonScoreCalculator.skillScore(0, 10, 10));
     }
 

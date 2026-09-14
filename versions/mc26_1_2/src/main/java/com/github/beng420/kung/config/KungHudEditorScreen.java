@@ -5,7 +5,9 @@ import static com.github.beng420.kung.util.GuiDraw.fill;
 import com.github.beng420.kung.feature.dungeon.DungeonMapFeature;
 import com.github.beng420.kung.feature.dungeon.DungeonSplitsOverlayFeature;
 import com.github.beng420.kung.feature.dungeon.DungeonStateTracker;
+import com.github.beng420.kung.feature.garden.FeastOverlayFeature;
 import com.github.beng420.kung.feature.misc.SuperpairsHelperFeature;
+import com.github.beng420.kung.feature.safari.SafariOverlayFeature;
 import com.github.beng420.kung.ui.UiTheme;
 import java.util.ArrayList;
 import java.util.List;
@@ -233,6 +235,18 @@ public final class KungHudEditorScreen extends Screen {
             config.misc::setSuperpairsHelperScale
         ));
 
+        FeastOverlayFeature.OverlayBounds feastBounds = FeastOverlayFeature.overlayBounds(config.feast);
+        entries.add(new HudEntry(
+            "Feast Progress", feastBounds.x(), feastBounds.y(), feastBounds.width(), feastBounds.height(),
+            0, 0, config.feast::x, config.feast::y, config.feast::setX, config.feast::setY,
+            config.feast::scale, config.feast::setScale
+        ));
+        SafariOverlayFeature.OverlayBounds safariBounds = SafariOverlayFeature.overlayBounds(config.safari);
+        entries.add(new HudEntry(
+            "Safari Uniques", safariBounds.x(), safariBounds.y(), safariBounds.width(), safariBounds.height(),
+            0, 0, config.safari::x, config.safari::y, config.safari::setX, config.safari::setY,
+            config.safari::scale, config.safari::setScale
+        ));
         return entries;
     }
 
@@ -243,7 +257,13 @@ public final class KungHudEditorScreen extends Screen {
         fill(graphics, entry.x(), entry.y() + entry.height() - 1, entry.x() + entry.width(), entry.y() + entry.height(), BORDER);
         fill(graphics, entry.x(), entry.y(), entry.x() + 1, entry.y() + entry.height(), BORDER);
         fill(graphics, entry.x() + entry.width() - 1, entry.y(), entry.x() + entry.width(), entry.y() + entry.height(), BORDER);
-        drawCentered(graphics, entry.featureName(), entry.x() + entry.width() / 2, entry.y() + entry.height() / 2 - 4);
+        if (entry.featureName().equals("Safari Uniques")) {
+            SafariOverlayFeature.drawPreview(graphics, KungConfig.get().safari);
+        } else if (entry.featureName().equals("Feast Progress")) {
+            FeastOverlayFeature.drawPreview(graphics, KungConfig.get().feast);
+        } else {
+            drawCentered(graphics, entry.featureName(), entry.x() + entry.width() / 2, entry.y() + entry.height() / 2 - 4);
+        }
     }
 
     private void drawTooltip(GuiGraphicsExtractor graphics, HudEntry entry, int mouseX, int mouseY) {

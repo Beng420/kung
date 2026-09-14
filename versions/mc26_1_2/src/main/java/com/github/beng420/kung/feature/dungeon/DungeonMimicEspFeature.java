@@ -184,7 +184,8 @@ public final class DungeonMimicEspFeature extends ConfigurableFeature<DungeonCon
         for (BlockPos pos : chestScanner.positions()) {
             if (isMimicChest(client, renderPlan, pos)) result.add(pos);
         }
-        lastScanStats = new ScanStats(chestScanner.cachedChunks(), result.size(), chestScanner.fallbackScans());
+        lastScanStats = new ScanStats(chestScanner.cachedChunks(), chestScanner.checkedBlockEntityPositions(),
+            chestScanner.fallbackScans());
         return List.copyOf(result);
     }
 
@@ -615,7 +616,7 @@ public final class DungeonMimicEspFeature extends ConfigurableFeature<DungeonCon
             + " room=" + (lastPlayerRoom == null ? "none" : lastPlayerRoom.x() + "," + lastPlayerRoom.z())
             + " active=" + mimicEncounterActive
             + " chunks=" + lastScanStats.checkedChunks()
-            + " blockEntities=" + lastScanStats.checkedBlockEntities()
+            + " indexedPositionsThisTick=" + lastScanStats.checkedBlockEntityPositions()
             + " blockStateChunks=" + lastScanStats.blockStateScannedChunks();
         if (state.equals(lastLoggedState)) {
             return;
@@ -639,7 +640,7 @@ public final class DungeonMimicEspFeature extends ConfigurableFeature<DungeonCon
         return Math.max(min, Math.min(max, value));
     }
 
-    private record ScanStats(int checkedChunks, int checkedBlockEntities, int blockStateScannedChunks) {
+    private record ScanStats(int checkedChunks, int checkedBlockEntityPositions, int blockStateScannedChunks) {
         static ScanStats empty() {
             return new ScanStats(0, 0, 0);
         }

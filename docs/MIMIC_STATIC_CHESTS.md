@@ -45,6 +45,12 @@ wurde um 05:24:55 gespeichert. Die übernommenen Originaldaten haben SHA-256
 
 ## Matching und Grenzen
 
+- Der inkrementelle Truhenscan liest den vollständigen Block-Entity-Positionsindex
+  geladener Chunks, einschließlich noch nicht initialisierter Einträge. Jede
+  Position muss tatsächlich eine Trapped Chest enthalten. Die Suche bleibt auf
+  nahe Chunks und vier fortlaufende Chunk-Prüfungen pro Tick begrenzt, mit einem
+  kooperativen 2-ms-Budget und höchstens einem vollständigen Chunk-Fallback pro
+  Tick. Es werden keine Chunks nachgeladen.
 - X/Z liegen relativ zur nordwestlichen Bauecke des aufgenommenen Raums; Y ist
   absolute Bauhöhe. Eine Kachel hat 31 Blockpositionen, benachbarte Mittelpunkte
   sind 32 Blöcke auseinander. Rotation verwendet die tatsächliche Bauausdehnung
@@ -98,6 +104,49 @@ mit passenden Raum-Hashes. Aus fremden Truhenanzahlen wurden keine Positionen
 abgeleitet und keine Raum-Metadaten überschrieben.
 
 ## Prüfung
+
+### Trace vom 13.09.2026, 14:44:17
+
+`kung-trace-20260913-144417.log` aus `Dungeons 26.1.2/logs/kung` zeigt eine
+späte **erste Erkennung** in Catwalk, keine nachgewiesene falsche Zuordnung.
+Der Nutzer hält Catwalk auch für den tatsächlichen Mimic-Raum.
+
+| Zeitpunkt | Gesicherte Beobachtung |
+| --- | --- |
+| 14:43:48.321 | Der spätere Catwalk-Chunk ist bei der Raumprüfung geladen. Das beweist noch keine Truhe an der späteren Position. |
+| 14:43:48.670–14:43:49.172 | Ein anderer Kandidat bei `-193,81,-109` wird nach Erkennung des Trap-Raums korrekt entfernt. |
+| 14:43:53.251 | Akzeptiertes Startsignal `Starting in 1 second.` |
+| 14:44:14.621 | Erste Truhenevidenz bei `-120,63,-116`, Catwalk, Zelle `2,2`; die Karte wird unmittelbar markiert. |
+
+Die Catwalk-Erkennung liegt 21,370 Sekunden nach dem Startsignal und 26,300
+Sekunden nach der frühen Chunk-Beobachtung. Bis dahin meldet Kung keine gültigen
+Kandidaten; es gibt keine konkurrierenden Räume, die die Karte blockieren.
+Der HUD-Waypoint bleibt außerhalb desselben Raums absichtlich unsichtbar
+(`sameRoom=0`), während die Karte den erkannten Raum markieren kann.
+
+Der alte Trace protokolliert weder den Eingang des Truhenblocks noch den
+Erkennungsweg. Ein serverseitig später gesetzter Block und eine verspätete
+Scanner-Entdeckung lassen sich deshalb nicht sicher trennen. Insbesondere war
+das alte Feld `blockEntities` nur die Zahl gefilterter Kandidaten, kein Zähler
+geprüfter Block Entities.
+
+Der schnelle Scan berücksichtigt jetzt auch noch nicht initialisierte Block
+Entities; vorher mussten solche Truhen gegebenenfalls auf den vollständigen
+Block-Fallback warten. Das beseitigt diese mögliche Verzögerung, beweist aber
+nicht ihre Ursache im Catwalk-Run. `mimic-discovery` erfasst neue rohe
+Trapped-Chest-Funde vor dem Raumfilter, mit `source` (`block-entity`,
+`pending-block-entity` oder `block-state-fallback`), aktuellem Dungeon-Tick,
+erster Chunk-Beobachtung und letzter Index-/Vollprüfung derselben Chunk-Instanz.
+Die Tick-Werte sind Scanner-Beobachtungen, keine Paket-Eingangszeiten.
+`indexedPositionsThisTick` zählt jetzt die tatsächlich geprüften Indexeinträge.
+Bei erneut später Anzeige unmittelbar `/kung log save` verwenden; die tatsächliche
+Verbesserung und der verbleibende Server-/Scan-Anteil sind noch live zu prüfen.
+
+Validierung: bestehende Tests für Mimic-Persistenz, feste Truhen und
+Extra-Score-Meldungen erfolgreich; vollständiger Java-25-Build mit **315 Tests**,
+keinen Fehlern oder übersprungenen Tests. Die Index-API wurde zusätzlich an
+Minecraft 26.1.2 geprüft. Die Tests simulieren keinen verspäteten Chunk-/Truheneingang;
+die schnellere Erkennung steht damit noch unter Live-Prüfung.
 
 ### Trace vom 13.09.2026, 01:56:28
 

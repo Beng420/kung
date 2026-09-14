@@ -48,7 +48,7 @@ public final class DungeonRunStats {
     private static final long ROOM_CLEAR_PLAYER_STALE_TICKS = 40;
     private static final long RUN_SECRET_FINAL_TIMEOUT_TICKS = 60;
     private static final long SCORE_CALC_LOG_INTERVAL_MILLIS = 1_000L;
-    private static final Pattern CLEARED_PATTERN = Pattern.compile("Cleared:\\s*(\\d+(?:\\.\\d+)?)%", Pattern.CASE_INSENSITIVE);
+    private static final Pattern CLEARED_PATTERN = Pattern.compile("^Cleared:\\s*(\\d+(?:\\.\\d+)?)%(?:\\s*\\(\\d+\\))?\\s*$", Pattern.CASE_INSENSITIVE);
     private static final Pattern FLOOR_NAME_PATTERN = Pattern.compile(
         "^\\[BOSS] (The Professor|Bonzo|Scarf|Thorn|Livid|Sadan|Maxor|Storm|Goldor|Necron):",
         Pattern.CASE_INSENSITIVE
@@ -60,7 +60,6 @@ public final class DungeonRunStats {
     private static final Pattern ROOM_SECRETS_PATTERN = Pattern.compile("\\b(\\d{1,2})\\s*/\\s*(\\d{1,2})\\s+Secrets\\b", Pattern.CASE_INSENSITIVE);
     private static final Pattern COMPLETED_ROOMS_PATTERN = Pattern.compile("\\s*Completed Rooms:\\s*(\\d+)(?:\\s*/\\s*(\\d+))?", Pattern.CASE_INSENSITIVE);
     private static final Pattern OPENED_ROOMS_PATTERN = Pattern.compile("\\s*Opened Rooms:\\s*(\\d+)", Pattern.CASE_INSENSITIVE);
-    private static final Pattern PUZZLE_STATE_PATTERN = Pattern.compile(".+: \\[([✖xX])]", Pattern.CASE_INSENSITIVE);
     private static final Pattern CRYPTS_TAB_PATTERN = Pattern.compile("\\s*Crypts:\\s*(\\d+)", Pattern.CASE_INSENSITIVE);
     private static final Pattern CRYPT_PROGRESS_PATTERN = Pattern.compile(
         ".*(?:\\b(?:opened|destroyed|blew up|blown up)\\b.*\\bcrypt\\b|\\bcrypt\\b.*\\b(?:opened|destroyed|blew up|blown up)\\b).*",
@@ -89,6 +88,7 @@ public final class DungeonRunStats {
     private final Map<RoomKey, UUID> lastPlayerInRoom = new HashMap<>();
     private final DungeonRoomClearAttribution roomClearAttribution = new DungeonRoomClearAttribution();
     private final DungeonDeathTracker deathTracker = new DungeonDeathTracker();
+    private final DungeonPuzzleProgress puzzles = new DungeonPuzzleProgress();
     private final Map<RoomKey, Integer> roomSecretsFound = new HashMap<>();
     private final Map<RoomKey, Long> lastRoomPresenceTick = new HashMap<>();
     private final Map<Integer, Integer> derivedSecretsTotalHistogram = new HashMap<>();
@@ -106,7 +106,6 @@ public final class DungeonRunStats {
     private int openedRooms;
     private int totalRoomsFromTab;
     private int deaths;
-    private int failedPuzzles;
     private int cryptsOpened;
     private int cryptsAvailable = -1;
     private int serverScore = -1;
@@ -134,6 +133,8 @@ public final class DungeonRunStats {
     private UUID selfUuid;
     private String selfName = "";
     private DungeonLiveMapWriter.MatchRenderPlan cachedSecretPlan;
+    private DungeonLiveMapWriter.MatchRenderPlan cachedScorePlan;
+    private ScoreMapProgress cachedScoreMapProgress = new ScoreMapProgress(0, 0, 0, 0, 0);
     private int cachedCatalogSecretTotal = -1;
 
     public void reset() {
@@ -166,6 +167,8 @@ public final class DungeonRunStats {
         roomClearAttribution.reset();
         deathTracker.reset();
         cachedSecretPlan = null;
+        cachedScorePlan = null;
+        cachedScoreMapProgress = new ScoreMapProgress(0, 0, 0, 0, 0);
         cachedCatalogSecretTotal = -1;
         roomSecretsFound.clear();
         lastRoomPresenceTick.clear();
@@ -183,7 +186,7 @@ public final class DungeonRunStats {
         openedRooms = 0;
         totalRoomsFromTab = 0;
         deaths = 0;
-        failedPuzzles = 0;
+        puzzles.reset();
         cryptsOpened = 0;
         cryptsAvailable = -1;
         serverScore = -1;
@@ -399,7 +402,8 @@ public final class DungeonRunStats {
     ) {
         int skillRoomScore = roomProgressScore(renderPlan, 80.0);
         int deathPenalty = deathPenalty();
-        int puzzlePenalty = failedPuzzles * 14;
+        int unfinishedPuzzles = unfinishedPuzzles(renderPlan);
+        int puzzlePenalty = unfinishedPuzzles * 10;
         int skill = skillScore(renderPlan);
         int exploreRoom = exploreRoomScore(renderPlan);
         int secret = secretScore(totalSecrets);
@@ -469,7 +473,9 @@ public final class DungeonRunStats {
             + ",clearedPercent:" + clearedPercent
             + ",bloodCompleted:" + bloodRoomCompleted
             + ",unfinishedPuzzleCells:" + unfinishedPuzzleCells
-            + " failedPuzzles=" + failedPuzzles
+            + ",unfinishedClearCells:" + unfinishedClearRoomCells(renderPlan)
+            + " unfinishedPuzzles=" + unfinishedPuzzles
+            + " failedPuzzles=" + puzzles.failed()
             + " crypts=" + cryptsOpened + "/" + cryptsAvailable
             + " mimic=" + mimicKilled
             + " prince=" + princeKilled
@@ -1108,7 +1114,7 @@ public final class DungeonRunStats {
         }
     }
 
-    private void observeScoreboardLine(Minecraft client, String raw) {
+    void observeScoreboardLine(Minecraft client, String raw) {
         String line = DungeonSecretCounts.clean(raw);
         if (line.isBlank()) return;
         observeStatLine(client, line);
@@ -1129,7 +1135,6 @@ public final class DungeonRunStats {
             return;
         }
 
-        failedPuzzles = 0;
         List<UUID> currentSlots = new ArrayList<>(MAX_DUNGEON_PLAYERS);
         if (client.player != null) {
             HypixelPartyTracker.INSTANCE.observeOnlinePlayer(client.player.getName().getString(), client.player.getUUID());
@@ -1198,11 +1203,7 @@ public final class DungeonRunStats {
             return null;
         }
 
-        Matcher puzzleMatcher = PUZZLE_STATE_PATTERN.matcher(line);
-        if (puzzleMatcher.find()) {
-            failedPuzzles++;
-            return null;
-        }
+        if (puzzles.observe(line)) return null;
 
         Matcher cryptsMatcher = CRYPTS_TAB_PATTERN.matcher(line);
         if (cryptsMatcher.matches()) {
@@ -1921,11 +1922,11 @@ public final class DungeonRunStats {
 
     private int skillScore(DungeonLiveMapWriter.MatchRenderPlan renderPlan) {
         int completedRoomScore = roomProgressScore(renderPlan, 80.0);
-        return DungeonScoreCalculator.skillScore(completedRoomScore, deaths, failedPuzzles);
+        return DungeonScoreCalculator.skillScore(completedRoomScore, deaths, unfinishedPuzzles(renderPlan));
     }
 
     private int projectedSPlusSkillScore() {
-        return DungeonScoreCalculator.projectedSkillScore(deaths, failedPuzzles);
+        return DungeonScoreCalculator.projectedSkillScore(deaths, puzzles.failed());
     }
 
     private int deathPenalty() {
@@ -1945,20 +1946,13 @@ public final class DungeonRunStats {
     }
 
     private int roomProgressScore(DungeonLiveMapWriter.MatchRenderPlan renderPlan, double maxScore) {
-        if (clearedPercent >= 0.0) {
-            return Math.clamp((int) Math.floor(maxScore * Math.min(100.0, clearedPercent) / 100.0), 0, (int) maxScore);
-        }
-
-        int totalRooms = totalRoomsEstimate(renderPlan);
-        if (totalRooms <= 0) {
-            return 0;
-        }
         int scoreRoomCells = scoreRoomCellTotal(renderPlan);
         int projectedCompletedCells = projectedCompletedRoomCells(renderPlan);
-        if (scoreRoomCells > 0 && projectedCompletedCells > 0) {
+        if (scoreRoomCells > 0) {
             return Math.clamp((int) Math.floor(maxScore * projectedCompletedCells / scoreRoomCells), 0, (int) maxScore);
         }
-        return Math.clamp((int) (maxScore * scoreCompletedRooms(renderPlan) / totalRooms), 0, (int) maxScore);
+        return clearedPercent >= 0.0
+            ? Math.clamp((int) Math.floor(maxScore * clearedPercent / 100.0), 0, (int) maxScore) : 0;
     }
 
     private int secretScore() {
@@ -2068,70 +2062,85 @@ public final class DungeonRunStats {
             return 0;
         }
 
-        int completedCells = Math.max(completedRooms, bestCompletedRooms(renderPlan));
-        if (completedCells >= totalCells) {
-            return totalCells;
-        }
+        int completedCells = Math.max(completedRooms, scoreMapProgress(renderPlan).clearedCells());
         if (completedCells <= 0) {
             return 0;
         }
 
-        int unfinishedPuzzleCells = unfinishedPuzzleRoomCells(renderPlan);
-        if (unfinishedPuzzleCells <= 0 && shouldProjectFinishedBossRoom(renderPlan, completedCells, totalCells)) {
-            return totalCells;
-        }
-
-        int projected = completedCells + 1;
+        int projected = completedCells + (floor > 0 ? 1 : 0);
         if (!bloodRoomCompleted) {
             projected++;
         }
-        int cappedTotal = unfinishedPuzzleCells > 0
-            ? Math.max(0, totalCells - unfinishedPuzzleCells)
-            : totalCells;
+        // Blood/boss credit cannot pay for an unfinished clear room elsewhere on the map.
+        int cappedTotal = Math.max(0, totalCells - unfinishedClearRoomCells(renderPlan));
         return Math.clamp(projected, 0, cappedTotal);
     }
 
-    private boolean shouldProjectFinishedBossRoom(
-        DungeonLiveMapWriter.MatchRenderPlan renderPlan,
-        int completedCells,
-        int totalCells
-    ) {
-        if (!bloodRoomCompleted || totalCells <= 1) {
-            return false;
-        }
-
-        int observedRooms = observedRoomCount(renderPlan);
-        if (observedRooms <= 0 || mapVisitedRooms(renderPlan) < observedRooms) {
-            return false;
-        }
-
-        int openedCells = Math.max(openedRooms, bestOpenedRooms(renderPlan));
-        return openedCells >= totalCells - 1 && completedCells >= totalCells - 2;
+    private static boolean scoreCellCleared(DungeonLiveMapWriter.MatchRenderPlan plan, DungeonLiveMapWriter.CellKey cell) {
+        // The map reader also represents a failed puzzle's red cross as CLEARED.
+        return plan.completedRooms().contains(cell)
+            || (plan.roomTypes().getOrDefault(cell, RoomType.UNKNOWN) != RoomType.PUZZLE
+                && plan.clearedRooms().contains(cell));
     }
 
-    private int unfinishedPuzzleRoomCells(DungeonLiveMapWriter.MatchRenderPlan renderPlan) {
-        if (renderPlan == null) {
-            return 0;
-        }
-        int count = 0;
-        for (Map.Entry<DungeonLiveMapWriter.CellKey, RoomType> entry : renderPlan.roomTypes().entrySet()) {
-            if (entry.getValue() == RoomType.PUZZLE && !renderPlan.completedRooms().contains(entry.getKey())) {
-                count++;
+    private int unfinishedClearRoomCells(DungeonLiveMapWriter.MatchRenderPlan plan) {
+        var progress = scoreMapProgress(plan);
+        // If every puzzle is solved, tab can confirm stale map cells. Partial counts cannot
+        // identify which still-open map puzzle was solved and must not clear the wrong room.
+        int tabAhead = unfinishedPuzzles(plan) == 0 ? Math.max(0, puzzles.completed() - progress.completedPuzzles()) : 0;
+        return Math.max(0, progress.unfinishedClearCells() - Math.min(progress.unfinishedPuzzleCells(), tabAhead));
+    }
+
+    private int unfinishedPuzzles(DungeonLiveMapWriter.MatchRenderPlan plan) {
+        var progress = scoreMapProgress(plan);
+        return puzzles.unfinished(progress.puzzleRooms(), progress.completedPuzzles());
+    }
+
+    private int unfinishedPuzzleRoomCells(DungeonLiveMapWriter.MatchRenderPlan plan) {
+        return scoreMapProgress(plan).unfinishedPuzzleCells();
+    }
+
+    private ScoreMapProgress scoreMapProgress(DungeonLiveMapWriter.MatchRenderPlan plan) {
+        if (plan == cachedScorePlan) return cachedScoreMapProgress;
+        int cleared = 0;
+        int unfinished = 0;
+        int unfinishedPuzzleCells = 0;
+        Set<DungeonLiveMapWriter.CellKey> puzzleCells = new HashSet<>();
+        Set<DungeonLiveMapWriter.CellKey> completedPuzzleCells = new HashSet<>();
+        if (plan != null) {
+            for (var cell : plan.roomOwners().keySet()) {
+                if (scoreCellCleared(plan, cell)) cleared++;
+                else if (DungeonRoomProgress.isClearable(plan.roomTypes().getOrDefault(cell, RoomType.UNKNOWN))) unfinished++;
+            }
+            for (var entry : plan.roomTypes().entrySet()) {
+                if (entry.getValue() != RoomType.PUZZLE) continue;
+                puzzleCells.add(entry.getKey());
+                if (plan.completedRooms().contains(entry.getKey())) completedPuzzleCells.add(entry.getKey());
+                else unfinishedPuzzleCells++;
             }
         }
-        return count;
+        // The footer asks for both skill and exploration repeatedly; recount only on a new plan.
+        cachedScorePlan = plan;
+        cachedScoreMapProgress = new ScoreMapProgress(cleared, unfinished, unfinishedPuzzleCells,
+            plan == null ? 0 : plan.ownerCount(puzzleCells), plan == null ? 0 : plan.ownerCount(completedPuzzleCells));
+        return cachedScoreMapProgress;
     }
 
+    private record ScoreMapProgress(int clearedCells, int unfinishedClearCells, int unfinishedPuzzleCells,
+                                    int puzzleRooms, int completedPuzzles) { }
+
     private int scoreRoomCellTotal(DungeonLiveMapWriter.MatchRenderPlan renderPlan) {
-        int mapCells = roomCellCount(renderPlan);
-        if (mapCells > 0) {
-            return Math.max(mapCells, Math.max(openedRooms, completedRooms));
-        }
         if (totalRoomsFromTab > 0) {
             return Math.max(totalRoomsFromTab, Math.max(openedRooms, completedRooms));
         }
-        int fallback = totalRoomsEstimate(renderPlan);
-        return fallback > 0 ? Math.max(fallback, Math.max(openedRooms, completedRooms)) : 0;
+        // Cleared is rounded by Hypixel. Derive its denominator instead of treating the
+        // displayed percentage as completed room points or assuming the partial map is complete.
+        if (completedRooms > 0 && clearedPercent > 0.0) {
+            int derived = (int) Math.floor(completedRooms * 100.0 / clearedPercent + 0.4);
+            return Math.max(derived, Math.max(openedRooms, completedRooms));
+        }
+        int mapCells = roomCellCount(renderPlan);
+        return mapCells > 0 ? Math.max(mapCells, Math.max(openedRooms, completedRooms)) : 0;
     }
 
     private int mapCompletedRooms(DungeonLiveMapWriter.MatchRenderPlan renderPlan) {

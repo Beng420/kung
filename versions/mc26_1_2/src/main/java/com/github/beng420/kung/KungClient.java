@@ -24,6 +24,7 @@ public final class KungClient implements ClientModInitializer {
         FeatureRegistry.initializeClient(services);
         KungCommands.register(services);
         ClientLifecycleEvents.CLIENT_STOPPING.register(client -> {
+            KungUpdater.INSTANCE.releaseNotes().flushAcknowledgement();
             FeatureRegistry.shutdown();
             ServiceRegistry.shutdown();
         });

@@ -24,6 +24,6 @@ public final class ChatEmotesFeature extends ConfigurableFeature<MiscConfig> imp
     }
 
     private String replaceEmotes(String message) {
-        return isEnabled() ? message.replace(":iman:", "\u2672") : message;
+        return isEnabled() ? message.replace(":iman:", "\u2672").replace(":ironman:", "\u2672") : message;
     }
 }

@@ -2,12 +2,7 @@ package com.github.beng420.kung.update;
 
 import static org.junit.Assert.*;
 
-import java.net.URI;
-import java.util.ArrayList;
 import java.util.List;
-import net.minecraft.network.chat.ClickEvent;
-import net.minecraft.network.chat.Component;
-import net.minecraft.network.chat.HoverEvent;
 import org.junit.Test;
 
 public final class KungUpdateNotificationTest {
@@ -72,26 +67,4 @@ public final class KungUpdateNotificationTest {
         assertTrue(notification.shouldNotify(third, true, true));
     }
 
-    @Test
-    public void noticeOffersLocalMenuAndHttpsReleaseLinkWithHoverHelp() {
-        Component message = KungUpdateNotification.message("0.3.1", "0.3.2");
-        assertTrue(message.getString().contains("Kung 0.3.2 is available (installed: 0.3.1)"));
-        List<Component> actions = new ArrayList<>();
-        collectActions(message, actions);
-        assertEquals(2, actions.size());
-        assertEquals("[Open Updates]", actions.get(0).getString());
-        assertEquals(new ClickEvent.RunCommand("/kung updates"), actions.get(0).getStyle().getClickEvent());
-        assertEquals("[GitHub]", actions.get(1).getString());
-        assertEquals(new ClickEvent.OpenUrl(URI.create("https://github.com/Beng420/kung/releases/latest")),
-            actions.get(1).getStyle().getClickEvent());
-        for (Component action : actions) {
-            assertTrue(action.getStyle().isUnderlined());
-            assertTrue(action.getStyle().getHoverEvent() instanceof HoverEvent.ShowText);
-        }
-    }
-
-    private static void collectActions(Component component, List<Component> actions) {
-        if (component.getStyle().getClickEvent() != null) actions.add(component);
-        component.getSiblings().forEach(sibling -> collectActions(sibling, actions));
-    }
 }

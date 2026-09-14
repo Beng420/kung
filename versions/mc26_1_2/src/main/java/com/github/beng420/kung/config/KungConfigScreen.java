@@ -14,9 +14,11 @@ import com.github.beng420.kung.ui.UiScrollList;
 import com.github.beng420.kung.ui.UiSpacing;
 import com.github.beng420.kung.ui.UiTextStyle;
 import com.github.beng420.kung.ui.UiTooltip;
+import com.github.beng420.kung.ui.UiMenuFont;
+import com.github.beng420.kung.ui.UiShapes;
 import com.github.beng420.kung.update.KungUpdater;
+import com.github.beng420.kung.update.KungReleaseNotesPopup;
 import com.github.beng420.kung.util.HypixelSkyBlockProfileClient;
-import com.mojang.blaze3d.platform.Window;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -31,7 +33,9 @@ import java.util.function.IntConsumer;
 import java.util.function.IntSupplier;
 import java.util.function.Supplier;
 import net.minecraft.client.Minecraft;
+import net.minecraft.ChatFormatting;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.CharacterEvent;
 import net.minecraft.client.input.KeyEvent;
@@ -39,23 +43,27 @@ import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
 
 public final class KungConfigScreen extends Screen {
-    private static final UiTheme THEME = UiTheme.settings();
+    private static final UiTheme THEME = UiTheme.menu();
     private static final UiTextStyle TEXT_STYLE = UiTextStyle.normal(THEME);
     private static final UiTextStyle MUTED_STYLE = UiTextStyle.muted(THEME);
 
+    private static final double MENU_SCALE = 0.8;
     private static final int LEFT = UiSpacing.MD;
-    private static final int COLUMN_WIDTH = 190;
+    private static final int COLUMN_WIDTH = 171;
     private static final int ROW_HEIGHT = 18;
     private static final int SETTING_HEIGHT = 16;
-    private static final int GAP = UiSpacing.MD;
+    private static final int GAP = 12;
     private static final int TOP = 22;
     private static final int HEADER_HEIGHT = 18;
-    private static final int SETTING_CONTROL_WIDTH = 58;
-    private static final int TEXT_SETTING_CONTROL_WIDTH = 112;
+    private static final int PANEL_RADIUS = 4;
+    private static final int SEARCH_BOTTOM = 80;
+    private static final int SETTING_CONTROL_WIDTH = 52;
+    private static final int TEXT_SETTING_CONTROL_WIDTH = 101;
     private static final int SETTING_ARROW_HITBOX_WIDTH = 12;
     private static final int SCROLL_STEP = 42;
     private static final int CATEGORY_SCROLL_STEP = SETTING_HEIGHT * 3;
 
+    private final Font menuFont;
     private final List<CategoryEntry> categories;
     private final List<ClickRegion> clickRegions = new ArrayList<>();
     private final Map<String, Integer> categoryScrolls = new HashMap<>();
@@ -69,6 +77,9 @@ public final class KungConfigScreen extends Screen {
     private String search = "";
     private boolean searchFocused;
     private TooltipRequest tooltip;
+    private KungReleaseNotesPopup releaseNotesPopup;
+    private boolean releaseNotesChecked;
+    private boolean forceReleaseNotes;
 
     public KungConfigScreen() {
         this(null);
@@ -76,6 +87,7 @@ public final class KungConfigScreen extends Screen {
 
     public KungConfigScreen(String expandedFeatureName) {
         super(Component.literal("Kung - v" + KungUpdater.currentVersion()));
+        menuFont = UiMenuFont.wrap(super.font);
         categories = createCategories();
         FeatureEntry initialFeature = findFeature(expandedFeatureName);
         if (initialFeature != null) {
@@ -92,33 +104,75 @@ public final class KungConfigScreen extends Screen {
         return screen;
     }
 
+    public static KungConfigScreen changelog() {
+        KungConfigScreen screen = new KungConfigScreen();
+        screen.forceReleaseNotes = true;
+        return screen;
+    }
+
+    @Override
+    protected void init() {
+        if (!releaseNotesChecked) {
+            releaseNotesChecked = true;
+            var notes = KungUpdater.INSTANCE.releaseNotes();
+            if (notes.openMenu(forceReleaseNotes)) releaseNotesPopup = new KungReleaseNotesPopup(notes);
+        }
+    }
+
     @Override
     public boolean isPauseScreen() {
         return false;
     }
 
+    public boolean hasReleaseNotesPopup() { return releaseNotesPopup != null; }
+
+    private void openChangelog() {
+        var notes = KungUpdater.INSTANCE.releaseNotes();
+        notes.openMenu(true);
+        releaseNotesPopup = new KungReleaseNotesPopup(notes);
+        draggingSlider = null;
+        capturingSetting = null;
+        searchFocused = false;
+    }
+
     @Override
     public void extractRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick) {
+        mouseX = toMenuCoordinate(mouseX);
+        mouseY = toMenuCoordinate(mouseY);
         horizontalScroll.setOffsetWithinMax(horizontalScroll.offset(), maxHorizontalScroll());
         clickRegions.clear();
         tooltip = null;
-        fill(graphics, 0, 0, width, height, THEME.backdrop());
-        drawTitle(graphics);
-        drawColumns(graphics, mouseX, mouseY);
-        drawSearchBox(graphics);
-        if (tooltip != null && textEditor == null) {
-            UiTooltip.draw(graphics, font, List.of(tooltip.text()), tooltip.x(), tooltip.y(), THEME);
-        }
-        if (textEditor != null) {
-            textEditor.draw(graphics, mouseX, mouseY, partialTick);
+        graphics.pose().pushMatrix();
+        try {
+            graphics.pose().scale((float) MENU_SCALE, (float) MENU_SCALE);
+            fill(graphics, 0, 0, menuWidth(), menuHeight(), THEME.backdrop());
+            drawTitle(graphics);
+            drawColumns(graphics, releaseNotesPopup == null ? mouseX : -1, releaseNotesPopup == null ? mouseY : -1);
+            drawSearchBox(graphics);
+            if (tooltip != null && textEditor == null) {
+                UiTooltip.draw(graphics, menuFont, List.of(tooltip.text()), tooltip.x(), tooltip.y(), THEME);
+            }
+            if (textEditor != null) {
+                textEditor.draw(graphics, mouseX, mouseY, partialTick);
+            }
+            if (releaseNotesPopup != null) {
+                releaseNotesPopup.draw(graphics, menuFont, menuWidth(), menuHeight(), mouseX, mouseY);
+            }
+        } finally {
+            graphics.pose().popMatrix();
         }
     }
 
     @Override
     public boolean mouseClicked(MouseButtonEvent event, boolean doubleClick) {
-        int mouseX = toGuiX(event.x());
-        int mouseY = toGuiY(event.y());
+        int mouseX = toMenuCoordinate(event.x());
+        int mouseY = toMenuCoordinate(event.y());
         int button = event.button();
+
+        if (releaseNotesPopup != null) {
+            if (releaseNotesPopup.click(this, mouseX, mouseY, button)) releaseNotesPopup = null;
+            return true;
+        }
 
         if (textEditor != null) {
             return textEditor.mouseClicked(event, mouseX, mouseY, doubleClick);
@@ -148,18 +202,20 @@ public final class KungConfigScreen extends Screen {
 
     @Override
     public boolean mouseDragged(MouseButtonEvent event, double dragX, double dragY) {
+        if (releaseNotesPopup != null) return true;
         if (textEditor != null) {
             return textEditor.mouseDragged(event, dragX, dragY);
         }
         if (draggingSlider == null) {
             return super.mouseDragged(event, dragX, dragY);
         }
-        draggingSlider.click(toGuiX(event.x()), draggingSliderControlX, SETTING_CONTROL_WIDTH);
+        draggingSlider.click(toMenuCoordinate(event.x()), draggingSliderControlX, SETTING_CONTROL_WIDTH);
         return true;
     }
 
     @Override
     public boolean mouseReleased(MouseButtonEvent event) {
+        if (releaseNotesPopup != null) return true;
         if (textEditor != null) {
             return textEditor.mouseReleased(event);
         }
@@ -169,11 +225,15 @@ public final class KungConfigScreen extends Screen {
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
+        if (releaseNotesPopup != null) {
+            releaseNotesPopup.scroll(toMenuCoordinate(mouseX), toMenuCoordinate(mouseY), scrollY);
+            return true;
+        }
         if (scrollY == 0) {
             return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
         }
 
-        CategoryScrollArea categoryScrollArea = categoryScrollAreaAt(toGuiX(mouseX), toGuiY(mouseY));
+        CategoryScrollArea categoryScrollArea = categoryScrollAreaAt(toMenuCoordinate(mouseX), toMenuCoordinate(mouseY));
         if (categoryScrollArea != null) {
             int direction = scrollY < 0 ? 1 : -1;
             setCategoryScroll(
@@ -195,6 +255,10 @@ public final class KungConfigScreen extends Screen {
 
     @Override
     public boolean keyPressed(KeyEvent event) {
+        if (releaseNotesPopup != null) {
+            if (releaseNotesPopup.key(event.key())) releaseNotesPopup = null;
+            return true;
+        }
         if (textEditor != null) {
             return textEditor.keyPressed(event);
         }
@@ -232,6 +296,7 @@ public final class KungConfigScreen extends Screen {
 
     @Override
     public boolean charTyped(CharacterEvent event) {
+        if (releaseNotesPopup != null) return true;
         if (textEditor != null) {
             return textEditor.charTyped(event);
         }
@@ -244,7 +309,7 @@ public final class KungConfigScreen extends Screen {
 
     private void drawTitle(GuiGraphicsExtractor graphics) {
         String title = getTitle().getString();
-        graphics.text(font, title, width / 2 - font.width(title) / 2, UiSpacing.MD,
+        graphics.text(menuFont, title, menuWidth() / 2 - menuFont.width(title) / 2, UiSpacing.MD,
             TEXT_STYLE.color(), TEXT_STYLE.shadow());
     }
 
@@ -256,7 +321,7 @@ public final class KungConfigScreen extends Screen {
                 continue;
             }
             int x = startX + visibleIndex * (COLUMN_WIDTH + GAP);
-            if (x + COLUMN_WIDTH >= 0 && x <= width) {
+            if (x + COLUMN_WIDTH >= 0 && x <= menuWidth()) {
                 drawCategoryColumn(graphics, category, x, mouseX, mouseY);
             }
             visibleIndex++;
@@ -272,10 +337,10 @@ public final class KungConfigScreen extends Screen {
     ) {
         int panelHeight = panelHeight(category);
         setCategoryScroll(category, categoryScroll(category));
-        fill(graphics, x - 1, TOP - 1, x + COLUMN_WIDTH + 1, TOP + panelHeight + 1, THEME.border());
-        fill(graphics, x, TOP, x + COLUMN_WIDTH, TOP + panelHeight, THEME.panel());
-
-        drawCentered(graphics, trimToWidth(category.name(), COLUMN_WIDTH - 8), x + COLUMN_WIDTH / 2, TOP + 5, THEME.text(), true);
+        UiShapes.shadow(graphics, x, TOP, COLUMN_WIDTH, panelHeight, PANEL_RADIUS);
+        UiShapes.rounded(graphics, x, TOP, COLUMN_WIDTH, panelHeight, PANEL_RADIUS, THEME.panel());
+        var heading = Component.literal(trimToWidth(category.name(), COLUMN_WIDTH - 8)).withStyle(ChatFormatting.BOLD);
+        graphics.text(menuFont, heading, x + COLUMN_WIDTH / 2 - menuFont.width(heading) / 2, TOP + 4, THEME.text(), false);
 
         int viewportTop = TOP + HEADER_HEIGHT;
         int panelBottom = TOP + panelHeight;
@@ -290,20 +355,20 @@ public final class KungConfigScreen extends Screen {
             if (isFeatureExpanded(feature)) {
                 for (SettingEntry setting : feature.settings()) {
                     if (rowFullyVisible(rowY, SETTING_HEIGHT, viewportTop, panelBottom)) {
-                        drawSettingRow(graphics, setting, x, rowY, mouseX, mouseY, 0);
+                        drawSettingRow(graphics, setting, x, rowY, panelBottom, mouseX, mouseY, 0);
                     }
                     rowY += SETTING_HEIGHT;
                     if (setting == expandedSetting) {
                         for (SettingEntry child : setting.children()) {
                             if (rowFullyVisible(rowY, SETTING_HEIGHT, viewportTop, panelBottom)) {
-                                drawSettingRow(graphics, child, x, rowY, mouseX, mouseY, 12);
+                                drawSettingRow(graphics, child, x, rowY, panelBottom, mouseX, mouseY, 12);
                             }
                             rowY += SETTING_HEIGHT;
                         }
                     }
                 }
-                if (rowY > viewportTop && rowY <= panelBottom) {
-                    fill(graphics, x, rowY - 1, x + COLUMN_WIDTH, rowY, THEME.accentDark());
+                if (rowY > viewportTop && rowY < panelBottom) {
+                    fill(graphics, x + 5, rowY - 1, x + COLUMN_WIDTH - 5, rowY, THEME.border());
                 }
             }
         }
@@ -325,13 +390,14 @@ public final class KungConfigScreen extends Screen {
         boolean hovered = inside(mouseX, mouseY, x, rowY, COLUMN_WIDTH, ROW_HEIGHT);
         boolean clickable = feature.clickable() || !feature.settings().isEmpty();
         int color = feature.enabled() ? THEME.accent() : hovered && clickable ? THEME.panelSoft() : THEME.panelDark();
-        fill(graphics, x, rowY, x + COLUMN_WIDTH, rowY + ROW_HEIGHT, color);
+        UiShapes.rounded(graphics, x, rowY, COLUMN_WIDTH, ROW_HEIGHT, 0,
+            rowY + ROW_HEIGHT == viewportBottom ? PANEL_RADIUS : 0, color);
         drawCentered(graphics, trimToWidth(feature.name(), COLUMN_WIDTH - 8), x + COLUMN_WIDTH / 2, rowY + 5, THEME.text(), true);
         addClickRegion(x, rowY, COLUMN_WIDTH, ROW_HEIGHT, (clickX, clickY, button) -> clickFeature(feature, button));
     }
 
     private boolean isFeatureExpanded(FeatureEntry feature) {
-        return expandedFeatures.contains(feature);
+        return feature.alwaysExpanded() || expandedFeatures.contains(feature);
     }
 
     private boolean rowFullyVisible(int rowY, int rowHeight, int viewportTop, int viewportBottom) {
@@ -343,29 +409,31 @@ public final class KungConfigScreen extends Screen {
         SettingEntry setting,
         int x,
         int rowY,
+        int panelBottom,
         int mouseX,
         int mouseY,
         int indent
     ) {
         boolean hovered = inside(mouseX, mouseY, x, rowY, COLUMN_WIDTH, SETTING_HEIGHT);
-        fill(graphics, x, rowY, x + COLUMN_WIDTH, rowY + SETTING_HEIGHT, hovered ? THEME.panelSoft() : THEME.control());
+        UiShapes.rounded(graphics, x, rowY, COLUMN_WIDTH, SETTING_HEIGHT, 0,
+            rowY + SETTING_HEIGHT == panelBottom ? PANEL_RADIUS : 0, hovered ? THEME.panelSoft() : THEME.control());
         if (setting.expandable()) {
-            graphics.text(font, setting == expandedSetting ? "v" : ">", x + 5 + indent, rowY + 4, THEME.text(), true);
+            graphics.text(menuFont, setting == expandedSetting ? "v" : ">", x + 5 + indent, rowY + 4, THEME.text(), true);
         }
         int labelX = x + 5 + indent + (setting.expandable() ? 11 : 0);
         if (setting.kind() == SettingKind.LABEL) {
-            graphics.text(font, trimToWidth(setting.label(), COLUMN_WIDTH - indent - 10), labelX, rowY + 4,
+            graphics.text(menuFont, trimToWidth(setting.label(), COLUMN_WIDTH - indent - 10), labelX, rowY + 4,
                 MUTED_STYLE.color(), MUTED_STYLE.shadow());
             return;
         }
         int controlWidth = controlWidthFor(setting);
         int labelWidth = COLUMN_WIDTH - controlWidth - indent - 20;
-        graphics.text(font, trimToWidth(setting.label(), labelWidth), labelX, rowY + 4, THEME.text(), true);
-        if (hovered && font.width(setting.label()) > labelWidth) {
+        graphics.text(menuFont, trimToWidth(setting.label(), labelWidth), labelX, rowY + 4, THEME.text(), true);
+        if (hovered && menuFont.width(setting.label()) > labelWidth) {
             tooltip = new TooltipRequest(setting.label(), mouseX + UiSpacing.MD, mouseY + UiSpacing.MD);
         }
         int controlX = x + COLUMN_WIDTH - controlWidth - 5;
-        setting.draw(graphics, font, THEME, controlX, rowY, controlWidth, SETTING_HEIGHT, setting == capturingSetting);
+        setting.draw(graphics, menuFont, THEME, controlX, rowY, controlWidth, SETTING_HEIGHT, setting == capturingSetting);
         addClickRegion(x, rowY, COLUMN_WIDTH, SETTING_HEIGHT, (clickX, clickY, button) ->
             clickSetting(setting, clickX, button, controlX, controlWidth)
         );
@@ -391,13 +459,13 @@ public final class KungConfigScreen extends Screen {
     }
 
     private String trimToWidth(String value, int maxWidth) {
-        if (font.width(value) <= maxWidth) {
+        if (menuFont.width(value) <= maxWidth) {
             return value;
         }
         String suffix = "...";
         for (int end = value.length(); end > 0; end--) {
             String candidate = value.substring(0, end) + suffix;
-            if (font.width(candidate) <= maxWidth) {
+            if (menuFont.width(candidate) <= maxWidth) {
                 return candidate;
             }
         }
@@ -405,21 +473,24 @@ public final class KungConfigScreen extends Screen {
     }
 
     private void drawSearchBox(GuiGraphicsExtractor graphics) {
-        int boxWidth = Math.min(260, Math.max(120, width - 24));
+        int boxWidth = Math.min(220, Math.max(120, menuWidth() - 24));
         int boxHeight = 20;
-        int x = width / 2 - boxWidth / 2;
-        int y = height - 30;
-        fill(graphics, x - 2, y - 2, x + boxWidth + 2, y + boxHeight + 2, searchFocused ? THEME.text() : THEME.accent());
-        fill(graphics, x, y, x + boxWidth, y + boxHeight, THEME.panel());
+        int x = menuWidth() / 2 - boxWidth / 2;
+        int y = menuHeight() - SEARCH_BOTTOM;
+        UiShapes.shadow(graphics, x, y, boxWidth, boxHeight, 5);
+        UiShapes.rounded(graphics, x - 1, y - 1, boxWidth + 2, boxHeight + 2, 6,
+            searchFocused ? THEME.text() : THEME.accent());
+        UiShapes.rounded(graphics, x, y, boxWidth, boxHeight, 5, THEME.control());
         String label = search.isEmpty() ? "Search here..." : search;
-        drawCentered(graphics, label, x + boxWidth / 2, y + 6, search.isEmpty() ? THEME.muted() : THEME.text(), true);
+        drawCentered(graphics, trimToWidth(label, boxWidth - 12), x + boxWidth / 2, y + 5,
+            search.isEmpty() ? THEME.muted() : THEME.text(), false);
     }
 
     private boolean clickSearchBox(int mouseX, int mouseY, int button) {
-        int boxWidth = Math.min(260, Math.max(120, width - 24));
+        int boxWidth = Math.min(220, Math.max(120, menuWidth() - 24));
         int boxHeight = 20;
-        int x = width / 2 - boxWidth / 2;
-        int y = height - 30;
+        int x = menuWidth() / 2 - boxWidth / 2;
+        int y = menuHeight() - SEARCH_BOTTOM;
         if (button == 0 && inside(mouseX, mouseY, x - 2, y - 2, boxWidth + 4, boxHeight + 4)) {
             searchFocused = true;
             return true;
@@ -429,6 +500,7 @@ public final class KungConfigScreen extends Screen {
 
     private boolean clickFeature(FeatureEntry feature, int button) {
         if (button == 1) {
+            if (feature.alwaysExpanded()) return true;
             if (!expandedFeatures.remove(feature)) {
                 expandedFeatures.add(feature);
             }
@@ -498,11 +570,12 @@ public final class KungConfigScreen extends Screen {
     }
 
     private int maxHorizontalScroll() {
-        return Math.max(0, contentWidth() - Math.max(0, width - LEFT * 2));
+        return Math.max(0, contentWidth() - Math.max(0, menuWidth() - LEFT * 2));
     }
 
     private int panelHeight(CategoryEntry category) {
-        return Math.min(height - 52, HEADER_HEIGHT + categoryContentHeight(category));
+        return Math.min(Math.max(HEADER_HEIGHT, menuHeight() - SEARCH_BOTTOM - TOP - 12),
+            HEADER_HEIGHT + categoryContentHeight(category));
     }
 
     private void setCategoryScroll(CategoryEntry category, int scroll) {
@@ -537,7 +610,7 @@ public final class KungConfigScreen extends Screen {
             int x = startX + visibleIndex * (COLUMN_WIDTH + GAP);
             int panelHeight = panelHeight(category);
             if (x + COLUMN_WIDTH >= 0
-                && x <= width
+                && x <= menuWidth()
                 && inside(mouseX, mouseY, x, TOP, COLUMN_WIDTH, panelHeight)) {
                 return new CategoryScrollArea(category, maxCategoryScroll(category, panelHeight));
             }
@@ -623,27 +696,13 @@ public final class KungConfigScreen extends Screen {
         return null;
     }
 
-    private int toGuiX(double eventX) {
-        return toGuiCoordinate(eventX, width, true);
-    }
+    // Layout and input share menu coordinates; Screen's dimensions remain in Minecraft GUI units.
+    private int menuWidth() { return (int) Math.ceil(width / MENU_SCALE); }
 
-    private int toGuiY(double eventY) {
-        return toGuiCoordinate(eventY, height, false);
-    }
+    private int menuHeight() { return (int) Math.ceil(height / MENU_SCALE); }
 
-    private static int toGuiCoordinate(double value, int currentGuiSize, boolean horizontal) {
-        int rounded = (int) Math.round(value);
-        if (rounded >= 0 && rounded <= currentGuiSize) {
-            return rounded;
-        }
-
-        Window window = Minecraft.getInstance().getWindow();
-        int physicalSize = horizontal ? window.getWidth() : window.getHeight();
-        int guiSize = horizontal ? window.getGuiScaledWidth() : window.getGuiScaledHeight();
-        if (physicalSize <= 0 || guiSize <= 0) {
-            return rounded;
-        }
-        return (int) Math.round(value * guiSize / physicalSize);
+    private static int toMenuCoordinate(double value) {
+        return (int) Math.floor(value / MENU_SCALE);
     }
 
     private List<CategoryEntry> createCategories() {
@@ -883,6 +942,31 @@ public final class KungConfigScreen extends Screen {
                 )
             )
         )));
+        result.add(new CategoryEntry("Garden", List.of(
+            new FeatureEntry(
+                "Feast Progress",
+                config.feast::enabled,
+                () -> config.feast.setEnabled(!config.feast.enabled()),
+                List.of(
+                    SettingEntry.toggle("Show in Hub Farm", config.feast::showInHubFarm,
+                        () -> config.feast.setShowInHubFarm(!config.feast.showInHubFarm())),
+                    SettingEntry.dynamicLabel(() -> "Progress: Feast menu"),
+                    SettingEntry.dynamicLabel(() -> "Kernels: Grand Bakery")
+                )
+            )
+        )));
+        result.add(new CategoryEntry("Hunting", List.of(
+            new FeatureEntry(
+                "Safari Uniques",
+                config.safari::enabled,
+                () -> config.safari.setEnabled(!config.safari.enabled()),
+                List.of(
+                    SettingEntry.dynamicLabel(() -> "Red: missing uniques"),
+                    SettingEntry.dynamicLabel(() -> "Gray: caught this run"),
+                    SettingEntry.dynamicLabel(() -> "Includes Loot Share")
+                )
+            )
+        )));
         result.add(new CategoryEntry("Slayer", List.of(
             new FeatureEntry(
                 "Tarantula Helper",
@@ -1014,7 +1098,7 @@ public final class KungConfigScreen extends Screen {
                 () -> config.misc.setChatEmotesEnabled(!config.misc.chatEmotesEnabled()),
                 List.of(
                     SettingEntry.dynamicLabel(() -> ":iman: = \u2672"),
-                    SettingEntry.dynamicLabel(() -> "Up arrow recalls your original message.")
+                    SettingEntry.dynamicLabel(() -> ":ironman: = \u2672")
                 )
             ),
             new FeatureEntry(
@@ -1048,8 +1132,12 @@ public final class KungConfigScreen extends Screen {
                 KungUpdater.INSTANCE::isUpdateAvailable,
                 KungUpdater.INSTANCE::canInstallUpdate,
                 () -> KungUpdater.INSTANCE.installLatestAsync(Minecraft.getInstance()),
-                List.of(SettingEntry.dynamicLabel(KungUpdater.INSTANCE::statusMessage))
-            ),
+                List.of(
+                    SettingEntry.dynamicLabel(() -> "Installed: v" + KungUpdater.currentVersion()),
+                    SettingEntry.dynamicLabel(KungUpdater.INSTANCE::latestVersionLabel),
+                    SettingEntry.button("Changelogs", "Open", this::openChangelog)
+                )
+            ).pinnedOpen(),
             new FeatureEntry(
                 "Debug Messages",
                 config.debug::enabled,
@@ -1272,7 +1360,7 @@ public final class KungConfigScreen extends Screen {
     }
 
     private void drawCentered(GuiGraphicsExtractor graphics, String text, int centerX, int y, int color, boolean shadow) {
-        graphics.text(font, text, centerX - font.width(text) / 2, y, color, shadow);
+        graphics.text(menuFont, text, centerX - menuFont.width(text) / 2, y, color, shadow);
     }
 
     private static boolean inside(int mouseX, int mouseY, int x, int y, int width, int height) {
@@ -1281,7 +1369,6 @@ public final class KungConfigScreen extends Screen {
 
     private final class TextEditorOverlay {
         private static final int MODAL_BACKDROP = 0x99000000;
-        private static final int MODAL_PANEL = 0xF01A1D22;
         private static final int MODAL_BORDER = 0xFF3498DB;
         private static final int BUTTON_WIDTH = 58;
         private static final int BUTTON_HEIGHT = 18;
@@ -1298,7 +1385,7 @@ public final class KungConfigScreen extends Screen {
 
         private TextEditorOverlay(SettingEntry setting) {
             this.setting = setting;
-            this.editBox = new UiTextField(font, Component.literal(setting.label()))
+            this.editBox = new UiTextField(menuFont, Component.literal(setting.label()))
                 .maxLength(240)
                 .canLoseFocus(false)
                 .textShadow(true);
@@ -1311,10 +1398,11 @@ public final class KungConfigScreen extends Screen {
         private void draw(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick) {
             layout();
             graphics.nextStratum();
-            fill(graphics, 0, 0, width, height, MODAL_BACKDROP);
-            fill(graphics, panelX - 1, panelY - 1, panelX + panelWidth + 1, panelY + panelHeight + 1, MODAL_BORDER);
-            fill(graphics, panelX, panelY, panelX + panelWidth, panelY + panelHeight, MODAL_PANEL);
-            drawCentered(graphics, trimToWidth(setting.label(), panelWidth - 18), width / 2, panelY + 10, THEME.text(), true);
+            fill(graphics, 0, 0, menuWidth(), menuHeight(), MODAL_BACKDROP);
+            UiShapes.shadow(graphics, panelX, panelY, panelWidth, panelHeight, 5);
+            UiShapes.rounded(graphics, panelX - 1, panelY - 1, panelWidth + 2, panelHeight + 2, 6, MODAL_BORDER);
+            UiShapes.rounded(graphics, panelX, panelY, panelWidth, panelHeight, 5, THEME.panel());
+            drawCentered(graphics, trimToWidth(setting.label(), panelWidth - 18), menuWidth() / 2, panelY + 10, THEME.text(), true);
             editBox.extractRenderState(graphics, mouseX, mouseY, partialTick);
             drawButton(graphics, saveX, buttonsY, BUTTON_WIDTH, BUTTON_HEIGHT, "Save", mouseX, mouseY);
             drawButton(graphics, cancelX, buttonsY, BUTTON_WIDTH, BUTTON_HEIGHT, "Cancel", mouseX, mouseY);
@@ -1331,7 +1419,7 @@ public final class KungConfigScreen extends Screen {
             int mouseY
         ) {
             boolean hovered = inside(mouseX, mouseY, x, y, buttonWidth, buttonHeight);
-            fill(graphics, x, y, x + buttonWidth, y + buttonHeight, hovered ? THEME.accent() : THEME.accentDark());
+            UiShapes.rounded(graphics, x, y, buttonWidth, buttonHeight, 3, hovered ? THEME.accent() : THEME.accentDark());
             drawCentered(graphics, label, x + buttonWidth / 2, y + 5, THEME.text(), true);
         }
 
@@ -1352,12 +1440,12 @@ public final class KungConfigScreen extends Screen {
         }
 
         private boolean mouseDragged(MouseButtonEvent event, double dragX, double dragY) {
-            MouseButtonEvent guiEvent = new MouseButtonEvent(toGuiX(event.x()), toGuiY(event.y()), event.buttonInfo());
-            return editBox.mouseDragged(guiEvent, dragX, dragY);
+            MouseButtonEvent guiEvent = new MouseButtonEvent(toMenuCoordinate(event.x()), toMenuCoordinate(event.y()), event.buttonInfo());
+            return editBox.mouseDragged(guiEvent, dragX / MENU_SCALE, dragY / MENU_SCALE);
         }
 
         private boolean mouseReleased(MouseButtonEvent event) {
-            MouseButtonEvent guiEvent = new MouseButtonEvent(toGuiX(event.x()), toGuiY(event.y()), event.buttonInfo());
+            MouseButtonEvent guiEvent = new MouseButtonEvent(toMenuCoordinate(event.x()), toMenuCoordinate(event.y()), event.buttonInfo());
             return editBox.mouseReleased(guiEvent);
         }
 
@@ -1387,10 +1475,10 @@ public final class KungConfigScreen extends Screen {
         }
 
         private void layout() {
-            panelWidth = Math.min(Math.max(260, width - 80), 420);
+            panelWidth = Math.min(Math.max(260, menuWidth() - 80), 420);
             panelHeight = 86;
-            panelX = width / 2 - panelWidth / 2;
-            panelY = height / 2 - panelHeight / 2;
+            panelX = menuWidth() / 2 - panelWidth / 2;
+            panelY = menuHeight() / 2 - panelHeight / 2;
             editBox.setBounds(panelX + 14, panelY + 31, panelWidth - 28, 20);
             buttonsY = panelY + panelHeight - BUTTON_HEIGHT - 10;
             saveX = panelX + panelWidth - BUTTON_WIDTH * 2 - 22;
@@ -1420,16 +1508,24 @@ public final class KungConfigScreen extends Screen {
         BooleanSupplier enabledSupplier,
         BooleanSupplier clickableSupplier,
         Runnable toggle,
-        List<SettingEntry> settings
+        List<SettingEntry> settings,
+        boolean alwaysExpanded
     ) {
+        FeatureEntry(Supplier<String> name, BooleanSupplier enabled, BooleanSupplier clickable, Runnable toggle,
+                     List<SettingEntry> settings) {
+            this(name, enabled, clickable, toggle, settings, false);
+        }
+
         FeatureEntry(
             String name,
             BooleanSupplier enabledSupplier,
             Runnable toggle,
             List<SettingEntry> settings
         ) {
-            this(() -> name, enabledSupplier, () -> toggle != null, toggle, settings);
+            this(() -> name, enabledSupplier, () -> toggle != null, toggle, settings, false);
         }
+
+        FeatureEntry pinnedOpen() { return new FeatureEntry(nameSupplier, enabledSupplier, clickableSupplier, toggle, settings, true); }
 
         String name() {
             return nameSupplier.get();

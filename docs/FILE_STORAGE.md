@@ -7,9 +7,10 @@ profile; a custom Fabric config directory is respected.
 | Location | Created / used when |
 | --- | --- |
 | `config/kung/kung.json` | First successful config load and settings changes. Old `config/kung.json` remains a readable migration source. |
+| `config/kung/feast-progress.json` | Enabled Feast Progress: bounded cache per Minecraft account/SkyBlock profile, containing event-bound donations/goals and independent Kernel balances. Updates use one background writer and temporary sibling replacement; shutdown flushes pending writes. Normal builds never touch profile data. |
 | `config/kung/custom-sounds/` | Custom Sounds initialization/index refresh. Four bundled WAV presets are copied here if absent; user audio files also live here. |
 | `config/kung/dungeon-data/` | Explicit room learning/deletion/type commands, enabled Local Data learning, or enabled Room Sync persistence. Normal bundled recognition does not require this directory. |
-| `config/kung/updates/` | Installing an update: downloaded JAR, temporary download, pending marker and installer scripts. Checking for an update does not download a file. |
+| `config/kung/updates/` | Installing an update: downloaded JAR, temporary download, pending marker and installer scripts. `release-notes.properties` stores the displayed (`lastSeenVersion`) and explicitly dismissed (`lastDismissedVersion`) installed versions, written through a temporary sibling. Checking for an update does not download a file. |
 | `config/kung/legacy/` | Only if relocation encounters different existing files: preserves the old content without replacing the current destination. |
 | `logs/kung/kung-trace-*.log` | `/kung log save`. Routine diagnostic events remain in a bounded memory buffer. Normal logger messages still use Minecraft's `logs/latest.log`. |
 | `mods/` | The installed JAR; update installation may temporarily back up/replace it. |

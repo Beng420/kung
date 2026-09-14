@@ -1,6 +1,7 @@
 package com.github.beng420.kung.skyblock;
 
 import com.github.beng420.kung.KungMod;
+import com.github.beng420.kung.config.KungConfig;
 import com.github.beng420.kung.util.KungDebugRecorder;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
@@ -23,6 +24,7 @@ public final class SkyBlockMayorTracker {
         URI.create("https://api.hypixel.net/v2/resources/skyblock/election");
     private static final long SUCCESS_REFRESH_INTERVAL_MILLIS = 30L * 60L * 1000L;
     private static final long FAILED_REFRESH_INTERVAL_MILLIS = 2L * 60L * 1000L;
+    private static final long FEAST_REFRESH_INTERVAL_MILLIS = 60_000L;
 
     private final HttpClient httpClient = HttpClient.newBuilder()
         .connectTimeout(Duration.ofSeconds(5))
@@ -35,6 +37,8 @@ public final class SkyBlockMayorTracker {
     private volatile String ministerName = "";
     private volatile String status = "unknown";
     private volatile long nextRefreshAfterMillis;
+    private volatile long lastAttemptMillis;
+    private volatile FeastStatus feastStatus = new FeastStatus(false, -1, 0L);
     private String lastLoggedState = "";
 
     private SkyBlockMayorTracker() {
@@ -68,12 +72,22 @@ public final class SkyBlockMayorTracker {
         return status;
     }
 
+    public FeastStatus feastStatus() { return feastStatus; }
+
+    public record FeastStatus(boolean grandFeast, long electionYear, long validUntilMillis) {
+        public boolean active(long nowMillis) {
+            return grandFeast && electionYear >= 0 && nowMillis < validUntilMillis;
+        }
+    }
+
     private void tick(Minecraft client) {
         if (client == null || client.player == null || requestInFlight) {
             return;
         }
         long now = System.currentTimeMillis();
-        if (now < nextRefreshAfterMillis) {
+        boolean feastRefresh = KungConfig.get().feast.enabled()
+            && now - lastAttemptMillis >= FEAST_REFRESH_INTERVAL_MILLIS;
+        if (now < nextRefreshAfterMillis && !feastRefresh) {
             return;
         }
         refreshAsync(now);
@@ -81,6 +95,7 @@ public final class SkyBlockMayorTracker {
 
     private void refreshAsync(long nowMillis) {
         requestInFlight = true;
+        lastAttemptMillis = nowMillis;
         nextRefreshAfterMillis = nowMillis + FAILED_REFRESH_INTERVAL_MILLIS;
         HttpRequest request = HttpRequest.newBuilder(ELECTION_URI)
             .timeout(Duration.ofSeconds(10))
@@ -124,6 +139,7 @@ public final class SkyBlockMayorTracker {
             || isPaul(parsedMinisterName)
             || hasPaulScorePerk(mayor);
         MayorXpBoost xpBoost = mayorXpBoost(parsedMayorName, parsedMinisterName);
+        feastStatus = parseFeastStatus(mayor, System.currentTimeMillis());
 
         mayorName = parsedMayorName;
         ministerName = parsedMinisterName;
@@ -161,6 +177,31 @@ public final class SkyBlockMayorTracker {
             return new MayorXpBoost(1.5, "Derpy (+50%)");
         }
         return new MayorXpBoost(1.0, "None");
+    }
+
+    static FeastStatus parseFeastStatus(JsonObject mayor, long nowMillis) {
+        // Candidate history also contains Grand Feast: only the elected perks are active.
+        boolean active = false;
+        JsonElement perks = mayor == null ? null : mayor.get("perks");
+        if (perks != null && perks.isJsonArray()) {
+            for (JsonElement perk : perks.getAsJsonArray()) {
+                if (perk.isJsonObject() && isGrandFeastPerk(perk.getAsJsonObject())) active = true;
+            }
+        }
+        JsonObject minister = objectMember(mayor, "minister");
+        active |= isGrandFeastPerk(objectMember(minister, "perk"));
+        JsonObject election = objectMember(mayor, "election");
+        long year = -1;
+        try {
+            if (election != null && election.has("year")) year = election.get("year").getAsLong();
+        } catch (RuntimeException ignored) {
+            // Without a term identity, stale progress cannot safely cross an election.
+        }
+        return new FeastStatus(active, year, nowMillis + 2 * FEAST_REFRESH_INTERVAL_MILLIS);
+    }
+
+    private static boolean isGrandFeastPerk(JsonObject perk) {
+        return "Grand Feast".equals(HypixelLocation.clean(stringMember(perk, "name")));
     }
 
     private static boolean hasPaulScorePerk(JsonElement element) {

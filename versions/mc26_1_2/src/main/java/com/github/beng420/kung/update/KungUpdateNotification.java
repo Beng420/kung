@@ -1,13 +1,7 @@
 package com.github.beng420.kung.update;
 
-import com.github.beng420.kung.message.KungMessages;
-import java.net.URI;
 import java.util.Locale;
-import net.minecraft.ChatFormatting;
 import net.minecraft.client.multiplayer.resolver.ServerAddress;
-import net.minecraft.network.chat.ClickEvent;
-import net.minecraft.network.chat.Component;
-import net.minecraft.network.chat.HoverEvent;
 
 /** Client-thread state, scoped to the network connection rather than individual worlds. */
 final class KungUpdateNotification {
@@ -44,19 +38,4 @@ final class KungUpdateNotification {
         return host.equals("hypixel.net") || host.endsWith(".hypixel.net");
     }
 
-    static Component message(String currentVersion, String latestVersion) {
-        return KungMessages.warning("Updater", "Kung " + latestVersion + " is available (installed: "
-                + currentVersion + "). ").copy()
-            .append(Component.literal("[Open Updates]").withStyle(style -> style
-                .withColor(ChatFormatting.GREEN)
-                .withUnderlined(true)
-                .withClickEvent(new ClickEvent.RunCommand("/kung updates"))
-                .withHoverEvent(new HoverEvent.ShowText(Component.literal("Open Kung's update menu")))))
-            .append(Component.literal(" "))
-            .append(Component.literal("[GitHub]").withStyle(style -> style
-                .withColor(ChatFormatting.AQUA)
-                .withUnderlined(true)
-                .withClickEvent(new ClickEvent.OpenUrl(URI.create("https://github.com/Beng420/kung/releases/latest")))
-                .withHoverEvent(new HoverEvent.ShowText(Component.literal("View the latest release on GitHub")))));
-    }
 }

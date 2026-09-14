@@ -39,9 +39,57 @@ text are not deaths. Reconcile exact Team Deaths counters without double-countin
 events; merge aliases on UUID remapping. The invented player `Party` was a parser bug.
 
 Server Score takes precedence over estimates; final Team Score is authoritative
-over later ordinary Score fields. Only puzzle states `x`, `X`, `✖` indicate failure,
-not `✦`. Footer secrets mean **found - remaining for 300 - max**, not target total.
-Use `score-calc` traces for source selection, target, puzzle failures and bonuses.
+over later ordinary Score fields. Footer secrets mean **found - remaining for
+300 - max**, not target total. The secret target is planning guidance assuming
+the remaining rooms and solvable puzzles are finished; reaching zero remaining
+secrets alone does not mean the displayed score has reached 300.
+
+## Score and unfinished rooms
+
+The map's score retains the Blood/boss completion forecast, but must not spend
+that credit on unfinished clear rooms. Discovered or visited Puzzle, Yellow,
+Trap and ordinary rooms remain outstanding until clear evidence arrives.
+White checkmarks suffice for ordinary room credit, independently of secrets;
+puzzle completion uses a green map check or successful tab state. The map reader
+also classifies a red puzzle cross as `CLEARED`, so that state alone cannot prove
+a solved puzzle. The old late-run shortcut that filled all remaining cells when
+every room had been visited is removed. All unfinished clear cells cap the
+room projection, including when tab completed cells already equal the denominator.
+
+Each unfinished puzzle subtracts **10 skill points**, separately from the room's
+missing share of the 80 skill / 60 exploration room points. The former fixed
+14-point deduction for failed puzzles was not a separate puzzle penalty.
+`✦` and `?` are unfinished, `x`/`X`/`✖` are failed, and `✓`/`✔` are solved.
+The `Puzzles: (n)` header includes undiscovered puzzles. Repeated snapshots are
+deduplicated by puzzle name; temporarily absent rows retain evidence, explicit
+new states replace old states, and a run reset clears it. Map and tab counts
+are reconciled rather than added. If tab confirms every puzzle solved, it can
+release stale puzzle map cells; partial tab totals cannot identify which still
+open map room was solved.
+
+An explicit tab room total takes priority. Otherwise `Completed Rooms` and
+the rounded server `Cleared: n%` (including `Cleared: n% (n)`) derive the room-cell
+denominator; map cells are the fallback. A completed count alone cannot establish
+the total size of a dungeon. Score uses cells consistently, while player room
+totals continue to use logical owners. Map clear/puzzle counts are cached by
+render-plan identity, with no new world scans. `score-calc` records unfinished
+clear cells, unfinished/failed puzzle counts, the separate penalty and projected
+cells alongside source selection, secret target and bonuses.
+
+The penalty and Blood/boss accounting were cross-checked against the public
+[Noamm score calculation](https://github.com/Noamm9/NoammAddons/blob/26.1.2/src/main/kotlin/com/github/noamm9/utils/dungeons/map/handlers/ScoreCalculation.kt)
+and [Skyblocker DungeonScore](https://github.com/SkyblockerMod/Skyblocker/blob/main/src/main/java/de/hysky/skyblocker/skyblock/dungeon/DungeonScore.java)
+on 2026-09-13. These are client implementations, not server source.
+
+Regression cases cover enough secrets with an open puzzle, tab completion ahead
+of the map, unknown puzzle map types, pending/failed states without duplicate
+penalties, open Yellow/Trap/ordinary rooms, white clear checks, Blood/boss credit,
+the parenthesized sidebar format and authoritative final scores. Live comparison
+at boss entry and the final Team Score remains required; local tests do not
+establish server timing or the exact score of the user's reported run.
+The 2026-09-13 Java-25 build passes **327 tests**, including twelve new puzzle/
+score regressions. In the all-secrets/open-puzzle fixture, the old formula would
+show 302; the corrected estimate is 292, then 307 after the puzzle is confirmed.
 
 ## Room credit and summary
 

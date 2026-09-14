@@ -5,8 +5,10 @@ import com.github.beng420.kung.config.category.BRHelperConfig;
 import com.github.beng420.kung.config.category.DebugConfig;
 import com.github.beng420.kung.config.category.DungeonChatFilterConfig;
 import com.github.beng420.kung.config.category.DungeonConfig;
+import com.github.beng420.kung.config.category.FeastConfig;
 import com.github.beng420.kung.config.category.MiscConfig;
 import com.github.beng420.kung.config.category.SlayerConfig;
+import com.github.beng420.kung.config.category.SafariConfig;
 import com.github.beng420.kung.config.category.SplitsConfig;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
@@ -38,6 +40,8 @@ public final class KungConfig {
     public DebugConfig debug = new DebugConfig();
     public MiscConfig misc = new MiscConfig();
     public SlayerConfig slayer = new SlayerConfig();
+    public SafariConfig safari = new SafariConfig();
+    public FeastConfig feast = new FeastConfig();
 
     private transient Path explicitConfigFile;
     private transient boolean loading;
@@ -77,6 +81,8 @@ public final class KungConfig {
                     debug = loaded.debug;
                     misc = loaded.misc;
                     slayer = loaded.slayer;
+                    safari = loaded.safari;
+                    feast = loaded.feast;
                     loadedSuccessfully = true;
                 }
             }
@@ -137,6 +143,8 @@ public final class KungConfig {
         if (debug == null) debug = new DebugConfig();
         if (misc == null) misc = new MiscConfig();
         if (slayer == null) slayer = new SlayerConfig();
+        if (safari == null) safari = new SafariConfig();
+        if (feast == null) feast = new FeastConfig();
     }
 
     private void bindCategories() {
@@ -147,6 +155,8 @@ public final class KungConfig {
         debug.onChange(this::save);
         misc.onChange(this::save);
         slayer.onChange(this::save);
+        safari.onChange(this::save);
+        feast.onChange(this::save);
     }
 
     private void normalize() {
@@ -159,6 +169,8 @@ public final class KungConfig {
         dungeon.setRoomSyncToken(dungeon.roomSyncToken());
         bloodRush.setTitleDurationTenths(bloodRush.titleDurationTenths());
         splits.setScale(splits.scale());
+        safari.setScale(safari.scale());
+        feast.setScale(feast.scale());
         splits.setFormat(splits.format());
         misc.setHypixelApiKey(misc.hypixelApiKey());
         misc.setSuperpairsHelperScale(misc.superpairsHelperScale());

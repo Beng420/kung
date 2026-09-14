@@ -6,6 +6,7 @@ import com.github.beng420.kung.ui.UiBounds;
 import com.github.beng420.kung.ui.UiNumberField;
 import com.github.beng420.kung.ui.UiTheme;
 import com.github.beng420.kung.ui.UiToggle;
+import com.github.beng420.kung.ui.UiShapes;
 import java.util.List;
 import java.util.Locale;
 import java.util.function.BooleanSupplier;
@@ -210,7 +211,7 @@ public record SettingEntry(
         int height,
         String text
     ) {
-        fill(graphics, x + 1, y + 3, x + width - 1, y + height - 3, theme.accentDark());
+        UiShapes.rounded(graphics, x + 1, y + 2, width - 2, height - 4, 2, theme.accentDark());
         centered(graphics, font, text, x, y, width, theme.text());
     }
 

@@ -77,6 +77,23 @@ public final class ConfigRegressionTest {
     }
 
     @Test
+    public void feastSettingsDefaultOffAndPreserveHudCoordinatesOnReload() {
+        equal(false, read("{}").feast.enabled(), "existing configurations keep the new overlay off");
+        equal(true, read("{}").feast.showInHubFarm(), "Hub farm subsetting defaults on");
+        equal(false, read("{\"feast\":{\"showInHubFarm\":false}}").feast.showInHubFarm(), "Hub farm can be disabled");
+        equal(false, read("{\"feast\":null}").feast.enabled(), "null category uses defaults");
+        KungConfig config = read("""
+            {"feast":{"enabled":true,"x":321,"y":123,"scale":900},"dungeonMap":{"x":42}}
+            """);
+        equal(true, config.feast.enabled(), "feature enabled retained");
+        equal(321, config.feast.x(), "HUD x retained");
+        equal(123, config.feast.y(), "HUD y retained");
+        equal(300, config.feast.scale(), "HUD scale clamped");
+        equal(42, config.dungeon.x(), "existing HUD placement retained");
+        equal(25, read("{\"feast\":{\"scale\":0}}").feast.scale(), "minimum HUD scale");
+    }
+
+    @Test
     public void invalidValues() {
         KungConfig config = read("""
             {
@@ -149,6 +166,11 @@ public final class ConfigRegressionTest {
             config.splits.setY(123);
             config.splits.setFormat(SplitsConfig.TimeFormat.SECONDS);
             config.splits.setTimeLost(false);
+            config.feast.setEnabled(true);
+            config.feast.setShowInHubFarm(false);
+            config.feast.setX(321);
+            config.feast.setY(123);
+            config.feast.setScale(150);
             config.debug.setTarantulaMessages(false);
             config.slayer.setEggSacPredictionEnabled(true);
             config.misc.setLoadoutKeybind(2, "mouse:3");
@@ -169,6 +191,11 @@ public final class ConfigRegressionTest {
             equal(123, roundTrip.splits.y(), "splits setter persists");
             equal(SplitsConfig.TimeFormat.SECONDS, roundTrip.splits.format(), "splits Seconds format persists");
             equal(false, roundTrip.splits.timeLost(), "hidden split time loss persists");
+            equal(true, roundTrip.feast.enabled(), "Feast toggle persists");
+            equal(false, roundTrip.feast.showInHubFarm(), "Hub farm toggle persists");
+            equal(321, roundTrip.feast.x(), "Feast x persists");
+            equal(123, roundTrip.feast.y(), "Feast y persists");
+            equal(150, roundTrip.feast.scale(), "Feast scale persists");
             equal(false, roundTrip.debug.tarantulaMessages(), "debug setter persists");
             equal(true, roundTrip.slayer.eggSacPredictionEnabled(), "slayer setter persists");
             equal("mouse:3", roundTrip.misc.loadoutKeybind(2), "keybind setter persists");

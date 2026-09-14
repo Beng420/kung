@@ -53,11 +53,19 @@ public enum KungUpdater {
         .connectTimeout(Duration.ofSeconds(8))
         .build();
     private final AtomicBoolean checking = new AtomicBoolean();
+    private final AtomicBoolean previewing = new AtomicBoolean();
     private final AtomicBoolean installing = new AtomicBoolean();
     private final AtomicReference<State> state = new AtomicReference<>(State.checking(currentVersion()));
     private final KungUpdateNotification notification = new KungUpdateNotification();
+    private final KungUpdateToast toast = new KungUpdateToast();
+    private final KungReleaseNotes releaseNotes = new KungReleaseNotes(currentVersion(),
+        () -> com.github.beng420.kung.runtime.KungPaths.fileLayout().updateDirectory().resolve("release-notes.properties"),
+        executor, httpClient);
+
+    public KungReleaseNotes releaseNotes() { return releaseNotes; }
 
     public void initializeClientNotifications() {
+        toast.initializeClient();
         ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> {
             var server = client.getCurrentServer();
             if (notification.joined(handler.getConnection(), server == null ? null : server.ip)) {
@@ -66,16 +74,58 @@ public enum KungUpdater {
         });
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
             // Reconfiguration can replace the play listener while retaining the connection.
-            if (!handler.getConnection().isConnected()) notification.disconnected(handler.getConnection());
+            if (!handler.getConnection().isConnected()) {
+                notification.disconnected(handler.getConnection());
+                toast.disconnected(handler.getConnection());
+            }
         });
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             var handler = client.getConnection();
             State snapshot = state.get();
+            toast.tick(client, snapshot.status() == Status.UPDATE_AVAILABLE);
             if (notification.shouldNotify(handler == null ? null : handler.getConnection(),
-                client.player != null && client.level != null, snapshot.status() == Status.UPDATE_AVAILABLE)) {
-                client.player.sendSystemMessage(KungUpdateNotification.message(
-                    snapshot.currentVersion(), snapshot.latestVersion()));
+                KungUpdateToast.canDisplay(client), snapshot.status() == Status.UPDATE_AVAILABLE)) {
+                toast.show(client, "Kung update available", snapshot.currentVersion(), snapshot.latestVersion(), false);
             }
+        });
+    }
+
+    public void previewNotification(Minecraft client) {
+        var handler = client.getConnection();
+        if (handler == null || !previewing.compareAndSet(false, true)) return;
+        var connection = handler.getConnection();
+        // Read fresh release data without replacing an active download or consuming the join notice.
+        executor.execute(() -> {
+            State snapshot;
+            try {
+                snapshot = checkForUpdates();
+            } catch (Exception exception) {
+                KungMod.LOGGER.warn("Kung update preview check failed.", exception);
+                snapshot = new State(Status.FAILED, currentVersion(), "", "Update check failed", null);
+            }
+            State result = snapshot;
+            client.execute(() -> {
+                try {
+                    var currentHandler = client.getConnection();
+                    if (!connection.isConnected() || currentHandler == null
+                        || currentHandler.getConnection() != connection) return;
+                    if (result.latestVersion().isBlank()) {
+                        KungMessages.send(client, KungMessages.Type.ERROR, "Updater",
+                            result.status() == Status.FAILED
+                                ? "Could not check GitHub. Please try again."
+                                : "No published Kung release was found on GitHub.");
+                        return;
+                    }
+                    String title = switch (result.status()) {
+                        case UP_TO_DATE -> "Kung is up to date";
+                        case UNSUPPORTED -> "New Kung release";
+                        default -> "Kung update available";
+                    };
+                    toast.show(client, title, result.currentVersion(), result.latestVersion(), true);
+                } finally {
+                    previewing.set(false);
+                }
+            });
         });
     }
 
@@ -172,6 +222,13 @@ public enum KungUpdater {
             case UNSUPPORTED -> snapshot.message();
             case FAILED -> snapshot.message();
         };
+    }
+
+    public String latestVersionLabel() {
+        State snapshot = state.get();
+        return snapshot.latestVersion().isBlank()
+            ? (snapshot.status() == Status.CHECKING ? "Latest: checking..." : "Latest: unavailable")
+            : "Latest: v" + snapshot.latestVersion();
     }
 
     public void installLatestAsync(Minecraft client) {

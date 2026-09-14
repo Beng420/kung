@@ -22,6 +22,9 @@ final class UserCommandGroup {
                     ))))
             .then(literal("settings").executes(KungCommandActions::openSettings))
             .then(literal("updates").executes(KungCommandActions::openUpdates))
+            .then(literal("changelog").executes(KungCommandActions::openChangelog))
+            .then(literal("preview")
+                .then(literal("updates").executes(KungCommandActions::previewUpdateNotification)))
             .then(literal("hud").executes(context -> KungCommandActions.openHudEditor(context, tracker)));
     }
 }

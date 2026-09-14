@@ -56,7 +56,7 @@ Prefer the exact user-supplied path and time over scanning every saved log.
 | Secrets, score, target mismatch | `score-calc` |
 | Extra summary players / missing personal secrets | `run-statistics` summary roster/count/source/API state, `player-slots`, `player-stats` API outcomes; include the five actual names |
 | Superpairs reveals or counts | `superpairs` |
-| Mimic marker / missing kill announcement | `mimic-candidates` positions/rooms, `mimic-kill` death packet/evidence/source/switches, `mimic-esp`, `mimic-static`; save immediately after the kill |
+| Mimic late / marker / missing kill announcement | `mimic-discovery` index/fallback source and prior scan ticks, `mimic-candidates` positions/rooms, `mimic-kill` death packet/evidence/source/switches, `mimic-esp`, `mimic-static`; save immediately after the late marker or kill |
 | Missing overlays or resets | Instance/lifecycle events around the supplied time |
 | Split loss | `dungeon-splits`: real/ideal clocks, `phaseStartTicks`, `phaseTicks`, `totalTicks`, exact `boundary`, `start-candidate`, `receivedTicks` and `ignoredBundledPings` |
 
@@ -77,6 +77,47 @@ flooding chat. Optional title debugging: `/kung test title <doors>` and
 Use typed config categories, feature/service registries, command groups and shared
 message/UI controls. Keep player-visible text English. Preserve existing config
 migrations, master toggles and HUD layout unless the task changes their behavior.
+
+`KungConfigScreen` renders its menu at 80% of Minecraft's selected GUI scale.
+Feature columns are 171 logical units wide (10% narrower than the former 190);
+their controls are proportionally narrower. The title, search, tooltips, text
+editor and patch-notes modal share this menu scale. Layout/scroll limits use the
+inverse-scaled viewport, keeping the title and search centered. Minecraft already
+delivers mouse events in GUI units: convert positions and text-selection drag
+distances once into menu coordinates. Keep `Screen.width`/`height` and the global
+GUI scale intact, and restore the drawing transform before external screen hooks.
+HUDs and the standalone update toast retain their own scale. Live checks should
+cover clicks, slider dragging, category/horizontal scrolling, text selection and
+modal buttons at multiple GUI scales and window sizes.
+
+The current menu follows the supplied Odin reference with opaque charcoal panels,
+rounded corners, soft shadows, 12-unit column gaps and a 220-unit rounded search
+field raised 80 units from the bottom. Column scroll limits reserve space for it.
+`UiShapes` draws small curves with bounded strips and edge coverage. `UiTheme.menu()`
+is local to settings and the changelog modal; the shared HUD theme is unchanged.
+`UiMenuFont` uses the normal font provider through `FontAccessor`, replacing only
+the default font with `kung:menu` for this menu. Rendering, measurements, wrapping
+and text input use that same font; resource reloads still resolve through Minecraft.
+The menu font disables text shadows and retains the vanilla fallback for symbols.
+`UiMenuFontTest` checks provider isolation, Minecraft's provider codec, referenced
+TTF loading, glyph coverage, the fallback and the bundled license. Resource IDs
+and filenames must use lowercase: a single invalid provider ID rejects the whole
+menu font, including its fallback. Live rendering/resource reload remains open.
+
+Inter is included unmodified from the [Google Fonts distribution](https://github.com/google/fonts/tree/main/ofl/inter)
+(downloaded 2026-09-13) under the SIL Open Font License. Its license is packaged as
+`assets/kung/font/inter-ofl.txt`; `inter.ttf` has SHA-256
+`29160a80ff49ddcab2c97711247e08b1fab27a484a329ce8b813d820dc559031`.
+The TTF provider uses size 12 and 3× oversampling; the overall menu scale stays 80%.
+The 2026-09-14 17:07:37 user trace identifies the affected settings openings;
+the same profile's `logs/latest.log` reports `kung:Inter.ttf` as an invalid resource
+ID and rejects `kung:menu` on every reload. The supplied screenshot shows missing
+glyph boxes throughout Kung settings. Both font/license filenames and the JSON
+reference now use lowercase. The new Minecraft-codec regression reproduced the
+exact parsing failure before the fix; the earlier AWT-only check could not detect
+Minecraft resource-name restrictions. A live check with the corrected JAR remains open.
+The updater feature is pinned open through `FeatureEntry.alwaysExpanded`, shared
+by drawing and content/scroll sizing, with an explicit right-click collapse guard.
 
 Comment the reason for a non-obvious rule next to the code that owns it. Good
 examples already exist in `ServerTickSequence.accept` (why zero cannot reset

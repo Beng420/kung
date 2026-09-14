@@ -19,6 +19,8 @@ public final class ChatEmotesFeatureTest {
         try {
             assertEquals(":iman:", chat(":iman:"));
             assertEquals("pc :iman:", command("pc :iman:"));
+            assertEquals(":iman: :ironman:", chat(":iman: :ironman:"));
+            assertEquals("pc :ironman:", command("pc :ironman:"));
             config.misc.setChatEmotesEnabled(true);
             assertFalse(config.misc.chatCommandsEnabled());
             assertTrue(ClientSendMessageEvents.ALLOW_CHAT.invoker().allowSendChatMessage(":iman:"));
@@ -27,16 +29,20 @@ public final class ChatEmotesFeatureTest {
             assertEquals("pc \u2672", command("pc :iman:"));
             assertEquals("gc hi \u2672", command("gc hi :iman:"));
             assertEquals("msg Beng114 \u2672", command("msg Beng114 :iman:"));
-            assertEquals("\u2672 :cute: o/ :IMAN:", chat("\u2672 :cute: o/ :IMAN:"));
+            assertEquals("hi \u2672 \u2672 \u2672!", chat("hi :ironman: :iman: :ironman:!"));
+            assertEquals("pc \u2672", command("pc :ironman:"));
+            assertEquals("gc \u2672 \u2672", command("gc :iman: :ironman:"));
+            assertEquals("msg Beng114 \u2672", command("msg Beng114 :ironman:"));
+            assertEquals("\u2672 :cute: o/ :IMAN: :IRONMAN:", chat("\u2672 :cute: o/ :IMAN: :IRONMAN:"));
 
             config.misc = new MiscConfig();
-            assertEquals(":iman:", chat(":iman:"));
-            assertEquals("pc :iman:", command("pc :iman:"));
+            assertEquals(":iman: :ironman:", chat(":iman: :ironman:"));
+            assertEquals("pc :iman: :ironman:", command("pc :iman: :ironman:"));
         } finally {
             feature.shutdown();
             config.misc = previous;
         }
-        assertEquals(":iman:", chat(":iman:"));
+        assertEquals(":iman: :ironman:", chat(":iman: :ironman:"));
     }
 
     private static String chat(String message) {
