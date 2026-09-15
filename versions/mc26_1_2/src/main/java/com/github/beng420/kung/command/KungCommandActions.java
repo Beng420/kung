@@ -13,6 +13,7 @@ import com.github.beng420.kung.feature.dungeon.DungeonRoomClassifier;
 import com.github.beng420.kung.feature.dungeon.DungeonScanUtils;
 import com.github.beng420.kung.feature.dungeon.DungeonSplitTracker;
 import com.github.beng420.kung.feature.dungeon.room.RoomType;
+import com.github.beng420.kung.feature.garden.VisitorAlarmFeature;
 import com.github.beng420.kung.skyblock.HypixelInstanceTracker;
 import com.github.beng420.kung.message.KungMessages;
 import com.github.beng420.kung.update.KungUpdater;
@@ -717,6 +718,14 @@ final class KungCommandActions {
         Minecraft client = context.getSource().getClient();
         client.execute(() -> client.setScreen(new KungConfigScreen()));
         return 1;
+    }
+
+    static int muteVisitorAlarm(CommandContext<FabricClientCommandSource> context) {
+        boolean muted = VisitorAlarmFeature.muteCurrentAlarm();
+        context.getSource().sendFeedback(KungMessages.info("Visitors", muted
+            ? "Alarm muted until the next visitor cycle."
+            : "No visitor alarm is active."));
+        return muted ? 1 : 0;
     }
 
     static int openUpdates(CommandContext<FabricClientCommandSource> context) {

@@ -21,50 +21,115 @@ public final class KungUpdateNotificationTest {
     }
 
     @Test
-    public void waitsForBothPlayerAndAsyncResultThenNotifiesOnlyOnce() {
+    public void waitsForPlayerAndBackgroundResultWithoutOpeningAMenu() {
         KungUpdateNotification notification = new KungUpdateNotification();
         Object connection = new Object();
-        assertTrue(notification.joined(connection, "mc.hypixel.net"));
-        assertFalse(notification.shouldNotify(connection, false, true));
-        assertFalse(notification.shouldNotify(connection, true, false));
-        assertTrue(notification.shouldNotify(connection, true, true));
-        assertFalse(notification.shouldNotify(connection, true, true));
-        assertFalse(notification.shouldNotify(connection, false, true));
-        assertFalse(notification.shouldNotify(connection, true, true));
+        assertTrue(notification.joined(connection, "mc.hypixel.net", 0));
+        assertFalse(notification.shouldNotify(connection, 1, false, "0.3.3", false, 0));
+        assertFalse(notification.shouldNotify(connection, 1, true, "", false, 1));
+        assertTrue(notification.shouldNotify(connection, 1, true, "0.3.3", false, 2));
+        assertFalse(notification.shouldNotify(connection, 1, true, "0.3.3", false, 3));
+        assertFalse(notification.shouldNotify(connection, 2, true, "0.3.3", false, 400_000));
     }
 
     @Test
-    public void worldGapsAndRepeatedPlayJoinsDoNotRepeatTheNotice() {
-        KungUpdateNotification notification = new KungUpdateNotification();
-        Object connection = new Object();
-        notification.joined(connection, "mc.hypixel.net");
-        assertTrue(notification.shouldNotify(connection, true, true));
-        assertFalse(notification.shouldNotify(null, false, true));
-        assertFalse(notification.joined(connection, "mc.hypixel.net"));
-        assertFalse(notification.shouldNotify(connection, true, true));
+    public void cooldownStartsAfterTheCardFinishesAndNeedsALaterLobbyChange() {
+        var notification = new KungUpdateNotification();
+        var connection = new Object();
+        notification.joined(connection, "mc.hypixel.net", 0);
+        assertTrue(notify(notification, connection, 1, 0));
+        notification.finished(8_500);
+        assertFalse(notify(notification, connection, 2, 300_000));
+        assertFalse(notify(notification, connection, 3, 308_499));
+        assertFalse(notify(notification, connection, 3, 308_500)); // Expiry alone cannot replay an old transfer.
+        assertFalse(notify(notification, connection, 3, 600_000)); // Further polling of the same release stays quiet.
+        assertTrue(notify(notification, connection, 4, 600_001));
+        notification.finished(608_501);
+        assertFalse(notify(notification, connection, 5, 908_500));
+        assertTrue(notify(notification, connection, 6, 908_501));
     }
 
     @Test
-    public void reconnectAllowsAnotherNoticeButOtherServersAndStaleResultsStayQuiet() {
-        KungUpdateNotification notification = new KungUpdateNotification();
-        Object first = new Object();
-        notification.joined(first, "mc.hypixel.net");
+    public void eligibleTransferWaitsForThePlayerAndCoalescesPacketEpochs() {
+        var notification = new KungUpdateNotification();
+        var connection = new Object();
+        notification.joined(connection, "mc.hypixel.net", 0);
+        assertTrue(notify(notification, connection, 1, 0));
+        notification.finished(10);
+        assertFalse(notification.shouldNotify(null, 2, false, "0.3.3", false, 300_010));
+        assertFalse(notification.shouldNotify(connection, 2, false, "0.3.3", false, 300_011));
+        assertFalse(notification.shouldNotify(connection, 3, false, "0.3.3", false, 300_012));
+        assertTrue(notify(notification, connection, 4, 300_013));
+        assertFalse(notification.joined(connection, "mc.hypixel.net", 300_014));
+        assertFalse(notify(notification, connection, 5, 300_015));
+    }
+
+    @Test
+    public void lobbyChangeDuringCooldownDoesNotQueueAReminderWhenLoadingEnds() {
+        var notification = new KungUpdateNotification();
+        var connection = new Object();
+        notification.joined(connection, "mc.hypixel.net", 0);
+        assertTrue(notify(notification, connection, 1, 0));
+        notification.finished(1_000);
+        assertFalse(notification.shouldNotify(connection, 2, false, "0.3.3", false, 300_999));
+        assertFalse(notify(notification, connection, 2, 301_001));
+        assertTrue(notify(notification, connection, 3, 301_002));
+    }
+
+    @Test
+    public void reconnectCannotBypassCooldownAndOtherServersOrStaleConnectionsStayQuiet() {
+        var notification = new KungUpdateNotification();
+        var first = new Object();
+        notification.joined(first, "mc.hypixel.net", 0);
+        assertTrue(notify(notification, first, 1, 0));
+        notification.finished(10);
         notification.disconnected(first);
-        assertFalse(notification.shouldNotify(first, true, true));
-        assertFalse(notification.shouldNotify(null, false, true));
-
-        Object other = new Object();
-        assertFalse(notification.joined(other, "example.org"));
-        assertFalse(notification.shouldNotify(other, true, true));
-        assertFalse(notification.shouldNotify(first, true, true));
-        Object second = new Object();
-        assertTrue(notification.joined(second, "mc.hypixel.net:25565"));
+        assertFalse(notify(notification, first, 2, 20));
+        assertFalse(notify(notification, null, 2, 20));
+        var other = new Object();
+        assertFalse(notification.joined(other, "example.org", 30));
+        assertFalse(notify(notification, other, 2, 400_000));
+        var second = new Object();
+        assertTrue(notification.joined(second, "mc.hypixel.net:25565", 40));
         notification.disconnected(other);
-        assertTrue(notification.shouldNotify(second, true, true));
+        assertFalse(notify(notification, first, 3, 40));
+        assertFalse(notify(notification, second, 3, 40));
+        assertFalse(notify(notification, second, 3, 300_010));
         notification.disconnected(second);
-        Object third = new Object();
-        assertTrue(notification.joined(third, "mc.hypixel.net"));
-        assertTrue(notification.shouldNotify(third, true, true));
+        var third = new Object();
+        assertTrue(notification.joined(third, "mc.hypixel.net", 300_011));
+        assertTrue(notify(notification, third, 4, 300_011));
+    }
+
+    @Test
+    public void previewDoesNotConsumeTheAutomaticNoticeAndDuplicateCompletionDoesNotExtendCooldown() {
+        var notification = new KungUpdateNotification();
+        var connection = new Object();
+        notification.joined(connection, "mc.hypixel.net", 0);
+        assertFalse(notification.shouldNotify(connection, 1, true, "0.3.3", true, 0));
+        notification.finished(100); // No automatic card started.
+        assertTrue(notify(notification, connection, 1, 101));
+        notification.finished(1_000);
+        notification.finished(5_000);
+        assertTrue(notify(notification, connection, 2, 301_000));
+    }
+
+    @Test
+    public void newlyPublishedVersionCanNotifyFromPollingButStillHonorsCooldown() {
+        var notification = new KungUpdateNotification();
+        var connection = new Object();
+        notification.joined(connection, "mc.hypixel.net", 0);
+        assertTrue(notify(notification, connection, 1, 0));
+        notification.finished(1_000);
+        assertFalse(notification.shouldNotify(connection, 1, true, "0.3.4", false, 300_999));
+        assertTrue(notification.shouldNotify(connection, 1, true, "0.3.4", false, 301_000));
+        notification.finished(301_001);
+        assertFalse(notification.shouldNotify(connection, 2, true, "", false, 601_001));
+        assertFalse(notification.shouldNotify(connection, 2, true, "", false, 900_000));
+    }
+
+    private static boolean notify(KungUpdateNotification notification, Object connection, long epoch, long now) {
+        return notification.shouldNotify(connection, epoch, true, "0.3.3", false, now);
     }
 
 }

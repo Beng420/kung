@@ -3,19 +3,28 @@
 The Kung settings header shows `Kung - v<installed version>` (for example,
 `Kung - v0.3.1`), read from Fabric's metadata for the loaded mod.
 
-The active Minecraft 26.1.2 client checks GitHub's latest release at startup,
-when opening Kung settings, and when joining Hypixel. Checks run on the existing
-updater worker; overlapping requests are coalesced. An available update, active
-download or pending restart is reused rather than checked again.
+The active Minecraft 26.1.2 client checks GitHub's latest release at startup and
+every five minutes from the client tick, independently of opening Kung settings.
+Menu/join requests share that interval instead of creating extra requests or
+postponing the next poll. Checks run on the existing updater worker; overlapping
+requests are coalesced. Polling continues with an already available update, but
+pauses during a download or pending restart. A known release stays usable during
+refreshes and temporary request failures; late results cannot overwrite a download
+or installation state.
 
-Once both the player and a newer compatible release are ready, Kung shows one
-local English popup per Hypixel connection. The card shows the installed
-and latest published versions. It also arrives when the asynchronous check finishes
-after joining. Repeated play joins and world changes on the same connection do
-not repeat it; reconnecting allows a new notice. Other servers and singleplayer
-receive no automatic notice. Failed checks, current versions, incompatible
-releases, downloads and updates awaiting restart do not produce an availability
-popup. The old availability chat message has been replaced by this card.
+Once both the player and a newly found compatible release are ready, Kung shows a
+local English popup with the installed and latest versions. This also works when
+the check finishes after joining, without opening a menu. After the card finishes
+sliding out or is explicitly closed, a five-minute cooldown starts. Once it expires,
+the next Hypixel lobby/world change can show the same update again, followed by
+another cooldown. Expiry or polling the same release alone does not repeat it.
+Transfers during the card/cooldown are discarded rather than queued. An eligible
+transfer can wait for its loading screen to finish. Repeated packet resets during
+one transfer coalesce; reconnecting cannot bypass the cooldown. A newly published
+version can trigger a fresh notice from polling, still respecting an active card
+and cooldown. Other servers and singleplayer receive no automatic notice. Initial
+failed checks, current versions, incompatible releases, downloads and updates
+awaiting restart do not create an availability popup.
 
 The card slides into the bottom-right corner over 250 ms, stays for eight seconds
 of visible reading time, then slides out over 250 ms. A shrinking accent bar
@@ -53,7 +62,9 @@ is equal to or newer than the published one. No version is fabricated and no
 preview-specific prose appears on the card. Missing releases/check failures produce
 a local error message instead. Repeated pending preview requests are coalesced;
 results are discarded after disconnecting or switching connections. Preview does
-not alter release/install state or consume the automatic per-connection notification.
+not alter release/install state, the polling interval or automatic notice eligibility.
+Replacing an already-running automatic card ends that card and starts its normal
+cooldown; a preview alone never starts a cooldown.
 `/kung preview` is the shared command branch for previews; the old
 `/kung updates preview` route is removed.
 
@@ -148,29 +159,38 @@ cases cover sidebar opening without body prefetching, lazy requests, coalescing,
 requests finish, receipt isolation, retries, draft filtering and actual paginated
 HTTP/tag requests against a local server. Layout bounds, including separate panes,
 compact actions and non-overlapping retry/navigation buttons, are checked at
-several GUI sizes. The full Java-25 build passes
-**345 tests**, with no failures/errors/skips. Actual in-game text wrapping,
+several GUI sizes. See [current handoff](AI_HANDOFF.md) for full Java-25 validation.
+Actual in-game text wrapping,
 layering, history selection/scrolling, link confirmation, command opening and
 restart display remain live checks.
 
 `KungUpdater` owns asynchronous release/install state and the Fabric connection
-and tick callbacks. `KungUpdateNotification` owns connection deduplication
-and hostname matching. `KungUpdateToast` owns the Fabric HUD/screen hooks,
+and tick callbacks. `KungUpdateCheckSchedule` owns the monotonic five-minute poll
+interval. `KungUpdateNotification` owns hostname matching, observed shared instance
+epochs, release eligibility and the monotonic cooldown. It only consumes
+`HypixelInstanceTracker.instanceEpoch()`; no dungeon lifecycle rules change.
+`KungUpdateToast` owns the Fabric HUD/screen hooks,
 rendering and menu/browser actions. `KungUpdateToastState` shares its animated
 layout with hit testing and tracks monotonic visible time independently of ticks.
 The client thread handles all notice state and delivery; the worker publishes
 its result atomically. Only one card is retained; replacement restarts its lifetime.
+The card's one-shot completion callback starts the automatic cooldown on expiry,
+dismissal or cancellation, including disconnect. Passive `update-check` and
+`update-notice` trace entries record polls/results, display and cooldown start.
 `UserCommandGroup` / `KungCommandActions` route `/kung updates` to
 `KungConfigScreen.updates()`, queued until chat has finished handling the action.
 
 `KungUpdateNotificationTest` covers hostname boundaries, delayed player/update
-readiness, repeated joins, world gaps, reconnects, stale connections and other
-servers. `KungUpdateToastStateTest` covers animation/expiry, hover pause, hidden
+readiness, exact cooldown boundaries, ignored early transfers, stationary expiry,
+repeated joins/packet epochs, world gaps, reconnects, stale connections, new releases,
+preview isolation and duplicate completion. `KungUpdateCheckScheduleTest` covers
+immediate/periodic checks, menu/join requests, busy workers and monotonic clock origins.
+`KungUpdateToastStateTest` covers animation/expiry, hover pause, hidden
 time, replacement/dismissal, click-through prevention and resized layout/hit
-targets. After the alias/preview revision, all 23 focused emote/config/update tests
-and the Java 25 active-module build pass: **334 tests**, zero failures/errors/skips.
+targets. The update package's 33 tests pass after the polling/cooldown revision.
+See [current handoff](AI_HANDOFF.md) for the latest full-build count.
 The built JAR's 0.3.2 metadata and packaged toast were verified; `git diff --check`
-passes. Live preview fetching, Hypixel join, lobby transfer, screen layering,
+passes. Live background polling, timed lobby reminders, preview fetching, Hypixel join, screen layering,
 GUI scales, buttons and browser link handling still require an in-game check.
 Use `/kung preview updates` to check the
 appearance without publishing a release. Tests do not install an update.

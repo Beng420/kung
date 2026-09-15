@@ -937,12 +937,28 @@ public final class KungConfigScreen extends Screen {
                 () -> config.splits.setEnabled(!config.splits.enabled()),
                 List.of(
                     SettingEntry.choice("Format", config.splits::formatLabel, config.splits::cycleFormat),
+                    SettingEntry.toggle("Time Prediction", config.splits::timePrediction,
+                        () -> config.splits.setTimePrediction(!config.splits.timePrediction())).withChildren(List.of(
+                            SettingEntry.choice("Update", config.splits::predictionModeLabel,
+                                config.splits::cyclePredictionMode)
+                        )),
                     SettingEntry.toggle("Time Lost", config.splits::timeLost,
                         () -> config.splits.setTimeLost(!config.splits.timeLost()))
                 )
             )
         )));
         result.add(new CategoryEntry("Garden", List.of(
+            new FeatureEntry(
+                "6th Visitor Alarm",
+                config.visitorAlarm::enabled,
+                () -> config.visitorAlarm.setEnabled(!config.visitorAlarm.enabled()),
+                List.of(
+                    SettingEntry.slider("Volume", config.visitorAlarm::volume,
+                        config.visitorAlarm::setVolume, 1, 100, 1),
+                    SettingEntry.dynamicLabel(() -> "Accept / decline or chat mute"),
+                    SettingEntry.dynamicLabel(() -> "5 visitors + expired timer")
+                )
+            ),
             new FeatureEntry(
                 "Feast Progress",
                 config.feast::enabled,

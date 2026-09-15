@@ -6,6 +6,7 @@ import com.github.beng420.kung.feature.dungeon.DungeonMimicEspFeature;
 import com.github.beng420.kung.feature.dungeon.DungeonSplitsOverlayFeature;
 import com.github.beng420.kung.feature.dungeon.DungeonStateTracker;
 import com.github.beng420.kung.feature.garden.FeastOverlayFeature;
+import com.github.beng420.kung.feature.garden.VisitorAlarmFeature;
 import com.github.beng420.kung.feature.misc.ChatCommandsFeature;
 import com.github.beng420.kung.feature.misc.ChatEmotesFeature;
 import com.github.beng420.kung.feature.misc.CustomSoundsFeature;
@@ -44,7 +45,8 @@ public final class FeatureRegistry {
         register(SuperpairsHelperFeature.INSTANCE);
         register(TarantulaHelperFeature.INSTANCE);
         register(new SafariOverlayFeature());
-        register(new FeastOverlayFeature());
+        register(FeastOverlayFeature.INSTANCE);
+        register(VisitorAlarmFeature.INSTANCE);
 
         bootstrapped = true;
         FEATURES.forEach(feature -> feature.initialize(services));

@@ -27,7 +27,7 @@ final class FeastPersistence {
         profile = next;
         var saved = store.get(profile);
         profileId = saved == null ? "" : saved.profileId();
-        if (saved != null) kernels.restore(saved.kernels());
+        if (saved != null) kernels.restore(saved.kernels(), saved.pendingKernelGains());
         restoreProgress();
         save(); // A late first profile row may follow an already observed menu or donation.
         return true;
@@ -39,7 +39,7 @@ final class FeastPersistence {
             // A deleted/recreated profile can reuse its fruit name, but not its server UUID.
             session.invalidate();
             kernels.invalidate();
-            store.put(profile, new FeastStateStore.Saved(id, "", null, null));
+            store.put(profile, new FeastStateStore.Saved(id, "", null, null, 0));
         }
         profileId = id;
         save();
@@ -61,8 +61,12 @@ final class FeastPersistence {
             event = previous.eventKey();
         }
         Long balance = kernels.balance();
-        if (balance == null && previous != null) balance = previous.kernels();
-        store.put(profile, new FeastStateStore.Saved(profileId, event, progress, balance));
+        long pendingGains = kernels.pendingGains();
+        if (balance == null && previous != null) {
+            balance = previous.kernels();
+            pendingGains = previous.pendingKernelGains();
+        }
+        store.put(profile, new FeastStateStore.Saved(profileId, event, progress, balance, pendingGains));
     }
 
     void reset() {

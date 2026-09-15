@@ -7,7 +7,8 @@ import java.util.regex.Pattern;
 /** Kernel currency is independent of Feast donation tiers and survives event changes. */
 final class FeastKernels {
     private static final Pattern BALANCE = Pattern.compile("^Your Kernels: ([0-9]+|[0-9]{1,3}(?:,[0-9]{3})+)$");
-    private static final Pattern SIDEBAR_BALANCE = Pattern.compile("^Kernels: ([0-9]+|[0-9]{1,3}(?:,[0-9]{3})+)$");
+    private static final Pattern SIDEBAR_BALANCE = Pattern.compile(
+        "^Kernels: ([0-9]+|[0-9]{1,3}(?:,[0-9]{3})+)(?: \\([+-][0-9,]+\\))?$");
     private static final Pattern SIDEBAR_SUFFIX_BALANCE = Pattern.compile(
         "^([0-9]+|[0-9]{1,3}(?:,[0-9]{3})+)(?: \\([+-][0-9,]+\\))? Kernels$");
     private static final Pattern GAIN = Pattern.compile(
@@ -18,11 +19,18 @@ final class FeastKernels {
     private Object menu;
     private Long lastMenuBalance;
     private Long lastSidebarBalance;
+    private long pendingGains;
+    private final FeastMilestoneClaims claims = new FeastMilestoneClaims();
 
     Long balance() { return balance; }
+    long pendingGains() { return pendingGains; }
+    Long sidebarBalance() { return lastSidebarBalance; }
 
-    void restore(Long saved) {
-        if (balance == null && saved != null && saved >= 0) balance = saved;
+    void restore(Long saved, long savedPendingGains) {
+        if (balance == null && saved != null && saved >= 0) {
+            balance = saved;
+            pendingGains = Math.clamp(savedPendingGains, 0L, saved);
+        }
     }
 
     static boolean supportsMenu(String title) {
@@ -56,21 +64,58 @@ final class FeastKernels {
         }
         if (amount == null || amount < 0 || amount.equals(lastMenuBalance)) return false;
         lastMenuBalance = amount;
+        // A fresh owned total settles outstanding claims, including spending at Scott.
+        claims.clearPending();
         boolean changed = !amount.equals(balance);
         balance = amount;
+        pendingGains = 0;
         return changed;
     }
 
     boolean observeMessage(String text) {
-        if (balance == null || balance == Long.MAX_VALUE || !GAIN.matcher(HypixelLocation.clean(text)).matches()) return false;
+        if (balance == null || balance == Long.MAX_VALUE || !donationMessage(text)) return false;
         balance++;
+        pendingGains++;
+        claims.earned(1);
         return true;
+    }
+
+    boolean beginMilestoneClaim(FeastMilestoneClaims.Milestone milestone, long now) {
+        return claims.begin(milestone, balance, now);
+    }
+
+    boolean pendingMilestoneClaims() { return claims.pending(); }
+
+    FeastMilestoneClaims.Credit observeMilestone(FeastMilestoneClaims.Milestone milestone, long now) {
+        var credit = claims.observeServer(milestone, now);
+        if (credit != null && balance != null && credit.minimumBalance() != null && credit.minimumBalance() > balance) {
+            long gained = credit.minimumBalance() - balance;
+            balance += gained;
+            pendingGains += gained;
+        }
+        return credit;
+    }
+
+    void selectFeast(FeastContext.Event event) {
+        if (event != null) claims.selectEvent(event.key());
+    }
+
+    static boolean donationMessage(String text) {
+        return GAIN.matcher(HypixelLocation.clean(text)).matches();
+    }
+
+    boolean observeMessage(String text, List<String> sidebarBeforeMessage) {
+        if (!donationMessage(text)) return false;
+        // Shared sidebar publication waits until end-of-tick; the applied scoreboard may already
+        // contain the pre-donation balance when Ted confirms the next Kernel in the same packet batch.
+        observeSidebar(sidebarBeforeMessage);
+        return observeMessage(text);
     }
 
     boolean observeSidebar(List<String> lines) {
         Long found = null;
         for (String raw : lines) {
-            String clean = HypixelLocation.clean(raw);
+            String clean = HypixelLocation.clean(raw.replaceAll("[\\p{Zs}\\t]+", " "));
             var matcher = SIDEBAR_BALANCE.matcher(clean);
             if (!matcher.matches()) matcher = SIDEBAR_SUFFIX_BALANCE.matcher(clean);
             if (!matcher.matches()) continue;
@@ -84,13 +129,21 @@ final class FeastKernels {
         }
         if (found == null || found.equals(lastSidebarBalance)) return false;
         lastSidebarBalance = found;
+        // Sidebar refreshes can trail gains. Protect only Ted confirmations and server-confirmed claims;
+        // larger decreases are corrections/spending, and a fresh menu always supplies the total.
+        if (balance != null && found < balance && balance - found <= pendingGains) {
+            pendingGains = balance - found;
+            return false;
+        }
         boolean changed = !found.equals(balance);
         balance = found;
+        pendingGains = 0;
         return changed;
     }
 
     void worldChanged() {
         lastSidebarBalance = null;
+        claims.clearPending();
     }
 
     void closeMenu() {
@@ -100,6 +153,8 @@ final class FeastKernels {
 
     void invalidate() {
         balance = null;
+        pendingGains = 0;
+        claims.reset();
         // Unchanged lore from a menu left open across a profile change must not restore its balance.
     }
 

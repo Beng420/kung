@@ -4,6 +4,7 @@
   "compatibilityLevel": "JAVA_21",
   "client": [
     "AbstractContainerScreenMixin",
+    "ChatComponentAccessor",
     "ClientCommonPacketListenerMixin",
     "ClientPacketListenerMixin",
     "ConnectionMixin",

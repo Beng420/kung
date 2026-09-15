@@ -90,9 +90,18 @@ public final class DungeonSplitsOverlayFeature extends ConfigurableFeature<Split
             long totalServer = example ? 352_000L : tracker.started() ? timings.serverTotalMillis() : -1L;
             drawRow(graphics, y, "Total", totalWall, totalServer,
                 tracker.running() ? ACTIVE : TEXT, 0xFF55FFFF, config, false);
+            Minecraft client = Minecraft.getInstance();
+            if (config.timePrediction()) {
+                y += ROW_HEIGHT;
+                long prediction = example ? 362_670L : tracker.predictedFinishMillis(timings.totalMillis());
+                String predictionText = formatDurationMillis(prediction, config.format());
+                graphics.text(client.font, "Predicted", PADDING, y, TEXT, true);
+                graphics.text(client.font, predictionText,
+                    WIDTH - PADDING - LOSS_COLUMN_WIDTH - client.font.width(predictionText),
+                    y, prediction < 0L ? MUTED : ACTIVE, true);
+            }
             if (config.timeLost()) {
                 y += ROW_HEIGHT;
-                Minecraft client = Minecraft.getInstance();
                 graphics.text(client.font, "Time Lost", PADDING, y, TEXT, true);
                 long loss = example ? lostTimeMillis(totalWall, totalServer) : settledTotalLostTimeMillis(tracker);
                 String lossText = formatLostTimeMillis(loss);
@@ -106,7 +115,8 @@ public final class DungeonSplitsOverlayFeature extends ConfigurableFeature<Split
 
     public static OverlayBounds overlayBounds(SplitsConfig config, DungeonSplitTracker tracker) {
         float scale = config.scale() / 100.0F;
-        int height = PADDING * 2 + (displayedNames(tracker).length + (config.timeLost() ? 3 : 2)) * ROW_HEIGHT + 2;
+        int summaryRows = 2 + (config.timeLost() ? 1 : 0) + (config.timePrediction() ? 1 : 0);
+        int height = PADDING * 2 + (displayedNames(tracker).length + summaryRows) * ROW_HEIGHT + 2;
         int width = config.timeLost() ? WIDTH : WIDTH - LOSS_COLUMN_WIDTH;
         return new OverlayBounds(config.x(), config.y(), Math.round(width * scale), Math.round(height * scale));
     }

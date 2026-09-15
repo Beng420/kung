@@ -83,6 +83,26 @@ public final class DungeonSplitsOverlayTest {
         assertEquals(withoutLoss.height() * 2, DungeonSplitsOverlayFeature.overlayBounds(config, tracker).height());
     }
 
+    @Test public void predictionToggleRemovesOnlyItsRowAtEveryHudScale() {
+        var config = new SplitsConfig();
+        var tracker = new DungeonSplitTracker();
+        tracker.configureKnownFloor(7, true);
+        for (boolean timeLost : new boolean[] {true, false}) {
+            config.setTimeLost(timeLost);
+            for (int scale : new int[] {100, 200}) {
+                config.setScale(scale);
+                config.setTimePrediction(true);
+                var shown = DungeonSplitsOverlayFeature.overlayBounds(config, tracker);
+                config.setTimePrediction(false);
+                var hidden = DungeonSplitsOverlayFeature.overlayBounds(config, tracker);
+                assertEquals(shown.width(), hidden.width());
+                assertEquals(shown.height() - scale / 10, hidden.height());
+                assertEquals(shown.x(), hidden.x());
+                assertEquals(shown.y(), hidden.y());
+            }
+        }
+    }
+
     @Test public void liveOverlayStartsWithTheTimerAndRemainsVisibleThroughCompletion() {
         DungeonSplitTracker tracker = new DungeonSplitTracker();
         tracker.configureForFloor(1, false);
@@ -169,7 +189,7 @@ public final class DungeonSplitsOverlayTest {
         config.setScale(100);
         var bounds = DungeonSplitsOverlayFeature.overlayBounds(config, tracker);
         assertEquals(300, bounds.width());
-        assertEquals(6 + (tracker.splitNames().length + 3) * 10, bounds.height());
+        assertEquals(6 + (tracker.splitNames().length + 4) * 10, bounds.height());
         config.setScale(200);
         var enlarged = DungeonSplitsOverlayFeature.overlayBounds(config, tracker);
         assertEquals(bounds.width() * 2, enlarged.width());

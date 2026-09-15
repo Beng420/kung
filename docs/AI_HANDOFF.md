@@ -3,17 +3,58 @@
 Entry point for Kung maintenance. Project rules: [AGENTS.md](../AGENTS.md).
 Read the [code map](CODE_MAP.md), then only the topic needed for the task.
 
-## Current state — 2026-09-14
+## Current state — 2026-09-15
 
 - Active module: Minecraft **26.1.2**, version **0.3.2**, Java **25**.
   The version source is [gradle.properties](../gradle.properties).
   The user's existing version change to 0.3.2 is preserved.
-- Last code validation: full active-module build with Java 25, **422 tests**, zero failures/errors/skips.
-  Artifact: `versions/mc26_1_2/build/libs/kung-26.1.2-0.3.2.jar` (Safari Uniques, Feast Hub farm option and profile persistence, Grand Feast Kernel balance, donation format/filter fix, yellow active tier and progress marker, Roman-tier parsing/diagnostics, menu-font resource fix, Feast Progress, menu redesign, dismissal fix, changelog history/command, chat-emote alias,
+- Last code validation: full shared-root active-module build with Java 25,
+  **519 tests**, zero failures/errors/skips, including the Kernel rate over active farming time,
+  Wild Rose/flower/pumpkin visitor-timer reductions,
+  Kernel milestone claims, per-floor split PB persistence, prediction toggle and both update modes,
+  Visitor Alarm reminder replacement/chat mute and immediate offer-click acknowledgement,
+  update polling/cooldown and independent Kernel donation/sidebar reconciliation.
+  Artifact: `versions/mc26_1_2/build/libs/kung-26.1.2-0.3.2.jar`
+  (rolling Kernel farming rate with idle pause, per-floor split PBs and finish prediction, 6th Visitor Alarm with Wild Rose/flower/pumpkin timing, five-minute update polling and lobby reminders, Kernel donation/sidebar ordering and persisted pending gains,
+  Safari Uniques, Feast Hub farm option and profile persistence, Grand Feast Kernel balance, donation format/filter fix, yellow active tier and progress marker, Roman-tier parsing/diagnostics, menu-font resource fix, Feast Progress, menu redesign, dismissal fix, changelog history/command, chat-emote alias,
   realistic update preview, patch notes, update popup, Mimic discovery/diagnostics
   and unfinished-room score correction).
   Split clock conservation and trace retention also passed the supplied live
   trace check at 18:16:58; details are in the split timing report.
+- Garden > 6th Visitor Alarm (default off, volume 70%) repeats alternating pling
+  tones until an Accept Offer / Refuse Offer click, chat mute, a visitor departure,
+  or disabling. A clickable local chat reminder appears immediately and every
+  10 seconds, replacing the prior reminder in chat history and all wrapped lines.
+  Other messages are preserved, and the next cycle replaces any surviving old
+  reminder too. Clicking it runs client-only `/kung visitors mute`, stopping sound
+  and reminders for the current cycle while leaving the feature enabled. The
+  command also works outside the Garden; stalled ticks do not replay reminders.
+  Offer clicks now stop the sound immediately, including unsuccessful attempts;
+  the acknowledged cycle stays silent through stale tab updates until a visitor
+  leaves/replaces another. The click is observed before local inventory prediction
+  and guarded by container, top slot, visitor title, info lore and button name.
+  Five visitors alone do not trigger: the hidden sixth timer includes crop/pest
+  reductions. Immediate replacement at five visitors stops the previous alarm;
+  menus and lobby travel do not silence a latched alarm. Guest Gardens cannot
+  trigger; disconnect/profile change clears it. Optional read-only SkyHanni data
+  can seed an already-known timer. Without a known initial timer, a first full
+  queue uses a conservative interval and can alarm late. The supplied 20:39:12
+  trace confirms roster parsing and a learned 360-second interval, but caught an
+  early alarm: seven Field Mouse rewards were each treated as a kill. Only its
+  Dung reward now counts; Lunar Moth and Overclocker extras are also excluded.
+  A replay of the 14-message/eight-kill burst fails before the fix and passes
+  afterward. The 2026-09-15 01:15:07 UTC trace catches a late alarm instead:
+  eight pests are counted correctly, but Wild Rose harvests were not recognized,
+  leaving 44,375 ms at the last kill. The shared `GardenCropTracker` includes Wild Roses,
+  Sunflower/Moonflower and carved pumpkins, preserving maturity checks and the
+  shared initial/continued-mining position guard. Five new regressions cover crop
+  classification, deduplication and combined harvest/pest timing; the focused
+  crop/alarm/message/config run passes 41 tests. Live corrected Wild Rose/pest
+  timing, immediate accept/refuse silence, 10-second reminder replacement/chat mute,
+  rearming, off-toggle and startup seed remain open.
+  `visitor-pest` records reward decisions, remaining time and crop reduction count;
+  bounded `visitor-crop` records expose recognized blocks and timer reductions.
+  See [Visitor Alarm](VISITOR_ALARM.md).
 - Hunting > Safari Uniques (default off) displays four fixed columns with all 37
   species: Forest 9, Cavern 9, Icy 9, Haunted 10. Headers show caught/total; missing
   names are red, caught names gray and struck through, completed headers green.
@@ -32,12 +73,45 @@ Read the [code map](CODE_MAP.md), then only the topic needed for the task.
   and future tiers gray. The marker advances within the current tier's interval;
   full completion is entirely green with no marker. The HUD editor uses the same drawing.
   Grand appends the Kernel currency balance, e.g. `16 to next - 1,234 Kernels`.
+  A new line below it shows `Avg Kernels/h` over 20 minutes of farming time,
+  using actual elapsed farming time until the window fills and a 60-second warmup.
+  Mature crop input starts/resumes; five seconds without another harvest pauses
+  the clock. Hub/world travel pauses immediately, retaining the rolling history
+  within the connection. Only Ted-confirmed Seasoning gains count, even without
+  a balance baseline or beyond the milestone cap; claims, balance sync and spending
+  do not affect it. Rate history is session-only and resets on disconnect/disable,
+  profile/account change or a different Feast. HUD bounds extend downward by 12
+  units while position, width and scale stay unchanged. Eleven new rate tests and
+  the existing chat-routing test cover these paths; the focused Feast/crop/config
+  run passes 101 tests. Live rate, idle/resume and new-line rendering remain open.
   Exact `Kernels:` or `123 (+3) Kernels` server sidebar rows sync automatically;
   `Your Kernels:` lore in Grand Bakery is a confirmed second source. The user's
   Scott screenshot shows 123 and they report correct live sync after opening it.
   Opening the milestone menu alone need not supply the currency balance.
-  Confirmed Ted messages then add one. Currency survives Feast changes and stays
+  Confirmed Ted messages then add one. Grand milestone clicks now also credit
+  the tooltip's Kernel reward once a server item update removes glint/claim text.
+  Empty predicted slots do not count; new Grand Feast containers can confirm the
+  click within 15 seconds. Overlapping claims and early sidebar totals do not
+  double count. Confirmed rewards persist through the existing pending-gain cache
+  without advancing donations. The supplied 20:57:12 UTC trace establishes the
+  fourth tier's 100-Kernel claim prompt and container replacements. The later
+  2026-09-15 01:15:07 UTC trace and user report confirm a live tier-V claim:
+  454 -> 579 Kernels (+125), server-confirmed 192 ms after the click, donations
+  unchanged at 250. Overlapping claims and spending comparison with Scott remain open.
+  Currency survives Feast changes and stays
   `--` until a total is known. No other mod or menu automation is required.
+  The brief Custom Scoreboard cache bridge has been removed: the user reports
+  its total stays one below Scott. A local cache comparison found Kung 136 versus
+  SkyBlock API 135 for Coconut; this alone does not prove packet ordering.
+  Kung reads the already-applied server sidebar immediately before counting Ted,
+  so a pre-donation row in the same packet batch need not wait for shared tick
+  publication. Tab-only changes cannot replay that older shared sidebar.
+  Late sidebar rows cannot erase a gap supported by actual Ted confirmations.
+  Pending gains persist across restarts/profile selection; matching totals clear
+  them, larger decreases and fresh menu totals correct spending. Older cache files
+  default the added pending field to zero. No unconditional +1 or third-party
+  balance import occurs. Live donation/source ordering still needs confirmation.
+  Server `Kernels: 123 (+3)` rows and Unicode spaces now also parse directly.
   Harvest follows all three Autumn months; Grand follows the active elected perk.
   Open the Feast menu once to sync; automatic Seasoning donations then advance it.
   Both values now persist per account/profile under `config/kung/feast-progress.json`:
@@ -48,15 +122,20 @@ Read the [code map](CODE_MAP.md), then only the topic needed for the task.
   Profile IDs, when available, distinguish deleted/recreated fruit names. Donation
   restoration requires the same election year for Grand or SkyBlock year for Harvest;
   a new Feast needs a fresh baseline. The memory-only prior build needs one initial
-  sync after upgrade. `/kung hud` moves/scales it and displays the sketch's sample values.
+  progress sync after upgrade; the server sidebar can supply the initial currency
+  baseline at a donation without Grand Bakery. `/kung hud` moves/scales it and displays the sketch's sample values.
   The 17:24:32 trace identifies the failed sync: raw milestone names use I–IX,
   while the parser accepted only Arabic digits and found zero of nine tiers.
   Both forms now work. An unchanged menu fixture reproduces the failure before
   the fix and now yields 25/750, 50 to next; a subsequent Seasoning yields 26/750,
-  49 to next. Completed tiers retain capped fractions. Sixty-five focused Feast/config/
+  49 to next. Completed tiers retain capped fractions. Eighty-nine focused Feast/config/
   mayor tests pass, including restart/lobby/profile isolation, recreated profiles,
   new Feast/API recovery, malformed files, write coalescing, Hub toggles and the
-  existing Kernel, Roman-tier, real-message and chat-filter regressions.
+  existing Kernel, Roman-tier, real-message and chat-filter regressions. Kernel
+  cases cover direct versus shared sidebar ordering, delayed rows, donation-backed
+  gaps, no guessed offsets, menu corrections, pending-gain persistence and old files.
+  Thirteen new regressions cover claim detection/confirmation, duplicate and
+  overlapping claims, source ordering, invalidation and saved milestone gains.
   Bounded `feast-menu` diagnostics remain available. The user confirms live menu
   sync with a screenshot showing 27/750 and 48 to next. The 17:37:21 trace and adjacent
   Minecraft log confirm a missed drop at 17:36:58: `(+80\uE02B)` and `(automatically
@@ -82,16 +161,23 @@ Read the [code map](CODE_MAP.md), then only the topic needed for the task.
   now passes; the rebuilt JAR contains the corrected paths. Live readability with
   this corrected JAR, clicks, dragging, scroll and modals remain open.
   See [layout conventions](DEVELOPMENT.md#changing-code-and-comments).
-- Hypixel joins now show one local popup per connection when the updater finds
-  a newer compatible release, including checks that finish after joining.
+- Kung checks for updates at startup and every five minutes, independently of the
+  menu. A newly found compatible release shows a popup when ready on Hypixel.
+  Polls continue with an available update, preserve it during refresh/failure and
+  cannot overwrite a concurrent download or pending restart.
   The bottom-right card slides in/out, stays eight visible seconds and pauses on
   hover. Open Updates opens the existing Kung update control; GitHub opens the
   latest release page. Open chat to click, or use `/kung preview updates` to test
   with fresh GitHub data and the ordinary card text, even without a newer release.
   It shows installed/latest versions and accurately labels an up-to-date build.
-  Reconnects can notify again; world changes do not.
+  Once an automatic card finishes/closes, a five-minute cooldown starts. After it
+  expires, the next lobby/world change can repeat the same release. Early transfers
+  are discarded; idle expiry/repeated polling alone stays quiet, and reconnects
+  cannot bypass the cooldown. Shared instance epochs coalesce packet resets.
+  Passive `update-check`/`update-notice` traces expose checks, display and completion.
   The settings header also shows the loaded version, e.g. `Kung - v0.3.1`.
-  Ten focused tests and the full build pass. Live joins,
+  Thirty-three update-package tests pass, including exact cooldown boundaries and
+  periodic checks without menu input. Live polling, timed lobby reminders, joins,
   layering, GUI scales and clicks remain open.
   See [updates](UPDATES.md).
 - The first Kung settings opening for an unseen installed version shows that
@@ -154,7 +240,23 @@ Read the [code map](CODE_MAP.md), then only the topic needed for the task.
   key, so full personal counts still require an actual data source. Sync users also
   need the updated companion server. Live 0.3.1 validation remains open.
   See [run-statistics evidence](RUN_STATISTICS_FIXES.md).
-- Split clocks conserve every accepted tick. Full traces preserve 128 split
+- Splits now keep real-time personal bests for each phase separately per Entrance,
+  F1–F7 and M1–M7 in `splitsOverlay.personalBests` in the existing Kung config.
+  Enabled, accurately completed phases contribute; one save at finish/exit uses
+  the final floor metadata so late M7 detection cannot pollute F7 records.
+  Unknown/interrupted phases and manual debug runs are excluded. Splits Overlay >
+  Time Prediction is now a toggle with expandable Update setting, like Boss Messages.
+  Phase End (default) uses the last boundary plus active/later phase PBs. Live uses
+  current Total plus only later phase PBs: during Storm, Terminals/Goldor/Necron
+  and the additional M7 phases, with no Storm PB. Changes apply mid-phase; both
+  settings persist. Turning prediction off removes its row/editor height while
+  PB collection continues. Missing required PBs show `--`; confirmed completion
+  freezes both modes to Total. The full 486-test build passes, including the
+  explicit F7/M7 Storm example, mode switching, persistence and hidden-row bounds.
+  Live F6/M7 learning, restart restoration, menu toggle/expansion/mode clicks and
+  HUD appearance remain open.
+  See [splits and personal bests](RUN_STATISTICS.md#splits).
+  Split clocks conserve every accepted tick. Full traces preserve 128 split
   records, including countdown/Mort start markers. The 18:16:58 live
   trace retains two complete runs with consistent phase partitions and no clipped
   tick time; the screenshot run measures 14,291 ms loss. No further timing change

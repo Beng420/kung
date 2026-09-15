@@ -28,7 +28,8 @@ final class FeastStateStore {
     private String pending;
     private CompletableFuture<Void> writer = CompletableFuture.completedFuture(null);
 
-    record Saved(String profileId, String eventKey, FeastProgress.Snapshot progress, Long kernels) {}
+    record Saved(String profileId, String eventKey, FeastProgress.Snapshot progress, Long kernels,
+                 long pendingKernelGains) {}
     private record Document(int version, Map<String, Saved> profiles) {}
 
     FeastStateStore(Path file, Executor executor) {
@@ -113,6 +114,8 @@ final class FeastStateStore {
     private static boolean valid(Saved value) {
         if (value == null || value.profileId == null || !value.profileId.matches("(?:[a-f0-9-]{36})?")
             || value.eventKey == null || value.kernels != null && value.kernels < 0) return false;
+        if (value.pendingKernelGains < 0
+            || value.pendingKernelGains > (value.kernels == null ? 0 : value.kernels)) return false;
         var progress = value.progress;
         if (progress == null) return value.eventKey.isEmpty();
         if (progress.kind() == null || !value.eventKey.matches(

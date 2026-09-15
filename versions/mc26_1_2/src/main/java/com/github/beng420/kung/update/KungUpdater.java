@@ -2,6 +2,8 @@ package com.github.beng420.kung.update;
 
 import com.github.beng420.kung.KungMod;
 import com.github.beng420.kung.message.KungMessages;
+import com.github.beng420.kung.skyblock.HypixelInstanceTracker;
+import com.github.beng420.kung.util.KungDebugRecorder;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -57,6 +59,7 @@ public enum KungUpdater {
     private final AtomicBoolean installing = new AtomicBoolean();
     private final AtomicReference<State> state = new AtomicReference<>(State.checking(currentVersion()));
     private final KungUpdateNotification notification = new KungUpdateNotification();
+    private final KungUpdateCheckSchedule checkSchedule = new KungUpdateCheckSchedule();
     private final KungUpdateToast toast = new KungUpdateToast();
     private final KungReleaseNotes releaseNotes = new KungReleaseNotes(currentVersion(),
         () -> com.github.beng420.kung.runtime.KungPaths.fileLayout().updateDirectory().resolve("release-notes.properties"),
@@ -68,7 +71,7 @@ public enum KungUpdater {
         toast.initializeClient();
         ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> {
             var server = client.getCurrentServer();
-            if (notification.joined(handler.getConnection(), server == null ? null : server.ip)) {
+            if (notification.joined(handler.getConnection(), server == null ? null : server.ip, nowMillis())) {
                 checkForUpdatesAsync();
             }
         });
@@ -80,12 +83,20 @@ public enum KungUpdater {
             }
         });
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
+            checkForUpdatesAsync();
             var handler = client.getConnection();
             State snapshot = state.get();
             toast.tick(client, snapshot.status() == Status.UPDATE_AVAILABLE);
+            long epoch = HypixelInstanceTracker.INSTANCE.instanceEpoch();
             if (notification.shouldNotify(handler == null ? null : handler.getConnection(),
-                KungUpdateToast.canDisplay(client), snapshot.status() == Status.UPDATE_AVAILABLE)) {
-                toast.show(client, "Kung update available", snapshot.currentVersion(), snapshot.latestVersion(), false);
+                epoch, KungUpdateToast.canDisplay(client),
+                snapshot.status() == Status.UPDATE_AVAILABLE ? snapshot.latestVersion() : "", toast.active(), nowMillis())) {
+                KungDebugRecorder.event("update-notice", "show installed=" + snapshot.currentVersion()
+                    + " latest=" + snapshot.latestVersion() + " epoch=" + epoch);
+                toast.show(client, "Kung update available", snapshot.currentVersion(), snapshot.latestVersion(), false, () -> {
+                    notification.finished(nowMillis());
+                    KungDebugRecorder.event("update-notice", "finished cooldownMs=" + KungUpdateNotification.COOLDOWN_MILLIS);
+                });
             }
         });
     }
@@ -94,7 +105,7 @@ public enum KungUpdater {
         var handler = client.getConnection();
         if (handler == null || !previewing.compareAndSet(false, true)) return;
         var connection = handler.getConnection();
-        // Read fresh release data without replacing an active download or consuming the join notice.
+        // Preview reads fresh data without changing the polling schedule or automatic eligibility.
         executor.execute(() -> {
             State snapshot;
             try {
@@ -121,7 +132,7 @@ public enum KungUpdater {
                         case UNSUPPORTED -> "New Kung release";
                         default -> "Kung update available";
                     };
-                    toast.show(client, title, result.currentVersion(), result.latestVersion(), true);
+                    toast.show(client, title, result.currentVersion(), result.latestVersion(), true, null);
                 } finally {
                     previewing.set(false);
                 }
@@ -130,32 +141,40 @@ public enum KungUpdater {
     }
 
     public void checkForUpdatesAsync() {
-        Status status = state.get().status();
-        if (status == Status.UPDATE_AVAILABLE || status == Status.DOWNLOADING || status == Status.INSTALL_READY) {
+        long now = nowMillis();
+        State previous = state.get();
+        if (!checkSchedule.due(now) || installing.get()
+            || previous.status() == Status.DOWNLOADING || previous.status() == Status.INSTALL_READY) {
             return;
         }
         if (!checking.compareAndSet(false, true)) {
             return;
         }
 
-        state.set(State.checking(currentVersion()));
+        checkSchedule.started(now);
+        KungDebugRecorder.event("update-check", "started current=" + currentVersion());
+        // Keep a known release usable while refreshing. A late result must not overwrite installation state.
         executor.execute(() -> {
             try {
-                state.set(checkForUpdates());
-            } catch (Exception exception) {
-                KungMod.LOGGER.warn("Kung update check failed.", exception);
-                state.set(new State(
-                    Status.FAILED,
-                    currentVersion(),
-                    "",
-                    "Update check failed",
-                    null
-                ));
+                State result;
+                try {
+                    result = checkForUpdates();
+                } catch (Exception exception) {
+                    KungMod.LOGGER.warn("Kung update check failed.", exception);
+                    KungDebugRecorder.event("update-check", "failed retainingAvailable=" + (previous.status() == Status.UPDATE_AVAILABLE));
+                    result = previous.status() == Status.UPDATE_AVAILABLE ? previous : new State(
+                        Status.FAILED, currentVersion(), "", "Update check failed", null);
+                }
+                boolean applied = state.compareAndSet(previous, result);
+                KungDebugRecorder.event("update-check", "finished status=" + result.status()
+                    + " latest=" + result.latestVersion() + " applied=" + applied);
             } finally {
                 checking.set(false);
             }
         });
     }
+
+    private static long nowMillis() { return System.nanoTime() / 1_000_000L; }
 
     public void installPendingUpdateIfReady() {
         Path marker = pendingMarkerPath();

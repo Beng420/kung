@@ -77,6 +77,17 @@ public final class ConfigRegressionTest {
     }
 
     @Test
+    public void visitorAlarmDefaultsOffAndNormalizesVolume() {
+        equal(false, read("{}").visitorAlarm.enabled(), "new alarm defaults off");
+        equal(false, read("{\"visitorAlarm\":null}").visitorAlarm.enabled(), "null category defaults off");
+        equal(70, read("{}").visitorAlarm.volume(), "audible default volume");
+        KungConfig loaded = read("{\"visitorAlarm\":{\"enabled\":true,\"volume\":999}}");
+        equal(true, loaded.visitorAlarm.enabled(), "enabled setting retained");
+        equal(100, loaded.visitorAlarm.volume(), "volume upper bound");
+        equal(1, read("{\"visitorAlarm\":{\"volume\":0}}").visitorAlarm.volume(), "volume lower bound");
+    }
+
+    @Test
     public void feastSettingsDefaultOffAndPreserveHudCoordinatesOnReload() {
         equal(false, read("{}").feast.enabled(), "existing configurations keep the new overlay off");
         equal(true, read("{}").feast.showInHubFarm(), "Hub farm subsetting defaults on");
@@ -171,6 +182,8 @@ public final class ConfigRegressionTest {
             config.feast.setX(321);
             config.feast.setY(123);
             config.feast.setScale(150);
+            config.visitorAlarm.setEnabled(true);
+            config.visitorAlarm.setVolume(35);
             config.debug.setTarantulaMessages(false);
             config.slayer.setEggSacPredictionEnabled(true);
             config.misc.setLoadoutKeybind(2, "mouse:3");
@@ -178,6 +191,8 @@ public final class ConfigRegressionTest {
             config.misc.setCustomArrowHitSounds("\"C:/sounds/ping.wav\", 'bell.wav'");
             String saved = Files.readString(file);
             KungConfig roundTrip = read(saved);
+            equal(true, roundTrip.visitorAlarm.enabled(), "visitor alarm persisted");
+            equal(35, roundTrip.visitorAlarm.volume(), "visitor volume persisted");
             equal(77, roundTrip.dungeon.x(), "map setter persists");
             equal(250, roundTrip.dungeon.scale(), "map enlargement beyond old cap persists");
             equal(175, roundTrip.dungeon.textScale(), "map text size persists independently");

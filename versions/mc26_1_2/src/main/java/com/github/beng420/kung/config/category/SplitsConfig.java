@@ -1,5 +1,8 @@
 package com.github.beng420.kung.config.category;
 
+import java.util.Map;
+import java.util.TreeMap;
+
 public final class SplitsConfig extends ConfigCategory {
     private boolean enabled = false;
     private int x = 226;
@@ -7,6 +10,10 @@ public final class SplitsConfig extends ConfigCategory {
     private int scale = 85;
     private TimeFormat format = TimeFormat.MINUTES;
     private boolean timeLost = true;
+    private boolean timePrediction = true;
+    private PredictionMode predictionMode = PredictionMode.PHASE_END;
+    /** Real phase durations in milliseconds, keyed by Entrance/F1–F7/M1–M7 and phase name. */
+    private Map<String, Map<String, Long>> personalBests = new TreeMap<>();
 
     public boolean enabled() {
         return enabled;
@@ -61,6 +68,66 @@ public final class SplitsConfig extends ConfigCategory {
     public void setTimeLost(boolean timeLost) {
         this.timeLost = timeLost;
         save();
+    }
+
+    public boolean timePrediction() { return timePrediction; }
+
+    public void setTimePrediction(boolean timePrediction) {
+        this.timePrediction = timePrediction;
+        save();
+    }
+
+    public PredictionMode predictionMode() {
+        return predictionMode == null ? PredictionMode.PHASE_END : predictionMode;
+    }
+
+    public void setPredictionMode(PredictionMode predictionMode) {
+        this.predictionMode = predictionMode == null ? PredictionMode.PHASE_END : predictionMode;
+        save();
+    }
+
+    public String predictionModeLabel() { return predictionMode().label(); }
+    public void cyclePredictionMode() { setPredictionMode(predictionMode().next()); }
+
+    public long personalBestMillis(int floor, boolean masterMode, String phase) {
+        String key = floorKey(floor, masterMode);
+        if (key == null || phase == null || personalBests == null) return -1L;
+        Map<String, Long> phases = personalBests.get(key);
+        Long best = phases == null ? null : phases.get(phase);
+        return best != null && best > 0L ? best : -1L;
+    }
+
+    /** Save once per run, and only when at least one measured phase improves. */
+    public void recordPersonalBests(int floor, boolean masterMode, Map<String, Long> measurements) {
+        String key = floorKey(floor, masterMode);
+        if (key == null || measurements == null) return;
+        boolean changed = false;
+        for (var entry : measurements.entrySet()) {
+            String phase = entry.getKey();
+            Long duration = entry.getValue();
+            if (phase == null || phase.isBlank() || duration == null || duration <= 0L) continue;
+            long previous = personalBestMillis(floor, masterMode, phase);
+            if (previous > 0L && duration >= previous) continue;
+            if (personalBests == null) personalBests = new TreeMap<>();
+            personalBests.computeIfAbsent(key, ignored -> new TreeMap<>()).put(phase, duration);
+            changed = true;
+        }
+        if (changed) save();
+    }
+
+    private static String floorKey(int floor, boolean masterMode) {
+        if (floor < 0 || floor > 7) return null;
+        return floor == 0 ? "Entrance" : (masterMode ? "M" : "F") + floor;
+    }
+
+    public enum PredictionMode {
+        PHASE_END("Phase End"), LIVE("Live");
+
+        private final String label;
+
+        PredictionMode(String label) { this.label = label; }
+        public String label() { return label; }
+        public PredictionMode next() { return this == PHASE_END ? LIVE : PHASE_END; }
     }
 
     public enum TimeFormat {

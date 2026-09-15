@@ -1,6 +1,7 @@
 package com.github.beng420.kung.mixin;
 
 import com.github.beng420.kung.feature.dungeon.DungeonEventRouter;
+import com.github.beng420.kung.feature.garden.FeastOverlayFeature;
 import com.github.beng420.kung.feature.misc.CustomSoundsFeature;
 import com.github.beng420.kung.feature.misc.SuperpairsHelperFeature;
 import com.github.beng420.kung.skyblock.HypixelInstanceTracker;
@@ -47,11 +48,13 @@ public abstract class ClientPacketListenerMixin {
     @Inject(method = "handleContainerSetSlot", at = @At("TAIL"))
     private void kung$onContainerSlot(ClientboundContainerSetSlotPacket packet, CallbackInfo callbackInfo) {
         SuperpairsHelperFeature.observeSlotUpdate(packet.getContainerId(), packet.getSlot(), packet.getItem());
+        FeastOverlayFeature.observeSlotUpdate(packet.getContainerId(), packet.getSlot(), packet.getItem());
     }
 
     @Inject(method = "handleContainerContent", at = @At("TAIL"))
     private void kung$onContainerContent(ClientboundContainerSetContentPacket packet, CallbackInfo callbackInfo) {
         SuperpairsHelperFeature.observeContentUpdate(packet.containerId(), packet.items());
+        FeastOverlayFeature.observeContentUpdate(packet.containerId(), packet.items());
     }
 
     // TAIL runs after vanilla applies the packet on the client thread, never on Netty's read thread.

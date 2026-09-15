@@ -27,6 +27,7 @@ final class KungUpdateToast {
     private String currentVersion = "";
     private String latestVersion = "";
     private boolean preview;
+    private Runnable onFinished;
     private Connection connection;
     private Screen drawnScreen;
     private KungUpdateToastState.Layout drawnLayout;
@@ -47,22 +48,30 @@ final class KungUpdateToast {
         });
     }
 
-    void show(Minecraft client, String title, String currentVersion, String latestVersion, boolean preview) {
+    void show(Minecraft client, String title, String currentVersion, String latestVersion, boolean preview,
+              Runnable onFinished) {
+        clear();
         this.title = title;
         this.currentVersion = currentVersion;
         this.latestVersion = latestVersion;
         this.preview = preview;
+        this.onFinished = onFinished;
         connection = client.getConnection() == null ? null : client.getConnection().getConnection();
         drawnLayout = null;
         state.show(now());
     }
 
     void clear() {
+        Runnable finished = onFinished;
+        onFinished = null;
         state.clear();
         drawnLayout = null;
         drawnScreen = null;
         connection = null;
+        if (finished != null) finished.run();
     }
+
+    boolean active() { return state.active(); }
 
     void disconnected(Connection connection) {
         if (this.connection == connection) clear();

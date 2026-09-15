@@ -39,6 +39,31 @@ public class FeastPersistenceTest {
     }
 
     @Test
+    public void claimedMilestoneKernelsPersistWithoutAdvancingDonationsOrReplayingTheClaim() {
+        Path file = file();
+        var original = new State(file);
+        original.select(ACCOUNT, "Coconut");
+        original.sync(150, 179);
+        var claimable = new FeastMilestoneClaims.Milestone(4, 100, true);
+        var claimed = new FeastMilestoneClaims.Milestone(4, 100, false);
+        assertTrue(original.kernels.beginMilestoneClaim(claimable, 0));
+        assertNotNull(original.kernels.observeMilestone(claimed, 100));
+        original.persistence.save();
+        original.store.flush();
+        var restarted = new State(file);
+        restarted.select(ACCOUNT, "Coconut");
+        assertEquals(150, restarted.session.snapshot().donations());
+        assertEquals(Long.valueOf(279), restarted.kernels.balance());
+        assertEquals(100, restarted.kernels.pendingGains());
+        assertNull(restarted.kernels.observeMilestone(claimed, 200));
+        assertFalse(restarted.kernels.beginMilestoneClaim(claimed, 201));
+        assertFalse(restarted.kernels.observeSidebar(List.of("Kernels: 179")));
+        assertEquals(Long.valueOf(279), restarted.kernels.balance());
+        assertFalse(restarted.kernels.observeSidebar(List.of("Kernels: 279")));
+        assertEquals(0, restarted.kernels.pendingGains());
+    }
+
+    @Test
     public void repeatedLobbyProfileAnnouncementsKeepTheLiveCounter() {
         var state = new State(file());
         var context = new FeastContext();
@@ -141,6 +166,52 @@ public class FeastPersistenceTest {
         restarted.select(ACCOUNT, "Coconut");
         assertEquals(27, restarted.session.snapshot().donations());
         assertEquals(Long.valueOf(123), restarted.kernels.balance());
+    }
+
+    @Test
+    public void unreflectedKernelDonationsSurviveRestartAndAcknowledgeWithoutDoubleCounting() {
+        var state = new State(file());
+        state.select(ACCOUNT, "Coconut");
+        state.sync(58, 135);
+        state.donate();
+        state.persistence.save();
+        var restarted = new State(file());
+        restarted.select(ACCOUNT, "Coconut");
+        assertEquals(Long.valueOf(136), restarted.kernels.balance());
+        assertEquals(1, restarted.kernels.pendingGains());
+        assertFalse(restarted.kernels.observeSidebar(List.of("Kernels: 135")));
+        assertEquals(Long.valueOf(136), restarted.kernels.balance());
+        assertFalse(restarted.kernels.observeSidebar(List.of("Kernels: 136")));
+        assertEquals(0, restarted.kernels.pendingGains());
+        restarted.persistence.save();
+        var again = new State(file());
+        again.select(ACCOUNT, "Coconut");
+        assertEquals(0, again.kernels.pendingGains());
+        assertEquals(Long.valueOf(136), again.kernels.balance());
+        assertTrue(again.kernels.observeMessage(TED));
+        assertEquals(Long.valueOf(137), again.kernels.balance());
+    }
+
+    @Test
+    public void olderCacheWithoutPendingGainsStillRestoresItsKnownBalance() throws Exception {
+        Files.writeString(file(), "{\"version\":1,\"profiles\":{\"" + ACCOUNT + ":coconut\":{"
+            + "\"profileId\":\"\",\"eventKey\":\"\",\"kernels\":136}}}");
+        var state = new State(file());
+        state.select(ACCOUNT, "Coconut");
+        assertEquals(Long.valueOf(136), state.kernels.balance());
+        assertEquals(0, state.kernels.pendingGains());
+    }
+
+    @Test
+    public void invalidPendingGainsCannotProtectMadeUpDonations() throws Exception {
+        for (long pending : List.of(-1L, 137L)) {
+            Files.writeString(file(), "{\"version\":1,\"profiles\":{\"" + ACCOUNT + ":coconut\":{"
+                + "\"profileId\":\"\",\"eventKey\":\"\",\"kernels\":136,\"pendingKernelGains\":" + pending + "}}}");
+            var state = new State(file());
+            state.select(ACCOUNT, "Coconut");
+            assertNull(state.kernels.balance());
+            assertEquals(0, state.kernels.pendingGains());
+        }
     }
 
     @Test

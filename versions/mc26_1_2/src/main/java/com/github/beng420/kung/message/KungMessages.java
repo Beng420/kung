@@ -1,7 +1,11 @@
 package com.github.beng420.kung.message;
 
+import com.github.beng420.kung.mixin.ChatComponentAccessor;
+import java.util.List;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.multiplayer.chat.GuiMessage;
+import net.minecraft.client.multiplayer.chat.GuiMessageSource;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
 
@@ -73,5 +77,31 @@ public final class KungMessages {
                 client.player.sendSystemMessage(component(type, area, message));
             }
         });
+    }
+
+    /** Client-thread only. Retain the returned component to replace this local message next time. */
+    public static Component replaceLocal(Minecraft client, Component previous, Component message) {
+        var chat = client.gui.getChat();
+        var access = (ChatComponentAccessor) chat;
+        var lines = access.kung$getTrimmedMessages();
+        int scroll = access.kung$getChatScrollbarPos();
+        var anchor = scroll > 0 && scroll < lines.size() ? lines.get(scroll) : null;
+        removeLocal(access.kung$getAllMessages(), lines, previous);
+        chat.addClientSystemMessage(message);
+        // Keep a scrolled reader on the same surviving line rather than rebuilding all chat wrapping.
+        int anchorIndex = anchor == null ? -1 : lines.indexOf(anchor);
+        chat.scrollChat(anchorIndex < 0 ? 0 : anchorIndex - access.kung$getChatScrollbarPos());
+        return message;
+    }
+
+    static void removeLocal(List<GuiMessage> history, List<GuiMessage.Line> lines, Component previous) {
+        if (previous == null) return;
+        // Identity preserves unrelated messages with identical text, including server/player copies.
+        history.removeIf(entry -> ownsLocal(entry, previous));
+        lines.removeIf(line -> ownsLocal(line.parent(), previous));
+    }
+
+    private static boolean ownsLocal(GuiMessage entry, Component previous) {
+        return entry.source() == GuiMessageSource.SYSTEM_CLIENT && entry.content() == previous;
     }
 }

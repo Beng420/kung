@@ -11,6 +11,7 @@ import com.github.beng420.kung.runtime.KungPaths;
 import com.github.beng420.kung.skyblock.HypixelInstanceTracker;
 import com.github.beng420.kung.skyblock.HypixelLocation;
 import com.github.beng420.kung.skyblock.SkyBlockMayorTracker;
+import com.github.beng420.kung.skyblock.SkyBlockSidebar;
 import com.github.beng420.kung.util.KungDebugRecorder;
 import java.util.ArrayList;
 import java.util.List;
@@ -26,14 +27,18 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.client.multiplayer.resolver.ServerAddress;
+import net.minecraft.core.BlockPos;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.inventory.ContainerInput;
+import net.minecraft.world.item.ItemStack;
 
 public final class FeastOverlayFeature extends ConfigurableFeature<FeastConfig> implements Feature {
+    public static final FeastOverlayFeature INSTANCE = new FeastOverlayFeature();
     private static final Identifier HUD_ID = Identifier.fromNamespaceAndPath(KungMod.MOD_ID, "feast_progress");
     private static final int WIDTH = 180;
-    private static final int HEIGHT = 40;
+    private static final int HEIGHT = 52;
     private static final int BAR_X = 3;
     private static final int BAR_Y = 15;
     private static final int BAR_WIDTH = WIDTH - BAR_X * 2;
@@ -48,6 +53,8 @@ public final class FeastOverlayFeature extends ConfigurableFeature<FeastConfig> 
 
     private final FeastSession session = new FeastSession();
     private final FeastKernels kernels = new FeastKernels();
+    private final FeastKernelRate kernelRate = new FeastKernelRate();
+    private final GardenCropTracker crops = new GardenCropTracker();
     private final FeastContext context = new FeastContext();
     private FeastStateStore store;
     private FeastPersistence persistence;
@@ -62,7 +69,7 @@ public final class FeastOverlayFeature extends ConfigurableFeature<FeastConfig> 
     private String diagnosticKey = "";
     private int diagnosticSnapshots;
 
-    public FeastOverlayFeature() { super(config -> config.feast); }
+    private FeastOverlayFeature() { super(config -> config.feast); }
 
     @Override
     protected void onInitialize() {
@@ -95,6 +102,7 @@ public final class FeastOverlayFeature extends ConfigurableFeature<FeastConfig> 
             selectProfile();
         } else if (FeastContext.profileId(text) != null) {
             persistence.identify(FeastContext.profileId(text));
+            kernelRate.identifyProfile(FeastContext.profileId(text));
         } else if (text.contains("Seasoning") || text.contains("Kernel")) {
             updateContext();
             if (text.contains("Seasoning")) {
@@ -104,7 +112,13 @@ public final class FeastOverlayFeature extends ConfigurableFeature<FeastConfig> 
                     + " synced=" + (session.snapshot() != null) + " message=" + text);
                 if (counted) recordProgress("donation");
             }
-            if (kernels.observeMessage(text)) recordKernels("donation");
+            if (FeastKernels.donationMessage(text)) {
+                boolean rateCounted = kernelRate.observeMessage(text, now());
+                var client = Minecraft.getInstance();
+                var beforeMessage = client.level == null ? List.<String>of()
+                    : SkyBlockSidebar.lines(client.level.getScoreboard(), null);
+                if (kernels.observeMessage(text, beforeMessage) || rateCounted) recordKernels("donation");
+            }
         }
     }
 
@@ -116,6 +130,8 @@ public final class FeastOverlayFeature extends ConfigurableFeature<FeastConfig> 
         if (persistence != null) persistence.reset();
         session.reset();
         kernels.reset();
+        kernelRate.reset();
+        crops.reset();
         context.reset();
         epoch = -1;
         lastSidebar = null;
@@ -142,7 +158,10 @@ public final class FeastOverlayFeature extends ConfigurableFeature<FeastConfig> 
             return;
         }
         // A world transfer can briefly have no player; only disconnect invalidates the session.
-        if (client.player == null || client.level == null) return;
+        if (client.player == null || client.level == null) {
+            kernelRate.pause(now());
+            return;
+        }
         var server = client.getCurrentServer();
         hypixel = server != null && isHypixel(server.ip);
         if (!hypixel) {
@@ -162,21 +181,30 @@ public final class FeastOverlayFeature extends ConfigurableFeature<FeastConfig> 
             epoch = instance.instanceEpoch();
             context.worldChanged();
             kernels.worldChanged();
+            kernelRate.pause(now());
+            crops.reset();
             lastSidebar = null;
             lastVisible = null;
         }
         if (lastSidebar != instance.sidebarLines() || lastVisible != instance.visibleLines()) {
+            boolean sidebarChanged = lastSidebar != instance.sidebarLines();
             lastSidebar = instance.sidebarLines();
             lastVisible = instance.visibleLines();
             context.observe(lastSidebar, lastVisible);
             selectProfile();
-            if (kernels.observeSidebar(lastSidebar)) recordKernels("sidebar");
+            if (sidebarChanged) {
+                Long previousSidebar = kernels.sidebarBalance();
+                if (kernels.observeSidebar(lastSidebar)
+                    || !java.util.Objects.equals(previousSidebar, kernels.sidebarBalance())) recordKernels("sidebar");
+            }
             inGarden = instance.tracking() && FeastContext.garden(instance.instanceLine(), lastVisible);
             inHubFarm = instance.tracking() && FeastContext.hubFarm(instance.instanceLine(), lastVisible);
         }
         var mayor = SkyBlockMayorTracker.INSTANCE.feastStatus();
         var previous = session.snapshot();
         session.select(context.event(mayor.active(System.currentTimeMillis()), mayor.electionYear()), context.hasDate());
+        kernels.selectFeast(session.event());
+        kernelRate.updateContext(hypixel && inGarden, session.event(), now());
         if (previous != null && session.snapshot() == null) {
             KungDebugRecorder.event("feast", "reset reason=changed-or-inactive-feast");
         }
@@ -206,7 +234,8 @@ public final class FeastOverlayFeature extends ConfigurableFeature<FeastConfig> 
         }
         String title = screen.getTitle().getString();
         Long balance = FeastKernels.readMenu(title, items);
-        if (kernels.observeMenu(menu, balance)) recordKernels("menu");
+        long previousPendingGains = kernels.pendingGains();
+        if (kernels.observeMenu(menu, balance) || previousPendingGains != kernels.pendingGains()) recordKernels("menu");
         if (FeastProgress.Kind.fromTitle(title) == null) {
             session.closeMenu();
             diagnosticMenu = null;
@@ -216,6 +245,79 @@ public final class FeastOverlayFeature extends ConfigurableFeature<FeastConfig> 
         diagnoseMenu(menu, title, items, read, balance);
         if (session.observeMenu(menu, read.snapshot())) recordProgress("menu");
     }
+
+    public static void observeContainerInput(int containerId, int slotId, int button, ContainerInput input) {
+        if (!INSTANCE.isEnabled() || (input != ContainerInput.PICKUP && input != ContainerInput.QUICK_MOVE)
+            || button < 0 || button > 1) return;
+        var client = Minecraft.getInstance();
+        var menu = currentGrandMenu(client, containerId);
+        if (menu == null || slotId < 0 || slotId >= menu.slots.size() - 36) return;
+        var milestone = readMilestone(menu.slots.get(slotId).getItem());
+        if (milestone == null || !milestone.claimable()) return;
+        INSTANCE.updateContext();
+        if (client.level != null) {
+            Long previousSidebar = INSTANCE.kernels.sidebarBalance();
+            if (INSTANCE.kernels.observeSidebar(SkyBlockSidebar.lines(client.level.getScoreboard(), null))
+                || !java.util.Objects.equals(previousSidebar, INSTANCE.kernels.sidebarBalance())) {
+                INSTANCE.recordKernels("claim-sidebar");
+            }
+        }
+        if (INSTANCE.kernels.beginMilestoneClaim(milestone, now())) {
+            KungDebugRecorder.event("feast-claim", "clicked container=" + containerId + " slot=" + slotId
+                + " tier=" + milestone.tier() + " reward=" + milestone.kernels() + " balance=" + INSTANCE.kernels.balance());
+        }
+    }
+
+    public static void observeCropClick(BlockPos pos) {
+        if (!INSTANCE.isEnabled() || !INSTANCE.hypixel || !INSTANCE.inGarden) return;
+        var client = Minecraft.getInstance();
+        if (client.level == null || client.player == null || client.player.isSpectator()) return;
+        if (INSTANCE.crops.observe(pos, client.level.getBlockState(pos))) INSTANCE.kernelRate.crop(now());
+    }
+
+    public static void observeSlotUpdate(int containerId, int slotId, ItemStack stack) {
+        if (!INSTANCE.kernels.pendingMilestoneClaims()) return;
+        var menu = currentGrandMenu(Minecraft.getInstance(), containerId);
+        if (menu == null || slotId < 0 || slotId >= menu.slots.size() - 36) return;
+        INSTANCE.updateContext();
+        INSTANCE.observeClaimStack(stack);
+    }
+
+    public static void observeContentUpdate(int containerId, List<ItemStack> stacks) {
+        if (!INSTANCE.kernels.pendingMilestoneClaims()) return;
+        var menu = currentGrandMenu(Minecraft.getInstance(), containerId);
+        if (menu == null || stacks.size() > menu.slots.size()) return;
+        INSTANCE.updateContext();
+        for (int slot = 0; slot < Math.min(stacks.size(), menu.slots.size() - 36); slot++) {
+            INSTANCE.observeClaimStack(stacks.get(slot));
+        }
+    }
+
+    private void observeClaimStack(ItemStack stack) {
+        var credit = kernels.observeMilestone(readMilestone(stack), now());
+        if (credit != null) recordKernels("milestone tier=" + credit.tier() + " reward=" + credit.kernels());
+    }
+
+    private static FeastMilestoneClaims.Milestone readMilestone(ItemStack stack) {
+        if (stack.isEmpty()) return null;
+        var lore = stack.get(DataComponents.LORE);
+        if (lore == null) return null;
+        return FeastMilestoneClaims.read("Grand Feast", new FeastProgress.MenuItem(stack.getHoverName().getString(),
+            lore.lines().stream().limit(40).map(line -> line.getString()).toList()), stack.hasFoil());
+    }
+
+    private static AbstractContainerMenu currentGrandMenu(Minecraft client, int containerId) {
+        if (!INSTANCE.isEnabled() || client.player == null) return null;
+        var server = client.getCurrentServer();
+        if (server == null || !isHypixel(server.ip) || !(client.screen instanceof AbstractContainerScreen<?> screen)
+            || FeastProgress.Kind.fromTitle(screen.getTitle().getString()) != FeastProgress.Kind.GRAND) return null;
+        var menu = screen.getMenu();
+        int topSlots = menu.slots.size() - 36;
+        return menu == client.player.containerMenu && menu.containerId == containerId && topSlots > 0 && topSlots <= 54
+            ? menu : null;
+    }
+
+    private static long now() { return System.nanoTime() / 1_000_000; }
 
     private void diagnoseMenu(AbstractContainerMenu menu, String title, List<FeastProgress.MenuItem> items,
                               FeastProgress.MenuRead read, Long menuKernels) {
@@ -249,6 +351,7 @@ public final class FeastOverlayFeature extends ConfigurableFeature<FeastConfig> 
 
     private void selectProfile() {
         var player = Minecraft.getInstance().player;
+        if (player != null) kernelRate.selectProfile(player.getUUID().toString(), context.profile());
         if (persistence != null && player != null
             && persistence.select(player.getUUID().toString(), context.profile())) {
             KungDebugRecorder.event("feast", "profile=" + context.profile() + " cache-selected");
@@ -257,7 +360,10 @@ public final class FeastOverlayFeature extends ConfigurableFeature<FeastConfig> 
 
     private void recordKernels(String source) {
         if (persistence != null) persistence.save();
-        KungDebugRecorder.event("feast-kernels", "source=" + source + " balance=" + kernels.balance());
+        var rate = kernelRate.snapshot(now());
+        KungDebugRecorder.event("feast-kernels", "source=" + source + " balance=" + kernels.balance()
+            + " sidebar=" + kernels.sidebarBalance() + " pendingGains=" + kernels.pendingGains()
+            + " rateKernels=" + rate.kernels() + " farmingMs=" + rate.farmingMillis() + " ratePaused=" + rate.paused());
     }
 
     private void recordProgress(String source) {
@@ -273,7 +379,7 @@ public final class FeastOverlayFeature extends ConfigurableFeature<FeastConfig> 
         // Consult fresh shared instance state at render time, including the first frame after a warp.
         updateContext();
         if (!visible(hypixel, inGarden, inHubFarm, config().showInHubFarm(), session.event())) return;
-        draw(graphics, config(), session.event().kind(), session.snapshot(), kernels.balance());
+        draw(graphics, config(), session.event().kind(), session.snapshot(), kernels.balance(), kernelRate.snapshot(now()));
     }
 
     static boolean visible(boolean hypixel, boolean garden, FeastContext.Event event) {
@@ -286,11 +392,12 @@ public final class FeastOverlayFeature extends ConfigurableFeature<FeastConfig> 
     }
 
     public static void drawPreview(GuiGraphicsExtractor graphics, FeastConfig config) {
-        draw(graphics, config, FeastProgress.Kind.GRAND, EXAMPLE, 1_234L);
+        draw(graphics, config, FeastProgress.Kind.GRAND, EXAMPLE, 1_234L,
+            new FeastKernelRate.Snapshot(40, FeastKernelRate.WINDOW_MILLIS, false));
     }
 
     private static void draw(GuiGraphicsExtractor graphics, FeastConfig config,
-                             FeastProgress.Kind kind, FeastProgress.Snapshot value, Long kernels) {
+                             FeastProgress.Kind kind, FeastProgress.Snapshot value, Long kernels, FeastKernelRate.Snapshot rate) {
         var font = Minecraft.getInstance().font;
         int goal = value == null ? kind.defaultGoal() : value.goal();
         String total = (value == null ? "--" : Integer.toString(value.donations())) + " / " + goal;
@@ -303,19 +410,32 @@ public final class FeastOverlayFeature extends ConfigurableFeature<FeastConfig> 
             graphics.pose().scale(scale, scale);
             graphics.text(font, total, (WIDTH - font.width(total)) / 2, 2, TEXT, true);
             drawBar(graphics, segments, value);
-            float footerScale = Math.min(1.0F, BAR_WIDTH / (float) Math.max(1, font.width(next)));
-            graphics.pose().pushMatrix();
-            try {
-                graphics.pose().translate(WIDTH / 2.0F, 29);
-                graphics.pose().scale(footerScale, footerScale);
-                graphics.text(font, next, -font.width(next) / 2, 0,
-                    value != null && value.complete() ? GREEN : TEXT, true);
-            } finally {
-                graphics.pose().popMatrix();
-            }
+            drawLine(graphics, next, 29, value != null && value.complete() ? GREEN : TEXT);
+            String average = rateLine(kind, rate);
+            if (!average.isEmpty()) drawLine(graphics, average, 41, TEXT);
         } finally {
             graphics.pose().popMatrix();
         }
+    }
+
+    private static void drawLine(GuiGraphicsExtractor graphics, String text, int y, int color) {
+        var font = Minecraft.getInstance().font;
+        float scale = Math.min(1.0F, BAR_WIDTH / (float) Math.max(1, font.width(text)));
+        graphics.pose().pushMatrix();
+        try {
+            graphics.pose().translate(WIDTH / 2.0F, y);
+            graphics.pose().scale(scale, scale);
+            graphics.text(font, text, -font.width(text) / 2, 0, color, true);
+        } finally {
+            graphics.pose().popMatrix();
+        }
+    }
+
+    static String rateLine(FeastProgress.Kind kind, FeastKernelRate.Snapshot rate) {
+        if (kind != FeastProgress.Kind.GRAND) return "";
+        Long average = rate.perHour();
+        return "Avg Kernels/h: " + (average == null ? "--" : String.format(Locale.US, "%,d", average))
+            + (rate.paused() ? " (paused)" : average == null ? " (warming up)" : "");
     }
 
     static String footer(FeastProgress.Kind kind, FeastProgress.Snapshot value, Long kernels) {

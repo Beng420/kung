@@ -146,6 +146,42 @@ without enabling room scans. Settings are persisted in `DungeonConfig`.
 - M7 continues through Relics, Wither King dialogue and Dragons. Final boss dialogue
   ends combat; Total runs until the completion banner. There is no Victory phase.
   Wipe/abort freezes the unfinished measurement without pretending it completed.
+- While Splits Overlay is enabled, each accurately completed phase contributes its
+  real elapsed duration to a personal best. Values live in
+  `config/kung/kung.json` under `splitsOverlay.personalBests`, as milliseconds keyed
+  by `Entrance`, `F1`–`F7` or `M1`–`M7`, then the existing phase name (for example,
+  `F6` → `Blood Open`). These are independent phase records across runs, not the
+  phases of a single fastest run. Normal/master floors never share records.
+  The existing game-profile config owns these values; there is no bundled PB data.
+- PB candidates are collected at phase boundaries, then committed in one config
+  save at finish, transfer/abort or reset, and only for improvements. Waiting until
+  then allows late M7 metadata to classify the early phases correctly. Completed
+  phases from an aborted run still count; interrupted, skipped/unknown and zero-time
+  phases do not. Unknown floors and runs changed with manual debug splits cannot
+  write records. A score-only banner cannot prove the final boss phase completed;
+  that PB requires a boss-death boundary or the `Defeated ... in ...` banner.
+- Splits Overlay > **Time Prediction** is a toggle with expandable children, using
+  the same control as Dungeon Chat Filter > Boss Messages. It defaults on to retain
+  the existing prediction row; the Splits master toggle stays off by default.
+  Turning prediction off removes the `Predicted` row below Total (before Time Lost),
+  including its preview/editor height, while PB collection continues. The child
+  **Update** switches between **Phase End** (default) and **Live**. Both settings
+  persist in the existing Splits config; missing/unknown modes fall back to Phase End.
+- Phase End starts with the sum of that floor's PBs, then uses **real elapsed time
+  at the last boundary + PBs of the active and later phases**. It stays fixed within
+  a phase, even if that phase exceeds its PB. Live uses **current real Run time +
+  PBs of only the later phases**, excluding the active phase. For example, during
+  Storm in F7: current Total + Terminals PB + Goldor PB + Necron PB; M7 also adds
+  Relics, Wither King and Dragons. Live advances with Total, including banner wait,
+  using the same clock sample as the displayed Total. Future PB sums are cached at
+  boundaries/floor changes; switching modes takes effect immediately mid-phase.
+- Late floor metadata refreshes both forecasts. Skipped spans are already included
+  in elapsed time and never counted twice. Missing required PBs or unknown floors
+  show `--`; passed phases do not require PBs, and Live does not require the active
+  phase's PB. No tick-time or TPS adjustment is applied. Phase End freezes during
+  the boss/banner wait; confirmed completion freezes both modes to actual Total.
+  An unfinished stop shows `--`. Minutes/Seconds formatting and `/kung hud`
+  position/scale apply to the row, including its preview and editor bounds.
 - The Hypixel tick source is **standalone non-zero ping packets**. Additional
   pings inside `ClientboundBundlePacket` are synchronization traffic, not more
   game ticks. Ignore their IDs before deduplication, just like zero; they cannot
@@ -196,3 +232,12 @@ without enabling room scans. Settings are persisted in `DungeonConfig`.
 The ideal clock remains a packet-based estimate; network/client delay at a boundary
 cannot be separated perfectly from server TPS loss. See
 [SPLITS_TIMING_FIXES.md](SPLITS_TIMING_FIXES.md) for evidence and clock regressions.
+
+PB/prediction validation (2026-09-14): regression coverage includes actual config
+save/reload, legacy/null values, floor/mode isolation, strict improvements,
+both prediction modes and mid-phase switching, the F7/M7 Storm example, hidden-row
+editor bounds, learning with prediction off, missing PBs, skipped boundaries,
+completed versus aborted phases, manual/disabled runs, late M7 metadata,
+boss/banner timing and overflow. The full active-module Java 25 build passes
+all 486 tests with no failures/errors/skips. Live F6/M7 runs, restart restoration, menu
+toggle/expansion/mode clicks and HUD readability remain open.

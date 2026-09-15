@@ -10,6 +10,7 @@ import com.github.beng420.kung.config.category.MiscConfig;
 import com.github.beng420.kung.config.category.SlayerConfig;
 import com.github.beng420.kung.config.category.SafariConfig;
 import com.github.beng420.kung.config.category.SplitsConfig;
+import com.github.beng420.kung.config.category.VisitorAlarmConfig;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonObject;
@@ -42,6 +43,7 @@ public final class KungConfig {
     public SlayerConfig slayer = new SlayerConfig();
     public SafariConfig safari = new SafariConfig();
     public FeastConfig feast = new FeastConfig();
+    public VisitorAlarmConfig visitorAlarm = new VisitorAlarmConfig();
 
     private transient Path explicitConfigFile;
     private transient boolean loading;
@@ -83,6 +85,7 @@ public final class KungConfig {
                     slayer = loaded.slayer;
                     safari = loaded.safari;
                     feast = loaded.feast;
+                    visitorAlarm = loaded.visitorAlarm;
                     loadedSuccessfully = true;
                 }
             }
@@ -145,6 +148,7 @@ public final class KungConfig {
         if (slayer == null) slayer = new SlayerConfig();
         if (safari == null) safari = new SafariConfig();
         if (feast == null) feast = new FeastConfig();
+        if (visitorAlarm == null) visitorAlarm = new VisitorAlarmConfig();
     }
 
     private void bindCategories() {
@@ -157,6 +161,7 @@ public final class KungConfig {
         slayer.onChange(this::save);
         safari.onChange(this::save);
         feast.onChange(this::save);
+        visitorAlarm.onChange(this::save);
     }
 
     private void normalize() {
@@ -171,6 +176,7 @@ public final class KungConfig {
         splits.setScale(splits.scale());
         safari.setScale(safari.scale());
         feast.setScale(feast.scale());
+        visitorAlarm.setVolume(visitorAlarm.volume());
         splits.setFormat(splits.format());
         misc.setHypixelApiKey(misc.hypixelApiKey());
         misc.setSuperpairsHelperScale(misc.superpairsHelperScale());

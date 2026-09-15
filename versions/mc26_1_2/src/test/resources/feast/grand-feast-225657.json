@@ -1,0 +1,133 @@
+[
+  {
+    "name": "Feast Milestone I",
+    "lore": [
+      "Farm crops that are in-season to",
+      "earn Seasoning! It'll automatically",
+      "get donated to the Communal Stew.",
+      "",
+      "Progress: 100%",
+      "5/5 Donations",
+      "",
+      "Rewards:",
+      "- Feast Flask",
+      "- Kernels x25",
+      "- Carnival Ticket x5"
+    ]
+  },
+  {
+    "name": "Feast Milestone II",
+    "lore": [
+      "Farm crops that are in-season to",
+      "earn Seasoning! It'll automatically",
+      "get donated to the Communal Stew.",
+      "",
+      "Progress: 100%",
+      "25/25 Donations",
+      "",
+      "Rewards:",
+      "- Feast Flask",
+      "- Kernels x50",
+      "- Carnival Ticket x5"
+    ]
+  },
+  {
+    "name": "Feast Milestone IV",
+    "lore": [
+      "Farm crops that are in-season to",
+      "earn Seasoning! It'll automatically",
+      "get donated to the Communal Stew.",
+      "",
+      "Progress: 100%",
+      "150/150 Donations",
+      "",
+      "Rewards:",
+      "- Feast Flask x2",
+      "- Kernels x100",
+      "- Carnival Ticket x5",
+      "",
+      "Click to claim!"
+    ]
+  },
+  {
+    "name": "Feast Milestone V",
+    "lore": [
+      "Farm crops that are in-season to",
+      "earn Seasoning! It'll automatically",
+      "get donated to the Communal Stew.",
+      "",
+      "Progress: 60%",
+      "150/250 Donations",
+      "",
+      "Rewards:",
+      "- Feast Flask x2",
+      "- Kernels x125",
+      "- Carnival Ticket x5"
+    ]
+  },
+  {
+    "name": "Feast Milestone VI",
+    "lore": [
+      "Farm crops that are in-season to",
+      "earn Seasoning! It'll automatically",
+      "get donated to the Communal Stew.",
+      "",
+      "Progress: 42.9%",
+      "150/350 Donations",
+      "",
+      "Rewards:",
+      "- Feast Flask x2",
+      "- Kernels x150",
+      "- Carnival Ticket x5"
+    ]
+  },
+  {
+    "name": "Feast Milestone VII",
+    "lore": [
+      "Farm crops that are in-season to",
+      "earn Seasoning! It'll automatically",
+      "get donated to the Communal Stew.",
+      "",
+      "Progress: 33.3%",
+      "150/450 Donations",
+      "",
+      "Rewards:",
+      "- Feast Flask x2",
+      "- Kernels x175",
+      "- Carnival Ticket x5"
+    ]
+  },
+  {
+    "name": "Feast Milestone VIII",
+    "lore": [
+      "Farm crops that are in-season to",
+      "earn Seasoning! It'll automatically",
+      "get donated to the Communal Stew.",
+      "",
+      "Progress: 27.3%",
+      "150/550 Donations",
+      "",
+      "Rewards:",
+      "- Feast Flask x2",
+      "- Kernels x200",
+      "- Carnival Ticket x5"
+    ]
+  },
+  {
+    "name": "Feast Milestone IX",
+    "lore": [
+      "Farm crops that are in-season to",
+      "earn Seasoning! It'll automatically",
+      "get donated to the Communal Stew.",
+      "",
+      "Progress: 20%",
+      "150/750 Donations",
+      "",
+      "Rewards:",
+      "- Feast Flask x4",
+      "- Kernels x225",
+      "- Grand Commemorative Mason Jar",
+      "- Carnival Ticket x5"
+    ]
+  }
+]

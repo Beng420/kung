@@ -20,6 +20,10 @@ public class FeastMessageRoutingTest {
         session.closeMenu();
         var kernels = new FeastKernels();
         kernels.observeMenu(new Object(), 1_234L);
+        var rate = new FeastKernelRate();
+        rate.selectProfile("account", "Coconut");
+        rate.updateContext(true, session.event(), 0);
+        rate.crop(0);
         var observed = new ArrayList<String>();
         // Register a canceling mod first: Feast must still receive the message.
         ClientReceiveMessageEvents.ALLOW_GAME.register((message, overlay) -> !active.get() || !hidden.get());
@@ -28,6 +32,7 @@ public class FeastMessageRoutingTest {
                 observed.add(text);
                 session.donate(text);
                 kernels.observeMessage(text);
+                rate.observeMessage(text, 1_000);
             }
         });
         ClientReceiveMessageEvents.MODIFY_GAME.register((message, overlay) ->
@@ -46,6 +51,7 @@ public class FeastMessageRoutingTest {
             assertEquals(30, session.snapshot().donations());
             assertEquals(3, observed.size());
             assertEquals(Long.valueOf(1_234), kernels.balance());
+            assertEquals(0, rate.snapshot(1_000).kernels());
 
             assertFalse(receive(seasoning, true));
             assertEquals(30, session.snapshot().donations());
@@ -53,6 +59,9 @@ public class FeastMessageRoutingTest {
             assertFalse(receive("[NPC] Feast Chef Ted: Thanks for the donation! I've added a Kernel to your purse.", false));
             assertEquals(Long.valueOf(1_235), kernels.balance());
             assertEquals(30, session.snapshot().donations());
+            assertEquals(1, rate.snapshot(1_000).kernels());
+            assertFalse(receive("[NPC] Feast Chef Ted: Thanks for the donation! I've added a Kernel to your purse.", true));
+            assertEquals("Action bars cannot credit the rate", 1, rate.snapshot(1_000).kernels());
         } finally {
             active.set(false);
         }

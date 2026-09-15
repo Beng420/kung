@@ -6,8 +6,8 @@ profile; a custom Fabric config directory is respected.
 
 | Location | Created / used when |
 | --- | --- |
-| `config/kung/kung.json` | First successful config load and settings changes. Old `config/kung.json` remains a readable migration source. |
-| `config/kung/feast-progress.json` | Enabled Feast Progress: bounded cache per Minecraft account/SkyBlock profile, containing event-bound donations/goals and independent Kernel balances. Updates use one background writer and temporary sibling replacement; shutdown flushes pending writes. Normal builds never touch profile data. |
+| `config/kung/kung.json` | First successful config load and settings changes. Also stores `splitsOverlay.personalBests`: real phase milliseconds per Entrance/F1–F7/M1–M7, saved once at run end/exit when a record improves. Old configs start with no PBs. Old `config/kung.json` remains a readable migration source. |
+| `config/kung/feast-progress.json` | Enabled Feast Progress: bounded cache per Minecraft account/SkyBlock profile, containing event-bound donations/goals, independent Kernel balances and confirmed gains not yet reflected in the sidebar. Older files without `pendingKernelGains` default to zero. Updates use one background writer and temporary sibling replacement; shutdown flushes pending writes. Normal builds never touch profile data. |
 | `config/kung/custom-sounds/` | Custom Sounds initialization/index refresh. Four bundled WAV presets are copied here if absent; user audio files also live here. |
 | `config/kung/dungeon-data/` | Explicit room learning/deletion/type commands, enabled Local Data learning, or enabled Room Sync persistence. Normal bundled recognition does not require this directory. |
 | `config/kung/updates/` | Installing an update: downloaded JAR, temporary download, pending marker and installer scripts. `release-notes.properties` stores the displayed (`lastSeenVersion`) and explicitly dismissed (`lastDismissedVersion`) installed versions, written through a temporary sibling. Checking for an update does not download a file. |

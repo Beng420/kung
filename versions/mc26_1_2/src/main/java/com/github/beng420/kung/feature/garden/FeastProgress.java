@@ -112,9 +112,8 @@ public final class FeastProgress {
         var tiers = new TreeMap<Integer, int[]>();
         List<Integer> missingProgress = new ArrayList<>();
         for (MenuItem item : items) {
-            var name = MILESTONE.matcher(cleanMenuText(item.name()));
-            if (!name.matches()) continue;
-            int tier = milestoneNumber(name.group(1));
+            int tier = milestoneTier(item.name());
+            if (tier == 0) continue;
             if (tier > kind.tiers || tiers.containsKey(tier) || missingProgress.contains(tier)) {
                 return new MenuRead(null, "unexpected-or-duplicate-tier:" + tier);
             }
@@ -148,8 +147,10 @@ public final class FeastProgress {
         return new MenuRead(new Snapshot(kind, total, goals), "synchronized");
     }
 
-    private static int milestoneNumber(String value) {
-        return switch (value) {
+    static int milestoneTier(String name) {
+        var matcher = MILESTONE.matcher(cleanMenuText(name));
+        if (!matcher.matches()) return 0;
+        return switch (matcher.group(1)) {
             case "I" -> 1;
             case "II" -> 2;
             case "III" -> 3;
@@ -159,11 +160,22 @@ public final class FeastProgress {
             case "VII" -> 7;
             case "VIII" -> 8;
             case "IX" -> 9;
-            default -> Integer.parseInt(value);
+            default -> Integer.parseInt(matcher.group(1));
         };
     }
 
-    private static String cleanMenuText(String text) {
+    static boolean completedMilestone(MenuItem item) {
+        for (String raw : item.lore().stream().limit(40).toList()) {
+            var line = DONATIONS.matcher(cleanMenuText(raw));
+            if (line.find()) {
+                int goal = number(line.group(2));
+                return goal > 0 && number(line.group(1)) == goal;
+            }
+        }
+        return false;
+    }
+
+    static String cleanMenuText(String text) {
         return HypixelLocation.clean(text == null ? "" : text.replaceAll("[\\p{Zs}\\t]+", " "));
     }
 

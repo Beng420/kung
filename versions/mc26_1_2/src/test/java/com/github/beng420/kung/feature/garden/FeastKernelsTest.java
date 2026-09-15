@@ -118,6 +118,98 @@ public class FeastKernelsTest {
     }
 
     @Test
+    public void serverBalanceWithRecentGainsAndUnicodeSpacesSyncsWithoutScott() {
+        var kernels = new FeastKernels();
+        assertTrue(kernels.observeSidebar(List.of("§eKernels: §f123 §a(+3)")));
+        assertEquals(Long.valueOf(123), kernels.balance());
+        assertTrue(kernels.observeSidebar(List.of("Kernels:\u00a01,234\u00a0(+3)")));
+        assertEquals(Long.valueOf(1_234), kernels.balance());
+        assertFalse(kernels.observeSidebar(List.of("Kernels: 1.2k (+3)")));
+        assertFalse(kernels.observeSidebar(List.of("Kernels: 123 from a friend")));
+    }
+
+    @Test
+    public void delayedSidebarCannotEraseDonationsAlreadyConfirmedByTed() {
+        var kernels = new FeastKernels();
+        kernels.observeSidebar(List.of("Kernels: 134"));
+        assertTrue(kernels.observeMessage(TED));
+        assertTrue(kernels.observeMessage(TED));
+        assertFalse(kernels.observeSidebar(List.of("Kernels: 135")));
+        assertEquals(Long.valueOf(136), kernels.balance());
+        assertEquals(1, kernels.pendingGains());
+        assertFalse(kernels.observeSidebar(List.of("Kernels: 135", "Purse: 100")));
+        assertFalse(kernels.observeSidebar(List.of("Kernels: 136")));
+        assertEquals(Long.valueOf(136), kernels.balance());
+        assertEquals(0, kernels.pendingGains());
+    }
+
+    @Test
+    public void donationReadsTheAlreadyAppliedSidebarBeforeTheSharedTickCacheCatchesUp() {
+        var kernels = new FeastKernels();
+        kernels.observeSidebar(List.of("Kernels: 135"));
+        assertTrue(kernels.observeMessage(TED, List.of("Kernels: 136")));
+        assertEquals(Long.valueOf(137), kernels.balance());
+        assertEquals(1, kernels.pendingGains());
+        assertFalse(kernels.observeSidebar(List.of("Kernels: 136")));
+        assertEquals(Long.valueOf(137), kernels.balance());
+    }
+
+    @Test
+    public void aDonationCanEstablishItsBaselineWithoutScottOrAnotherMod() {
+        var kernels = new FeastKernels();
+        assertTrue(kernels.observeMessage(TED, List.of("Kernels: 135")));
+        assertEquals(Long.valueOf(136), kernels.balance());
+        var unknown = new FeastKernels();
+        assertFalse(unknown.observeMessage(TED, List.of("Purse: 135")));
+        assertNull(unknown.balance());
+        assertFalse(unknown.observeMessage("Guild > Friend: " + TED, List.of("Kernels: 135")));
+        assertNull(unknown.balance());
+    }
+
+    @Test
+    public void sidebarBeforeTheNextDonationAndLagAcrossAWorldChangeKeepConfirmedGains() {
+        var kernels = new FeastKernels();
+        kernels.observeMenu(new Object(), 134L);
+        kernels.observeMessage(TED);
+        assertFalse(kernels.observeSidebar(List.of("Kernels: 135")));
+        kernels.observeMessage(TED);
+        kernels.worldChanged();
+        assertFalse(kernels.observeSidebar(List.of("Kernels: 135")));
+        assertEquals(Long.valueOf(136), kernels.balance());
+        assertEquals(1, kernels.pendingGains());
+    }
+
+    @Test
+    public void missingDonationEvidenceNeverCreatesAnAutomaticPlusOneCorrection() {
+        var kernels = new FeastKernels();
+        assertTrue(kernels.observeSidebar(List.of("Kernels: 135")));
+        assertEquals(Long.valueOf(135), kernels.balance());
+        kernels.observeMenu(new Object(), 136L);
+        kernels.worldChanged();
+        assertTrue(kernels.observeSidebar(List.of("Kernels: 135")));
+        assertEquals(Long.valueOf(135), kernels.balance());
+        assertEquals(0, kernels.pendingGains());
+    }
+
+    @Test
+    public void freshMenuAndLargerSidebarDecreasesStillCorrectSpending() {
+        var kernels = new FeastKernels();
+        kernels.observeMenu(new Object(), 135L);
+        kernels.observeMessage(TED);
+        assertTrue(kernels.observeSidebar(List.of("Kernels: 100")));
+        assertEquals(Long.valueOf(100), kernels.balance());
+        assertEquals(0, kernels.pendingGains());
+        kernels.observeMessage(TED);
+        assertTrue(kernels.observeMenu(new Object(), 100L));
+        assertEquals(Long.valueOf(100), kernels.balance());
+        assertEquals(0, kernels.pendingGains());
+        kernels.observeMessage(TED);
+        assertTrue(kernels.observeMenu(new Object(), 0L));
+        assertEquals(Long.valueOf(0), kernels.balance());
+        assertEquals(0, kernels.pendingGains());
+    }
+
+    @Test
     public void staleOrInvalidSidebarRowsCannotRestoreAnInvalidatedBalance() {
         var kernels = new FeastKernels();
         kernels.observeSidebar(List.of("Kernels: 100"));
