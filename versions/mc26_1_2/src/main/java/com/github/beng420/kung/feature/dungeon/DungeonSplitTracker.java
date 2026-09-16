@@ -19,6 +19,7 @@ import java.util.regex.Pattern;
 /** Ordered, server-message driven phases. Wall time and server time remain separate. */
 public final class DungeonSplitTracker {
     private static final String FIRST_SPLIT = "Blood Open";
+    private static final long VICTORY_CONFIRMATION_WINDOW_MILLIS = 5_000L;
     private static final String[] DEFAULT_SPLITS = {"Blood Open", "Blood Clear", "Portal Entry"};
     private static final String[][] FLOOR_SPLITS = {
         {},
@@ -40,6 +41,7 @@ public final class DungeonSplitTracker {
     private final LongSupplier clock;
     private final Consumer<String> diagnostics;
     private final Supplier<SplitsConfig> config;
+    private final Consumer<PhaseMessage> phaseMessages;
     private final Map<String, Long> personalBestCandidates = new HashMap<>();
     private boolean manualRun;
     private long predictedFinishMillis = -1L;
@@ -66,11 +68,13 @@ public final class DungeonSplitTracker {
     private CompletedSplit stoppedCurrentSplit;
     /** Combat has ended, but Total still waits for the server's completion banner. */
     private String awaitingCompletionAfter;
+    /** The score freezes clocks before the immediately following victory text can confirm this PB. */
+    private PendingVictory pendingVictory;
 
     public DungeonSplitTracker() {
         this(() -> System.nanoTime() / 1_000_000L,
             event -> KungDebugRecorder.event("dungeon-splits", event + " " + ServerTpsTracker.INSTANCE.diagnostics()),
-            () -> KungConfig.get().splits);
+            () -> KungConfig.get().splits, DungeonSplitMessages::send);
     }
 
     DungeonSplitTracker(LongSupplier clock) {
@@ -82,13 +86,20 @@ public final class DungeonSplitTracker {
     }
 
     DungeonSplitTracker(LongSupplier clock, Consumer<String> diagnostics, SplitsConfig config) {
-        this(clock, diagnostics, () -> config);
+        this(clock, diagnostics, config, ignored -> { });
     }
 
-    private DungeonSplitTracker(LongSupplier clock, Consumer<String> diagnostics, Supplier<SplitsConfig> config) {
+    DungeonSplitTracker(LongSupplier clock, Consumer<String> diagnostics, SplitsConfig config,
+                        Consumer<PhaseMessage> phaseMessages) {
+        this(clock, diagnostics, () -> config, phaseMessages);
+    }
+
+    private DungeonSplitTracker(LongSupplier clock, Consumer<String> diagnostics, Supplier<SplitsConfig> config,
+                                Consumer<PhaseMessage> phaseMessages) {
         this.clock = Objects.requireNonNull(clock);
         this.diagnostics = Objects.requireNonNull(diagnostics);
         this.config = Objects.requireNonNull(config);
+        this.phaseMessages = Objects.requireNonNull(phaseMessages);
     }
 
     public void startRun(long nowTick, int floor, boolean masterMode) {
@@ -105,7 +116,7 @@ public final class DungeonSplitTracker {
         running = true;
         startedAtMillis = clock.getAsLong();
         refreshPrediction();
-        diagnostics.accept("run-start floor=" + this.floor + " master=" + this.masterMode);
+        diagnostics.accept("run-start floor=" + this.floor + " master=" + this.masterMode + personalBestDiagnostics());
     }
 
     public void configureForFloor(int floor, boolean masterMode) {
@@ -166,6 +177,7 @@ public final class DungeonSplitTracker {
         currentSplitName = FIRST_SPLIT;
         stoppedCurrentSplit = null;
         awaitingCompletionAfter = null;
+        pendingVictory = null;
     }
 
     /** Manual debug split; automatic progression below only ever moves forward. */
@@ -214,7 +226,7 @@ public final class DungeonSplitTracker {
             diagnostics.accept("start-candidate message=\"" + clean + "\" running=" + running
                 + " wallMs=" + currentTotalDurationMillis() + " totalTicks=" + serverElapsedMillis / 50L);
         }
-        if (!running) return false;
+        if (!running) return confirmPendingVictory(clean);
         if (DungeonLifecycleSignals.isRunStart(clean)) {
             // The lifecycle owner already starts this timer. A repeated countdown
             // must never erase completed splits, even if delivered much later.
@@ -301,7 +313,7 @@ public final class DungeonSplitTracker {
 
     private void completeCurrentAndStart(String next, boolean timingKnown, String boundary) {
         long elapsed = currentTotalDurationMillis();
-        if (hasCurrentSplit()) completeCurrent(elapsed, timingKnown, boundary);
+        if (hasCurrentSplit()) completeCurrent(elapsed, timingKnown, boundary, true);
         awaitingCompletionAfter = null;
         currentSplitName = next;
         startClockSegment(elapsed);
@@ -362,7 +374,7 @@ public final class DungeonSplitTracker {
         largestPhaseTickGapMillis = 0L;
     }
 
-    private void completeCurrent(long elapsed, boolean timingKnown, String boundary) {
+    private void completeCurrent(long elapsed, boolean timingKnown, String boundary, boolean confirmed) {
         completed.add(new CompletedSplit(
             currentSplitName,
             timingKnown ? Math.max(0L, elapsed - currentSplitStartMillis) : -1L,
@@ -371,11 +383,25 @@ public final class DungeonSplitTracker {
             totalServerDurationMillis()
         ));
         completedView = List.copyOf(completed);
-        long duration = completed.getLast().splitDurationMillis();
+        CompletedSplit split = completed.getLast();
+        long duration = split.splitDurationMillis();
+        PhaseMessage notice = phaseMessage(split);
         if (!manualRun && config.get().enabled() && duration > 0L) {
             personalBestCandidates.merge(currentSplitName, duration, Math::min);
+            if (confirmed) phaseMessages.accept(notice);
         }
-        tracePhase("phase-end", completed.getLast(), boundary);
+        tracePhase("phase-end", split, boundary);
+    }
+
+    private PhaseMessage phaseMessage(CompletedSplit split) {
+        SplitsConfig settings = config.get();
+        long previous = settings.personalBestMillis(floor, masterMode, split.name());
+        Long candidate = personalBestCandidates.get(split.name());
+        if (candidate != null && (previous < 0L || candidate < previous)) previous = candidate;
+        boolean personalBest = hasKnownFloor() && split.splitDurationMillis() > 0L
+            && (previous < 0L || split.splitDurationMillis() < previous);
+        return new PhaseMessage(floor, masterMode, split.name(), split.splitDurationMillis(),
+            previous, personalBest, settings.format());
     }
 
     private void finish(String boundary) {
@@ -383,9 +409,14 @@ public final class DungeonSplitTracker {
         // A score banner also appears on a wipe, even inside the final phase.
         boolean finalPhaseConfirmed = awaitingCompletionAfter != null || !boundary.startsWith("Team Score:");
         if (hasCurrentSplit()) {
-            if (indexOf(currentSplitName) == splitNames.length - 1) completeCurrent(elapsed, true, boundary);
+            if (indexOf(currentSplitName) == splitNames.length - 1) completeCurrent(elapsed, true, boundary, finalPhaseConfirmed);
             else captureStoppedCurrentSplit(elapsed, boundary);
-            if (!finalPhaseConfirmed) personalBestCandidates.remove(currentSplitName);
+            if (!finalPhaseConfirmed) {
+                boolean bestEligible = personalBestCandidates.remove(currentSplitName) != null;
+                if (!manualRun && hasKnownFloor() && stoppedCurrentSplit == null) {
+                    pendingVictory = new PendingVictory(completed.getLast(), bestEligible, clock.getAsLong());
+                }
+            }
         }
         stoppedElapsedMillis = elapsed;
         running = false;
@@ -394,6 +425,27 @@ public final class DungeonSplitTracker {
             ? elapsed : -1L;
         savePersonalBests();
         traceStopped("run-finished", boundary);
+    }
+
+    private boolean confirmPendingVictory(String message) {
+        PendingVictory pending = pendingVictory;
+        if (pending == null) return false;
+        if (clock.getAsLong() - pending.scoreAtMillis() > VICTORY_CONFIRMATION_WINDOW_MILLIS) {
+            pendingVictory = null;
+            return false;
+        }
+        if (!DungeonLifecycleSignals.isVictoryForFloor(message, floor, masterMode)) return false;
+        pendingVictory = null;
+        if (pending.bestEligible()) {
+            PhaseMessage notice = phaseMessage(pending.split());
+            config.get().recordPersonalBests(floor, masterMode,
+                Map.of(pending.split().name(), pending.split().splitDurationMillis()));
+            phaseMessages.accept(notice);
+        }
+        // Confirm the existing score-boundary sample; never append a split or resume either clock.
+        predictedFinishMillis = stoppedElapsedMillis;
+        traceStopped("run-victory-confirmed", message);
+        return true;
     }
 
     private void captureStoppedCurrentSplit(long elapsed, String boundary) {
@@ -422,13 +474,25 @@ public final class DungeonSplitTracker {
     private void traceStopped(String event, String boundary) {
         diagnostics.accept(event + " totalWallMs=" + stoppedElapsedMillis
             + " totalServerMs=" + totalServerDurationMillis()
-            + " totalTicks=" + serverElapsedMillis / 50L + " boundary=\"" + boundary + "\"");
+            + " totalTicks=" + serverElapsedMillis / 50L + " boundary=\"" + boundary + "\"" + personalBestDiagnostics());
+    }
+
+    private String personalBestDiagnostics() {
+        SplitsConfig settings = config.get();
+        List<String> missing = new ArrayList<>();
+        for (String name : splitNames) {
+            if (settings.personalBestMillis(floor, masterMode, name) < 0L) missing.add(name);
+        }
+        return " pbFloor=" + (hasKnownFloor() ? floor == 0 ? "Entrance" : (masterMode ? "M" : "F") + floor : "unknown")
+            + " pbTracking=" + settings.enabled() + " predictionMode=" + settings.predictionMode()
+            + " pbKnown=" + (splitNames.length - missing.size()) + "/" + splitNames.length
+            + " pbMissing=\"" + String.join("|", missing) + "\"";
     }
 
     private boolean completeBoss(String finalSplitName, String boundary) {
         if (!hasCurrentSplit()) return false;
         long elapsed = currentTotalDurationMillis();
-        completeCurrent(elapsed, currentSplitName.equals(finalSplitName), boundary);
+        completeCurrent(elapsed, currentSplitName.equals(finalSplitName), boundary, true);
         awaitingCompletionAfter = finalSplitName;
         // Keep this boundary so late M7 metadata can resume Relics at Necron's death.
         startClockSegment(elapsed);
@@ -504,6 +568,11 @@ public final class DungeonSplitTracker {
     }
 
     public record Timings(long splitMillis, long totalMillis, long serverSplitMillis, long serverTotalMillis) { }
+
+    public record PhaseMessage(int floor, boolean masterMode, String phase, long durationMillis,
+                               long previousBestMillis, boolean personalBest, SplitsConfig.TimeFormat format) { }
+
+    private record PendingVictory(CompletedSplit split, boolean bestEligible, long scoreAtMillis) { }
 
     public record CompletedSplit(
         String name,

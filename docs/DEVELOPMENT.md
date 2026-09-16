@@ -59,6 +59,7 @@ Prefer the exact user-supplied path and time over scanning every saved log.
 | Mimic late / marker / missing kill announcement | `mimic-discovery` index/fallback source and prior scan ticks, `mimic-candidates` positions/rooms, `mimic-kill` death packet/evidence/source/switches, `mimic-esp`, `mimic-static`; save immediately after the late marker or kill |
 | Missing overlays or resets | Instance/lifecycle events around the supplied time |
 | Split loss | `dungeon-splits`: real/ideal clocks, `phaseStartTicks`, `phaseTicks`, `totalTicks`, exact `boundary`, `start-candidate`, `receivedTicks` and `ignoredBundledPings` |
+| Missing split prediction / final-phase PB | `dungeon-splits` run-start/end: `pbFloor`, `pbTracking`, `predictionMode`, `pbKnown`, `pbMissing`; `run-victory-confirmed` after score-before-victory completion |
 
 For split comparisons, save both overlays and `/kung log save` immediately after
 the run. Since 0.2.19, full saves retain the last 128 split records in
@@ -77,6 +78,37 @@ flooding chat. Optional title debugging: `/kung test title <doors>` and
 Use typed config categories, feature/service registries, command groups and shared
 message/UI controls. Keep player-visible text English. Preserve existing config
 migrations, master toggles and HUD layout unless the task changes their behavior.
+
+### Optional OneConfig / Mod Menu integration
+
+`compat/KungModMenu` supplies the existing `KungConfigScreen` through the standard
+`modmenu` entrypoint. Mod Menu is a compile-only dependency; neither Mod Menu nor
+OneConfig is bundled or required by Kung. The compatibility class is not referenced
+by Kung's main/client initialization. With both absent, `/kung` and `/kung hud`
+remain the normal entrypoints.
+
+OneConfig's Mod Menu compatibility displays a Kung card that opens the unchanged
+Kung settings screen. Published OneConfig **1.2.0** for 26.1.x also contains a Mod
+Menu API shim when Mod Menu is absent; older releases may need a compatible Mod
+Menu installation. The published JAR was inspected for this shim and its factory
+bridge; this does not replace a live Minecraft compatibility check.
+Use OneConfig and, if needed, Mod Menu releases compatible with Fabric 26.1.2.
+The same entrypoint works directly from Mod Menu's Kung configuration button.
+The factory creates a fresh screen on demand and retains the supplied parent;
+Escape returns to that parent after closing any active Kung popup/editor first.
+Command-opened screens keep their existing return-to-game behavior.
+
+All controls continue to use Kung's existing config and layout. Individual settings
+are not registered in OneConfig's global option search, and Kung HUDs still use
+`/kung hud`. Those require separate integration beyond the menu entrypoint.
+Live validation should cover opening from OneConfig and Mod Menu, return navigation,
+setting persistence, the title screen, and startup with both optional mods absent.
+
+API references: [Mod Menu](https://github.com/TerraformersMC/ModMenu/tree/26.1#java-api),
+[OneConfig with Mod Menu](https://github.com/Polyfrost/OneConfig/blob/v1/minecraft/src/main/kotlin/org/polyfrost/oneconfig/internal/compat/ModMenuCompat.kt),
+[OneConfig's standalone API bridge](https://github.com/Polyfrost/OneConfig/blob/v1/minecraft/src/modMenuShim/java/org/polyfrost/oneconfig/internal/compat/ModMenuApiCompat.java).
+
+### Menu layout and shared controls
 
 `KungConfigScreen` renders its menu at 80% of Minecraft's selected GUI scale.
 Feature columns are 171 logical units wide (10% narrower than the former 190);
@@ -116,6 +148,14 @@ glyph boxes throughout Kung settings. Both font/license filenames and the JSON
 reference now use lowercase. The new Minecraft-codec regression reproduced the
 exact parsing failure before the fix; the earlier AWT-only check could not detect
 Minecraft resource-name restrictions. A live check with the corrected JAR remains open.
+Feature and setting help belongs in optional `withTooltip(...)` metadata rather
+than permanent info rows when the information is only needed on demand.
+`UiHoverDelay` waits two seconds on the same entry; clicks, scrolling, leaving
+or modal/editor interaction reset the timer. Full clipped names also use this
+delay. `UiTooltip` wraps text and positions the panel within menu coordinates,
+including the menu's 80% scale. `UiControlModelTest` covers timing and target resets;
+live wrapping, edge placement and GUI-scale behavior remain UI checks.
+
 The updater feature is pinned open through `FeatureEntry.alwaysExpanded`, shared
 by drawing and content/scroll sizing, with an explicit right-click collapse guard.
 

@@ -153,13 +153,39 @@ without enabling room scans. Settings are persisted in `DungeonConfig`.
   `F6` → `Blood Open`). These are independent phase records across runs, not the
   phases of a single fastest run. Normal/master floors never share records.
   The existing game-profile config owns these values; there is no bundled PB data.
-- PB candidates are collected at phase boundaries, then committed in one config
+- Each enabled, accurately completed phase also posts a local Kung system message,
+  for example `[Kung Splits] F6 Blood Open: 31.00s (PB: 30.00s)`. A first PB or strictly faster
+  phase adds a separate message with bold pink `PERSONAL BEST!` and green result text, for example
+  `[Kung Splits] PERSONAL BEST! F6 Blood Open: 29.00s (Previous PB: 30.00s)`.
+  The ordinary result shows the best including the just-completed phase; the
+  celebration preserves the previous best from before the update. A first record
+  uses `Previous PB: --`, and an unknown floor uses `PB: --`.
+  Equal/slower times only post the ordinary result. Comparison uses that phase's
+  PB for the floor/mode known at the boundary, before merging the new candidate.
+  An unknown floor may report measured time but cannot claim a floor-specific PB.
+  Minutes/Seconds formatting applies, and Time Prediction off does not mute the
+  messages. The Splits master off does; manual, interrupted, unknown-duration and
+  zero-duration phases stay silent. Messages never go to party/server chat.
+  Final boss dialogue reports its completed phase once. If Team Score arrives
+  first without a confirmed boss death, both messages wait for the matching victory
+  banner and use the frozen phase duration. Repeated score/victory/boss messages,
+  stop and reset cannot repeat notifications. PB storage keeps its batched run-end
+  behavior and its final-floor correction; notifications do not add disk writes.
+- PB candidates are collected at phase boundaries, then committed in a batched config
   save at finish, transfer/abort or reset, and only for improvements. Waiting until
   then allows late M7 metadata to classify the early phases correctly. Completed
   phases from an aborted run still count; interrupted, skipped/unknown and zero-time
   phases do not. Unknown floors and runs changed with manual debug splits cannot
   write records. A score-only banner cannot prove the final boss phase completed;
   that PB requires a boss-death boundary or the `Defeated ... in ...` banner.
+  The server may send Team Score before its victory text. The score freezes both
+  clocks immediately and retains a pending final-phase sample for up to five seconds.
+  A matching floor/boss victory banner in that window confirms and saves that sample
+  once, even though the timer has stopped. It does not append a phase or include
+  the inter-message delay. Reset/new countdown discards the pending sample; the shared
+  instance router rejects messages outside the dungeon. Repeats, unrelated bosses,
+  player quotes, expired confirmations, manual runs and interrupted phases cannot
+  create that final PB. Tracking eligibility is captured at the score boundary.
 - Splits Overlay > **Time Prediction** is a toggle with expandable children, using
   the same control as Dungeon Chat Filter > Boss Messages. It defaults on to retain
   the existing prediction row; the Splits master toggle stays off by default.
@@ -203,6 +229,7 @@ without enabling room scans. Settings are persisted in `DungeonConfig`.
   Total loss is `max(0, total real time - total accepted ticks * 50 ms)`, not the
   sum of positive phase losses. Later delayed ticks may reduce the loss at the
   next settlement, but completed phase snapshots never change.
+  The `Time Lost` label uses the same red as its measured value.
   `currentTimings()` samples both clocks together without changing either clock.
 - Start-room tick evidence survives countdown within the prepared instance, so
   an immediate full stall yields zero ideal progress. With no observed stream,
@@ -235,9 +262,38 @@ cannot be separated perfectly from server TPS loss. See
 
 PB/prediction validation (2026-09-14): regression coverage includes actual config
 save/reload, legacy/null values, floor/mode isolation, strict improvements,
+phase-time/PERSONAL BEST messages with current/previous PB snapshots, duplicate notification suppression,
 both prediction modes and mid-phase switching, the F7/M7 Storm example, hidden-row
 editor bounds, learning with prediction off, missing PBs, skipped boundaries,
 completed versus aborted phases, manual/disabled runs, late M7 metadata,
 boss/banner timing and overflow. The full active-module Java 25 build passes
-all 486 tests with no failures/errors/skips. Live F6/M7 runs, restart restoration, menu
-toggle/expansion/mode clicks and HUD readability remain open.
+all 537 tests with no failures/errors/skips. Live F6/M7 runs, restart restoration, menu
+toggle/expansion/mode clicks, local phase/PB chat and HUD readability remain open.
+
+### Score-before-victory PB correction — 2026-09-15
+
+The supplied friend's `message.txt` retains a completed F1 run starting at
+15:01:42.905. At 15:04:03.604, `Team Score: 177 (B)` freezes Total at 140,699 ms
+and records Bonzo Phase 2 at 13,736 ms. At 15:04:03.607, the server sends
+`☠ Defeated Bonzo in 02m 19s`. The earlier implementation removed the last PB
+candidate on the score and ignored all later messages because `running` was false.
+This could leave the final PB missing after every successful run, blocking both
+forecasts in earlier phases. Live starts showing Total in the last phase because
+there are no later PBs left to require.
+
+The unchanged messages and countdown-relative timings are retained in
+[`splits-score-before-victory-2026-09-15.tsv`](../versions/mc26_1_2/src/test/resources/dungeon/splits-score-before-victory-2026-09-15.tsv).
+`DungeonSplitCompletionOrderTest` reproduces the failure before the fix
+(`expected 13736, got -1`) and now confirms the PB and both prediction modes on
+the next run after config serialization/reload. It also checks frozen clocks,
+duplicate saves, reward metadata, wipes, reset, tracking toggles and matching bosses.
+All 103 focused split/lifecycle/config/trace tests and the full 530-test Java 25 build pass.
+
+Run-start/end diagnostics now include `pbFloor`, `pbTracking`, `predictionMode`,
+`pbKnown` and `pbMissing`; `run-victory-confirmed` records the delayed confirmation.
+Existing phase/tick trace fields are unchanged. The supplied trace has no saved
+config/PB inventory, so it cannot establish which other records the friend already
+had. Existing missing PBs need a newly completed matching-floor run with the fixed
+build; no old timings or other players' records are imported. First-ever runs still
+need measurements before a forecast can exist. The next live successful F1 run,
+its following run's early prediction and restart restoration remain unverified.

@@ -97,7 +97,7 @@ public final class SplitsConfig extends ConfigCategory {
         return best != null && best > 0L ? best : -1L;
     }
 
-    /** Save once per run, and only when at least one measured phase improves. */
+    /** Coalesce a batch of measured phases into one save, only when a best improves. */
     public void recordPersonalBests(int floor, boolean masterMode, Map<String, Long> measurements) {
         String key = floorKey(floor, masterMode);
         if (key == null || measurements == null) return;

@@ -1,10 +1,32 @@
 package com.github.beng420.kung.ui;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
 
 public final class UiControlModelTest {
+    @Test
+    public void tooltipRequiresTwoSecondsOnOneEntryAndRestartsAfterLeavingOrInteracting() {
+        var hover = new UiHoverDelay();
+        var feature = new Object();
+        var setting = new Object();
+        assertFalse(hover.ready(feature, 1_000));
+        assertFalse(hover.ready(feature, 2_999));
+        assertTrue(hover.ready(feature, 3_000));
+        assertTrue(hover.ready(feature, 4_000));
+        assertFalse(hover.ready(setting, 4_000));
+        assertFalse(hover.ready(setting, 5_999));
+        assertTrue(hover.ready(setting, 6_000));
+        assertFalse(hover.ready(null, 6_001));
+        assertFalse(hover.ready(setting, 7_000));
+        assertTrue(hover.ready(setting, 9_000));
+        hover.reset();
+        assertFalse(hover.ready(setting, 9_001));
+        assertTrue(hover.ready(setting, 11_001));
+    }
+
     @Test
     public void numberFieldClampsStepsAndSliderPositions() {
         UiNumberField number = new UiNumberField(10, 50, 5);

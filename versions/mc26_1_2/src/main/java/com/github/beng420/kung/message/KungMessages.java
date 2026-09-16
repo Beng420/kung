@@ -69,12 +69,16 @@ public final class KungMessages {
     }
 
     public static void send(Minecraft client, Type type, String area, String message) {
+        send(client, component(type, area, message));
+    }
+
+    public static void send(Minecraft client, Component message) {
         if (client == null) {
             return;
         }
         client.execute(() -> {
             if (client.player != null) {
-                client.player.sendSystemMessage(component(type, area, message));
+                client.player.sendSystemMessage(message);
             }
         });
     }

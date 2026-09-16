@@ -31,7 +31,8 @@ public record SettingEntry(
     Runnable cycleChoice,
     Supplier<String> textSupplier,
     Consumer<String> textConsumer,
-    List<SettingEntry> children
+    List<SettingEntry> children,
+    List<String> tooltip
 ) {
     public String label() { return labelSupplier.get(); }
 
@@ -79,7 +80,7 @@ public record SettingEntry(
 
     public static SettingEntry dynamicLabel(Supplier<String> labelSupplier) {
         return new SettingEntry(labelSupplier, SettingKind.LABEL, null, null, null, null, 0, 0, 0,
-            null, null, null, null, List.of());
+            null, null, null, null, List.of(), List.of());
     }
 
     public static SettingEntry button(String label, String text, Runnable action) {
@@ -88,7 +89,12 @@ public record SettingEntry(
 
     public SettingEntry withChildren(List<SettingEntry> children) {
         return new SettingEntry(labelSupplier, kind, booleanSupplier, toggle, intSupplier, intConsumer,
-            min, max, step, choiceSupplier, cycleChoice, textSupplier, textConsumer, List.copyOf(children));
+            min, max, step, choiceSupplier, cycleChoice, textSupplier, textConsumer, List.copyOf(children), tooltip);
+    }
+
+    public SettingEntry withTooltip(String... lines) {
+        return new SettingEntry(labelSupplier, kind, booleanSupplier, toggle, intSupplier, intConsumer,
+            min, max, step, choiceSupplier, cycleChoice, textSupplier, textConsumer, children, List.of(lines));
     }
 
     public String textValue() {
@@ -239,6 +245,6 @@ public record SettingEntry(
         Consumer<String> textConsumer
     ) {
         return new SettingEntry(() -> label, kind, booleanSupplier, toggle, intSupplier, intConsumer,
-            min, max, step, choiceSupplier, cycleChoice, textSupplier, textConsumer, List.of());
+            min, max, step, choiceSupplier, cycleChoice, textSupplier, textConsumer, List.of(), List.of());
     }
 }

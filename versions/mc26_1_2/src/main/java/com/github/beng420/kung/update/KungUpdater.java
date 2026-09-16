@@ -9,8 +9,6 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -21,10 +19,11 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
-import java.util.Properties;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -57,6 +56,8 @@ public enum KungUpdater {
     private final AtomicBoolean checking = new AtomicBoolean();
     private final AtomicBoolean previewing = new AtomicBoolean();
     private final AtomicBoolean installing = new AtomicBoolean();
+    private final KungUpdateProcess installerProcess = new KungUpdateProcess();
+    private volatile boolean installationBlocked;
     private final AtomicReference<State> state = new AtomicReference<>(State.checking(currentVersion()));
     private final KungUpdateNotification notification = new KungUpdateNotification();
     private final KungUpdateCheckSchedule checkSchedule = new KungUpdateCheckSchedule();
@@ -176,38 +177,74 @@ public enum KungUpdater {
 
     private static long nowMillis() { return System.nanoTime() / 1_000_000L; }
 
-    public void installPendingUpdateIfReady() {
-        Path marker = pendingMarkerPath();
-        if (!Files.isRegularFile(marker)) {
-            return;
-        }
-
+    public void initializeInstallation() {
         try {
-            Properties properties = new Properties();
-            try (InputStream input = Files.newInputStream(marker)) {
-                properties.load(input);
-            }
-
-            String sourceValue = properties.getProperty("source");
-            String targetValue = properties.getProperty("target");
-            if (sourceValue == null || targetValue == null) {
-                Files.deleteIfExists(marker);
+            installerProcess.holdSession(updateDirectory());
+            if (!Files.exists(pendingMarkerPath())) return;
+            if (KungUpdateEnvironment.requiresLauncherInstall()) {
+                rejectPending("This launcher manages mod files; use Modrinth to install updates.");
                 return;
             }
-
-            Path source = com.github.beng420.kung.runtime.KungPaths.fileLayout().relocatedUpdateSource(Path.of(sourceValue));
-            Path target = Path.of(targetValue);
-            if (!Files.isRegularFile(source)) {
-                Files.deleteIfExists(marker);
+            // Recovery schedules a fresh helper. Never replace Fabric's already loaded JAR at startup.
+            KungUpdateInstaller.Plan plan;
+            try {
+                plan = KungUpdateInstaller.readPlan(updateDirectory());
+            } catch (IOException | RuntimeException invalid) {
+                rejectPending("Unverified or incomplete pending update: " + invalid.getMessage());
                 return;
             }
-
-            installDownloadedJar(source, target);
-            Files.deleteIfExists(marker);
-            KungMod.LOGGER.info("Installed pending Kung update to {}.", target);
-        } catch (IOException exception) {
-            KungMod.LOGGER.warn("Could not install pending Kung update yet.", exception);
+            Path current = installTarget();
+            if (!current.equals(plan.target())) {
+                rejectPending("Pending update no longer belongs to the loaded mod.");
+                return;
+            }
+            String currentHash = KungUpdateInstaller.sha256(current);
+            if (currentHash.equals(plan.sourceSha256())) {
+                Files.delete(pendingMarkerPath());
+                return;
+            }
+            if (!currentHash.equals(plan.targetSha256())) {
+                rejectPending("The installed mod changed since the update was prepared.");
+                return;
+            }
+            String version = KungUpdateDownload.version(plan.source());
+            KungUpdateDownload.validate(plan.source(), version, installedVersions());
+            if (!isNewerVersion(version, currentVersion())
+                || !KungUpdateInstaller.sha256(plan.source()).equals(plan.sourceSha256())) {
+                rejectPending("The pending update is stale or damaged.");
+                return;
+            }
+            installerProcess.launch(updateDirectory(), com.github.beng420.kung.runtime.KungPaths.fileLayout().logDirectory());
+            state.set(new State(Status.INSTALL_READY, currentVersion(), version, "Close Minecraft to apply update", null));
+        } catch (Exception exception) {
+            installationBlocked = true;
+            state.set(new State(Status.FAILED, currentVersion(), "", "Update recovery failed; see latest.log", null));
+            KungMod.LOGGER.warn("Kung update recovery left the installed mod unchanged.", exception);
         }
+    }
+
+    private void rejectPending(String reason) throws IOException {
+        Path rejected = updateDirectory().resolve("rejected-" + java.util.UUID.randomUUID() + ".properties");
+        Files.move(pendingMarkerPath(), rejected, StandardCopyOption.ATOMIC_MOVE);
+        KungMod.LOGGER.warn("Kung pending update preserved at {}: {}", rejected, reason);
+    }
+
+    private Path installTarget() throws IOException {
+        Path current = currentModJar().orElseThrow(() -> new IOException("Current mod is not a standalone JAR."))
+            .toAbsolutePath().normalize();
+        Path mods = com.github.beng420.kung.runtime.KungPaths.fileLayout().gameDirectory().resolve("mods");
+        KungUpdateProcess.rejectLinks(current);
+        if (!mods.equals(current.getParent())) throw new IOException("Current mod is outside this profile's mods directory.");
+        return current;
+    }
+
+    private static Map<String, String> installedVersions() {
+        Map<String, String> versions = new HashMap<>();
+        for (ModContainer mod : FabricLoader.getInstance().getAllMods()) {
+            versions.put(mod.getMetadata().getId(), mod.getMetadata().getVersion().getFriendlyString());
+        }
+        versions.put("java", Integer.toString(Runtime.version().feature()));
+        return versions;
     }
 
     public boolean isUpdateAvailable() {
@@ -215,14 +252,16 @@ public enum KungUpdater {
     }
 
     public boolean canInstallUpdate() {
-        return state.get().status() == Status.UPDATE_AVAILABLE && !installing.get();
+        return state.get().status() == Status.UPDATE_AVAILABLE && !installing.get()
+            && !installationBlocked && !KungUpdateEnvironment.requiresLauncherInstall();
     }
 
     public String buttonLabel() {
         return switch (state.get().status()) {
             case CHECKING -> "Updates: Checking...";
             case UP_TO_DATE -> "Updates: Up to date";
-            case UPDATE_AVAILABLE -> "Updates: Available";
+            case UPDATE_AVAILABLE -> KungUpdateEnvironment.requiresLauncherInstall() ? "Updates: Use Modrinth"
+                : installationBlocked ? "Updates: Recovery needed" : "Updates: Available";
             case DOWNLOADING -> "Updates: Downloading...";
             case INSTALL_READY -> "Updates: Restart needed";
             case UNSUPPORTED -> "Updates: Dev build";
@@ -235,7 +274,8 @@ public enum KungUpdater {
         return switch (snapshot.status()) {
             case CHECKING -> "Checking GitHub";
             case UP_TO_DATE -> "Version " + snapshot.currentVersion();
-            case UPDATE_AVAILABLE -> "Installs " + snapshot.latestVersion();
+            case UPDATE_AVAILABLE -> KungUpdateEnvironment.requiresLauncherInstall()
+                ? "Update Kung through Modrinth" : "Installs " + snapshot.latestVersion();
             case DOWNLOADING -> "Downloading...";
             case INSTALL_READY -> "Restart Minecraft";
             case UNSUPPORTED -> snapshot.message();
@@ -251,6 +291,7 @@ public enum KungUpdater {
     }
 
     public void installLatestAsync(Minecraft client) {
+        if (!canInstallUpdate()) return;
         State snapshot = state.get();
         if (snapshot.status() != Status.UPDATE_AVAILABLE || snapshot.updateInfo() == null) {
             return;
@@ -262,19 +303,23 @@ public enum KungUpdater {
         state.set(snapshot.withStatus(Status.DOWNLOADING, "Downloading update"));
         executor.execute(() -> {
             try {
-                Path currentJar = currentModJar()
-                    .orElseThrow(() -> new IOException("Current mod path is not a jar file."));
-                Path downloadedJar = downloadUpdate(snapshot.updateInfo());
-                writePendingMarker(downloadedJar, currentJar, snapshot.updateInfo().version());
-                launchInstaller(downloadedJar, currentJar);
+                Path currentJar = installTarget();
+                String originalHash = KungUpdateInstaller.sha256(currentJar);
+                UpdateInfo update = snapshot.updateInfo();
+                Path downloadedJar = KungUpdateDownload.download(httpClient, URI.create(update.downloadUrl()),
+                    updateDirectory(), update.size(), update.digest(), update.version(), installedVersions());
+                KungUpdateInstaller.writePlan(updateDirectory(), new KungUpdateInstaller.Plan(downloadedJar,
+                    currentJar, KungUpdateInstaller.sha256(downloadedJar), originalHash));
+                installerProcess.launch(updateDirectory(), com.github.beng420.kung.runtime.KungPaths.fileLayout().logDirectory());
                 state.set(snapshot.withStatus(Status.INSTALL_READY, "Restart Minecraft"));
                 KungMessages.send(
                     client,
                     KungMessages.Type.SUCCESS,
                     "Updater",
-                    "Update installed. Close Minecraft and start it again."
+                    "Update verified and queued. Close Minecraft to apply it, then start it again."
                 );
             } catch (Exception exception) {
+                installationBlocked = Files.exists(pendingMarkerPath());
                 KungMod.LOGGER.warn("Kung update install failed.", exception);
                 state.set(new State(
                     Status.FAILED,
@@ -287,7 +332,7 @@ public enum KungUpdater {
                     client,
                     KungMessages.Type.ERROR,
                     "Updater",
-                    "The update could not be installed. See latest.log."
+                    "The update could not be prepared. Your installed JAR was kept. See latest.log."
                 );
             } finally {
                 installing.set(false);
@@ -304,7 +349,8 @@ public enum KungUpdater {
             .header("User-Agent", "Kung-Updater")
             .GET()
             .build();
-        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.limiting(
+            HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8), 1_048_576));
         if (response.statusCode() == 404) {
             return new State(Status.UP_TO_DATE, currentVersion, "", "No releases found", null);
         }
@@ -330,7 +376,8 @@ public enum KungUpdater {
             );
         }
 
-        UpdateInfo updateInfo = new UpdateInfo(latestVersion, asset.get().name(), asset.get().downloadUrl());
+        UpdateInfo updateInfo = new UpdateInfo(latestVersion, asset.get().name(), asset.get().downloadUrl(),
+            asset.get().size(), asset.get().digest());
         return new State(
             Status.UPDATE_AVAILABLE,
             currentVersion,
@@ -338,145 +385,6 @@ public enum KungUpdater {
             "Update " + latestVersion + " available",
             updateInfo
         );
-    }
-
-    private Path downloadUpdate(UpdateInfo updateInfo) throws IOException, InterruptedException {
-        Path updateDirectory = updateDirectory();
-        Files.createDirectories(updateDirectory);
-
-        String assetName = sanitizeFileName(updateInfo.assetName());
-        Path target = updateDirectory.resolve(assetName);
-        Path temporary = updateDirectory.resolve(assetName + ".tmp");
-        Files.deleteIfExists(temporary);
-
-        HttpRequest request = HttpRequest.newBuilder(URI.create(updateInfo.downloadUrl()))
-            .timeout(Duration.ofMinutes(2))
-            .header("User-Agent", "Kung-Updater")
-            .GET()
-            .build();
-        HttpResponse<Path> response = httpClient.send(request, HttpResponse.BodyHandlers.ofFile(temporary));
-        if (response.statusCode() < 200 || response.statusCode() >= 300) {
-            Files.deleteIfExists(temporary);
-            throw new IOException("GitHub asset returned HTTP " + response.statusCode());
-        }
-
-        Files.move(temporary, target, StandardCopyOption.REPLACE_EXISTING);
-        return target;
-    }
-
-    private void writePendingMarker(Path source, Path target, String version) throws IOException {
-        Files.createDirectories(updateDirectory());
-        Properties properties = new Properties();
-        properties.setProperty("source", source.toAbsolutePath().toString());
-        properties.setProperty("target", target.toAbsolutePath().toString());
-        properties.setProperty("version", version);
-        try (OutputStream output = Files.newOutputStream(pendingMarkerPath())) {
-            properties.store(output, "Kung pending update");
-        }
-    }
-
-    private void launchInstaller(Path source, Path target) throws IOException {
-        long pid = ProcessHandle.current().pid();
-        Path marker = pendingMarkerPath();
-        Path script = updateDirectory().resolve(isWindows() ? "install-kung-update.cmd" : "install-kung-update.sh");
-        Files.writeString(script, installerScript(pid, source, target, marker), StandardCharsets.UTF_8);
-
-        if (isWindows()) {
-            launchWindowsInstaller(script);
-        } else {
-            script.toFile().setExecutable(true);
-            new ProcessBuilder("sh", script.toAbsolutePath().toString()).start();
-        }
-    }
-
-    private void launchWindowsInstaller(Path script) throws IOException {
-        Path launcher = updateDirectory().resolve("launch-kung-update-hidden.vbs");
-        Files.writeString(launcher, windowsHiddenLauncherScript(), StandardCharsets.UTF_8);
-        new ProcessBuilder(
-            "wscript.exe",
-            "//B",
-            launcher.toAbsolutePath().toString(),
-            script.toAbsolutePath().toString()
-        ).start();
-    }
-
-    private String windowsHiddenLauncherScript() {
-        return String.join("\r\n",
-            "Set shell = CreateObject(\"WScript.Shell\")",
-            "command = \"\"\"\" & shell.ExpandEnvironmentStrings(\"%ComSpec%\") & \"\"\" /c \"\"\" & WScript.Arguments(0) & \"\"\"\"",
-            "shell.Run command, 0, False",
-            ""
-        );
-    }
-
-    private String installerScript(long pid, Path source, Path target, Path marker) {
-        if (isWindows()) {
-            return windowsInstallerScript(pid, source, target, marker);
-        }
-        return unixInstallerScript(pid, source, target, marker);
-    }
-
-    private String windowsInstallerScript(long pid, Path source, Path target, Path marker) {
-        Path targetDir = target.getParent(); // <-- Diese Zeile hat gefehlt
-        return String.join("\r\n",
-            "@echo off",
-            "setlocal",
-            "set \"PID=" + pid + "\"",
-            "set \"SOURCE=" + windowsScriptPath(source) + "\"",
-            "set \"TARGET=" + windowsScriptPath(target) + "\"",
-            "set \"TARGET_DIR=" + windowsScriptPath(targetDir) + "\"",
-            "set \"MARKER=" + windowsScriptPath(marker) + "\"",
-            ":wait",
-            "tasklist /FI \"PID eq %PID%\" 2>NUL | findstr /R /C:\"[ ]%PID%[ ]\" >NUL",
-            "if \"%ERRORLEVEL%\"==\"0\" (",
-            "  timeout /T 1 /NOBREAK >NUL",
-            "  goto wait",
-            ")",
-            "timeout /T 1 /NOBREAK >NUL",
-            "if exist \"%TARGET%\" del /F /Q \"%TARGET%\" >NUL 2>NUL",
-            "move /Y \"%SOURCE%\" \"%TARGET_DIR%\\\" >NUL",
-            "if errorlevel 1 goto fallback_copy",
-            "del /F /Q \"%MARKER%\" >NUL 2>NUL",
-            "exit /b 0",
-            ":fallback_copy",
-            "copy /Y \"%SOURCE%\" \"%TARGET_DIR%\\\" >NUL",
-            "if errorlevel 1 exit /b 1",
-            "del /F /Q \"%SOURCE%\" >NUL 2>NUL",
-            "del /F /Q \"%MARKER%\" >NUL 2>NUL",
-            "exit /b 0",
-            ""
-        );
-    }
-
-    private String unixInstallerScript(long pid, Path source, Path target, Path marker) {
-        return String.join("\n",
-            "#!/bin/sh",
-            "PID='" + pid + "'",
-            "SOURCE='" + unixScriptPath(source) + "'",
-            "TARGET='" + unixScriptPath(target) + "'",
-            "MARKER='" + unixScriptPath(marker) + "'",
-            "while kill -0 \"$PID\" 2>/dev/null; do sleep 1; done",
-            "BACKUP=\"$TARGET.old\"",
-            "rm -f \"$BACKUP\"",
-            "if mv \"$TARGET\" \"$BACKUP\"; then",
-            "  if mv \"$SOURCE\" \"$TARGET\"; then",
-            "    rm -f \"$MARKER\" \"$BACKUP\"",
-            "    exit 0",
-            "  fi",
-            "  mv \"$BACKUP\" \"$TARGET\"",
-            "  exit 1",
-            "fi",
-            "cp \"$SOURCE\" \"$TARGET\" && rm -f \"$SOURCE\" \"$MARKER\"",
-            ""
-        );
-    }
-
-    private void installDownloadedJar(Path source, Path target) throws IOException {
-        Path finalDestination = target.resolveSibling(source.getFileName());
-        if (!finalDestination.equals(target)) {
-            Files.deleteIfExists(target);
-        }
-        Files.move(source, finalDestination, StandardCopyOption.REPLACE_EXISTING);
     }
 
     private Optional<UpdateAsset> findCompatibleJar(JsonObject release, String minecraftVersion) {
@@ -497,7 +405,7 @@ public enum KungUpdater {
         }
 
         Optional<UpdateAsset> minecraftAsset = installableAssets.stream()
-            .filter(asset -> asset.name().contains(minecraftVersion))
+            .filter(asset -> asset.name().startsWith("kung-" + minecraftVersion + "-"))
             .findFirst();
         if (minecraftAsset.isPresent()) {
             return minecraftAsset;
@@ -515,7 +423,16 @@ public enum KungUpdater {
         if (name.isBlank() || downloadUrl.isBlank()) {
             return Optional.empty();
         }
-        return Optional.of(new UpdateAsset(name, downloadUrl));
+        URI uri = URI.create(downloadUrl);
+        if (!"https".equalsIgnoreCase(uri.getScheme()) || !"github.com".equalsIgnoreCase(uri.getHost())
+            || !uri.getPath().startsWith("/Beng420/kung/releases/download/") || uri.getUserInfo() != null) {
+            return Optional.empty();
+        }
+        long size = object.has("size") ? object.get("size").getAsLong() : 0;
+        if (size <= 0 || size > KungUpdateDownload.MAX_BYTES) return Optional.empty();
+        String digest = stringValue(object, "digest");
+        if (!digest.isBlank() && !digest.matches("(?i)sha256:[0-9a-f]{64}")) return Optional.empty();
+        return Optional.of(new UpdateAsset(name, downloadUrl, size, digest));
     }
 
     private static boolean isInstallableJar(String name) {
@@ -618,22 +535,6 @@ public enum KungUpdater {
         return updateDirectory().resolve("pending.properties");
     }
 
-    private static String sanitizeFileName(String fileName) {
-        return fileName.replaceAll("[\\\\/:*?\"<>|]", "_");
-    }
-
-    private static boolean isWindows() {
-        return System.getProperty("os.name").toLowerCase(Locale.ROOT).contains("win");
-    }
-
-    private static String windowsScriptPath(Path path) {
-        return path.toAbsolutePath().toString().replace("%", "%%");
-    }
-
-    private static String unixScriptPath(Path path) {
-        return path.toAbsolutePath().toString().replace("'", "'\"'\"'");
-    }
-
     private enum Status {
         CHECKING,
         UP_TO_DATE,
@@ -660,9 +561,9 @@ public enum KungUpdater {
         }
     }
 
-    private record UpdateInfo(String version, String assetName, String downloadUrl) {
+    private record UpdateInfo(String version, String assetName, String downloadUrl, long size, String digest) {
     }
 
-    private record UpdateAsset(String name, String downloadUrl) {
+    private record UpdateAsset(String name, String downloadUrl, long size, String digest) {
     }
 }

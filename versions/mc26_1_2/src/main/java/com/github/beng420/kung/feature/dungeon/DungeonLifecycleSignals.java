@@ -22,6 +22,26 @@ public final class DungeonLifecycleSignals {
         return RUN_FINISHED.matcher(text).matches() || TEAM_SCORE.matcher(text).matches();
     }
 
+    /** A score may also describe a wipe; only the matching victory banner confirms the boss. */
+    public static boolean isVictoryForFloor(String message, int floor, boolean masterMode) {
+        var victory = RUN_FINISHED.matcher(clean(message));
+        if (!victory.matches()) return false;
+        String boss = victory.group(1);
+        if (boss.startsWith("The ")) boss = boss.substring(4);
+        return switch (floor) {
+            case 0 -> boss.equals("Watcher");
+            case 1 -> boss.equals("Bonzo");
+            case 2 -> boss.equals("Scarf");
+            case 3 -> boss.equals("Professor");
+            case 4 -> boss.equals("Thorn");
+            case 5 -> boss.equals("Livid");
+            case 6 -> boss.equals("Sadan");
+            case 7 -> masterMode ? boss.equals("Wither King")
+                : boss.equals("Necron") || boss.equals("Maxor, Storm, Goldor, and Necron");
+            default -> false;
+        };
+    }
+
     public static String clean(String message) {
         return message == null ? "" : message.replaceAll("\u00a7.", "").replaceAll("\\s+", " ").trim();
     }

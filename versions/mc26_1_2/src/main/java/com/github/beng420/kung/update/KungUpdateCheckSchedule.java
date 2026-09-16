@@ -2,7 +2,7 @@ package com.github.beng420.kung.update;
 
 /** Polling uses monotonic time; opening menus or changing worlds does not restart the interval. */
 final class KungUpdateCheckSchedule {
-    static final long INTERVAL_MILLIS = 5 * 60_000L;
+    static final long INTERVAL_MILLIS = 30_000L;
     private boolean started;
     private long lastStarted;
 

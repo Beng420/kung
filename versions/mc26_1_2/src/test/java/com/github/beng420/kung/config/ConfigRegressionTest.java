@@ -91,6 +91,9 @@ public final class ConfigRegressionTest {
     public void feastSettingsDefaultOffAndPreserveHudCoordinatesOnReload() {
         equal(false, read("{}").feast.enabled(), "existing configurations keep the new overlay off");
         equal(true, read("{}").feast.showInHubFarm(), "Hub farm subsetting defaults on");
+        equal(60, read("{}").feast.kernelTimeoutSeconds(), "old configurations receive a one-minute timeout");
+        equal(10, read("{\"feast\":{\"kernelTimeoutSeconds\":0}}").feast.kernelTimeoutSeconds(), "timeout lower bound on load");
+        equal(300, read("{\"feast\":{\"kernelTimeoutSeconds\":999}}").feast.kernelTimeoutSeconds(), "timeout upper bound on load");
         equal(false, read("{\"feast\":{\"showInHubFarm\":false}}").feast.showInHubFarm(), "Hub farm can be disabled");
         equal(false, read("{\"feast\":null}").feast.enabled(), "null category uses defaults");
         KungConfig config = read("""
@@ -102,6 +105,23 @@ public final class ConfigRegressionTest {
         equal(300, config.feast.scale(), "HUD scale clamped");
         equal(42, config.dungeon.x(), "existing HUD placement retained");
         equal(25, read("{\"feast\":{\"scale\":0}}").feast.scale(), "minimum HUD scale");
+    }
+
+    @Test
+    public void kernelTimeoutTextAcceptsSecondsAndRetainsTheValueForInvalidInput() {
+        var config = read("{}");
+        var field = SettingEntry.text("Kernel Timeout (s)", () -> Integer.toString(config.feast.kernelTimeoutSeconds()),
+            config.feast::setKernelTimeoutText);
+        field.setText(" 75 ");
+        equal("75", field.textValue(), "integer seconds accepted");
+        for (String text : new String[] {"", "abc", "1.5", "999999999999999999999", null}) {
+            field.setText(text);
+            equal("75", field.textValue(), "invalid input keeps current timeout");
+        }
+        field.setText("5");
+        equal("10", field.textValue(), "small input clamps to ten seconds");
+        field.setText("900");
+        equal("300", field.textValue(), "large input clamps to five minutes");
     }
 
     @Test
@@ -179,6 +199,7 @@ public final class ConfigRegressionTest {
             config.splits.setTimeLost(false);
             config.feast.setEnabled(true);
             config.feast.setShowInHubFarm(false);
+            config.feast.setKernelTimeoutText("75");
             config.feast.setX(321);
             config.feast.setY(123);
             config.feast.setScale(150);
@@ -208,6 +229,7 @@ public final class ConfigRegressionTest {
             equal(false, roundTrip.splits.timeLost(), "hidden split time loss persists");
             equal(true, roundTrip.feast.enabled(), "Feast toggle persists");
             equal(false, roundTrip.feast.showInHubFarm(), "Hub farm toggle persists");
+            equal(75, roundTrip.feast.kernelTimeoutSeconds(), "timeout text persists as integer seconds");
             equal(321, roundTrip.feast.x(), "Feast x persists");
             equal(123, roundTrip.feast.y(), "Feast y persists");
             equal(150, roundTrip.feast.scale(), "Feast scale persists");

@@ -17,6 +17,7 @@ public final class KungClient implements ClientModInitializer {
         for (String warning : KungPaths.fileLayout().migrateLegacyDirectories()) {
             KungMod.LOGGER.warn("Kung storage migration: {}", warning);
         }
+        KungUpdater.INSTANCE.initializeInstallation();
         DungeonStateTracker dungeonStateTracker = new DungeonStateTracker();
         AppServices services = AppServices.create(KungConfig.INSTANCE, dungeonStateTracker);
         KungConfig.INSTANCE.load();
@@ -28,7 +29,6 @@ public final class KungClient implements ClientModInitializer {
             FeatureRegistry.shutdown();
             ServiceRegistry.shutdown();
         });
-        KungUpdater.INSTANCE.installPendingUpdateIfReady();
         KungUpdater.INSTANCE.initializeClientNotifications();
         KungUpdater.INSTANCE.checkForUpdatesAsync();
         KungMod.LOGGER.info("Kung client entrypoint ready.");

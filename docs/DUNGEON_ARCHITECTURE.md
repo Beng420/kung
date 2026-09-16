@@ -41,6 +41,11 @@ selection is presentation only; see [boss maps](BOSS_MAPS.md). Completion signal
 (`Defeated ... in ...` or the exact Team Score result pattern) are idempotent.
 Final stats/splits remain until instance exit. Leaving flushes an already scheduled
 completed summary before reset; leaving by itself does not declare victory.
+Team Score may precede the `Defeated ... in ...` banner. Splits freeze at the first
+completion signal, but retain the final-phase sample for five seconds so a matching
+victory can confirm its PB without changing either clock or repeating completion.
+Reset/new countdown clears this pending confirmation; ordinary instance gating still
+applies. See [split PB ordering](RUN_STATISTICS.md#score-before-victory-pb-correction--2026-09-15).
 
 ## Map pipeline and budgets
 

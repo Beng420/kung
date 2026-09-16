@@ -6,14 +6,15 @@ profile; a custom Fabric config directory is respected.
 
 | Location | Created / used when |
 | --- | --- |
-| `config/kung/kung.json` | First successful config load and settings changes. Also stores `splitsOverlay.personalBests`: real phase milliseconds per Entrance/F1–F7/M1–M7, saved once at run end/exit when a record improves. Old configs start with no PBs. Old `config/kung.json` remains a readable migration source. |
+| `config/kung/kung.json` | First successful config load and settings changes. Also stores `splitsOverlay.personalBests`: real phase milliseconds per Entrance/F1–F7/M1–M7, saved in batches at run end/exit when a record improves. A victory banner following Team Score can additionally confirm/save the frozen final-phase PB. Old configs start with no PBs. Old `config/kung.json` remains a readable migration source. |
 | `config/kung/feast-progress.json` | Enabled Feast Progress: bounded cache per Minecraft account/SkyBlock profile, containing event-bound donations/goals, independent Kernel balances and confirmed gains not yet reflected in the sidebar. Older files without `pendingKernelGains` default to zero. Updates use one background writer and temporary sibling replacement; shutdown flushes pending writes. Normal builds never touch profile data. |
 | `config/kung/custom-sounds/` | Custom Sounds initialization/index refresh. Four bundled WAV presets are copied here if absent; user audio files also live here. |
 | `config/kung/dungeon-data/` | Explicit room learning/deletion/type commands, enabled Local Data learning, or enabled Room Sync persistence. Normal bundled recognition does not require this directory. |
-| `config/kung/updates/` | Installing an update: downloaded JAR, temporary download, pending marker and installer scripts. `release-notes.properties` stores the displayed (`lastSeenVersion`) and explicitly dismissed (`lastDismissedVersion`) installed versions, written through a temporary sibling. Checking for an update does not download a file. |
+| `config/kung/updates/` | Session/installer locks, verified downloads, temporary staging, atomic `pending.properties`, rejected legacy/stale markers, content-addressed standalone installer JAR and `previous.jar` backup. Modrinth starts cannot self-install. `release-notes.properties` stores the displayed (`lastSeenVersion`) and explicitly dismissed (`lastDismissedVersion`) installed versions, written through a temporary sibling. Checking for an update does not download a file. See [safe installation](UPDATES.md#safe-installation-and-launcher-ownership--2026-09-16). |
 | `config/kung/legacy/` | Only if relocation encounters different existing files: preserves the old content without replacing the current destination. |
 | `logs/kung/kung-trace-*.log` | `/kung log save`. Routine diagnostic events remain in a bounded memory buffer. Normal logger messages still use Minecraft's `logs/latest.log`. |
-| `mods/` | The installed JAR; update installation may temporarily back up/replace it. |
+| `logs/kung/update-installer.log` | Append-only result/error output from the separate post-exit installer. |
+| `mods/` | The installed JAR, replaced atomically under its existing filename only after verification and game exit. Staging and backups stay in `config/kung/updates/`. |
 
 Dungeon-data filenames are `known-rooms.json`, `known-rooms-remote.json`,
 `known-room-types.properties`, `known-room-preloads.jsonl` and the legacy
@@ -41,8 +42,8 @@ files are removed after byte comparison; differing duplicates are preserved unde
 `config/kung/legacy/<old-directory>/`, with numbered names if necessary. Existing
 destination files win. Failed moves leave remaining source data in place and log
 a warning for retry on the next start. Symbolic links encountered while merging
-are preserved rather than followed. Old pending updater source paths resolve to
-the relocated download when necessary.
+are preserved rather than followed. Old updater files are preserved by migration;
+the current installer rejects unverified legacy pending markers instead of applying them.
 
 Do not move files out from under a running older Kung build: it can recreate the
 old paths. Install the new JAR with Minecraft closed and let startup migrate them.

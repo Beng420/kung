@@ -3,19 +3,23 @@
 Entry point for Kung maintenance. Project rules: [AGENTS.md](../AGENTS.md).
 Read the [code map](CODE_MAP.md), then only the topic needed for the task.
 
-## Current state — 2026-09-15
+## Current state — 2026-09-16
 
-- Active module: Minecraft **26.1.2**, version **0.3.2**, Java **25**.
+- Active module: Minecraft **26.1.2**, version **0.3.4**, Java **25**.
   The version source is [gradle.properties](../gradle.properties).
-  The user's existing version change to 0.3.2 is preserved.
+  The user's existing version change to 0.3.4 is preserved.
 - Last code validation: full shared-root active-module build with Java 25,
-  **519 tests**, zero failures/errors/skips, including the Kernel rate over active farming time,
+  **578 test cases: 577 passed, zero failures/errors, one skipped** because Windows
+  denies test symlink creation. Includes 71 update-package cases covering verified
+  downloads, launcher ownership, atomic replacement, interruption/retry and a real
+  separate helper waiting for a live parent JVM, plus local phase-time/PERSONAL BEST messages and score-before-victory final split PB confirmation,
+  delayed menu help tooltips and the exponentially weighted Kernel rate over active farming time with its configurable idle timeout,
   Wild Rose/flower/pumpkin visitor-timer reductions,
   Kernel milestone claims, per-floor split PB persistence, prediction toggle and both update modes,
   Visitor Alarm reminder replacement/chat mute and immediate offer-click acknowledgement,
   update polling/cooldown and independent Kernel donation/sidebar reconciliation.
-  Artifact: `versions/mc26_1_2/build/libs/kung-26.1.2-0.3.2.jar`
-  (rolling Kernel farming rate with idle pause, per-floor split PBs and finish prediction, 6th Visitor Alarm with Wild Rose/flower/pumpkin timing, five-minute update polling and lobby reminders, Kernel donation/sidebar ordering and persisted pending gains,
+  Artifact: `versions/mc26_1_2/build/libs/kung-26.1.2-0.3.4.jar`
+  (optional OneConfig/Mod Menu settings entrypoint, verified atomic updates and Modrinth ownership guard, exponentially weighted Kernel farming rate with configurable idle pause, per-floor split PBs and finish prediction, 6th Visitor Alarm with Wild Rose/flower/pumpkin timing, 30-second update polling and lobby reminders, Kernel donation/sidebar ordering and persisted pending gains,
   Safari Uniques, Feast Hub farm option and profile persistence, Grand Feast Kernel balance, donation format/filter fix, yellow active tier and progress marker, Roman-tier parsing/diagnostics, menu-font resource fix, Feast Progress, menu redesign, dismissal fix, changelog history/command, chat-emote alias,
   realistic update preview, patch notes, update popup, Mimic discovery/diagnostics
   and unfinished-room score correction).
@@ -69,21 +73,38 @@ Read the [code map](CODE_MAP.md), then only the topic needed for the task.
   milestone bar and donations to the next tier during a Feast in the Garden and
   Hub farm area. Show in Hub Farm defaults on; turning it off retains Garden visibility.
   Hub recognition requires Hub evidence plus Farm/Wheat Farm, Farmhouse or Communal Stew.
+  The Feast settings card now contains only the two controls. Progress/currency
+  help moved to a two-second hover tooltip on the feature; each control has its
+  own tooltip, including the timeout range/default. Tooltips show full clipped
+  names, wrap inside the menu viewport and restart after leaving, clicks, scrolls
+  and editor/modal interaction. Twelve focused UI/config tests pass, including
+  hover timing/target resets; live hover layout and edge placement remain open.
   Completed tiers are green, the active tier yellow with a vertical progress marker,
   and future tiers gray. The marker advances within the current tier's interval;
   full completion is entirely green with no marker. The HUD editor uses the same drawing.
   Grand appends the Kernel currency balance, e.g. `16 to next - 1,234 Kernels`.
-  A new line below it shows `Avg Kernels/h` over 20 minutes of farming time,
-  using actual elapsed farming time until the window fills and a 60-second warmup.
-  Mature crop input starts/resumes; five seconds without another harvest pauses
-  the clock. Hub/world travel pauses immediately, retaining the rolling history
+  A line below it shows `Avg Kernels/h` with exponential weighting and a five-minute
+  farming-time half-life, replacing the flat 20-minute window. Gains and elapsed
+  farming time decay equally; recent performance matters more without an abrupt
+  cutoff or tick/render cadence dependence. Startup uses observed weighted time
+  after a 60-second warmup. The feature's hover tooltip explains the weighting.
+  Mature crop input starts/resumes; `Kernel Timeout (s)` is now a saved seconds
+  text field (default 60, range 10–300). A 20-second pest hunt keeps the clock
+  running by default. Live edits update the current deadline without clearing
+  the rate or backfilling past pauses. Invalid text retains the previous value;
+  numeric inputs and loaded values are clamped. Hub/world travel pauses immediately, freezing the weighted history
   within the connection. Only Ted-confirmed Seasoning gains count, even without
   a balance baseline or beyond the milestone cap; claims, balance sync and spending
   do not affect it. Rate history is session-only and resets on disconnect/disable,
   profile/account change or a different Feast. HUD bounds extend downward by 12
-  units while position, width and scale stay unchanged. Eleven new rate tests and
-  the existing chat-routing test cover these paths; the focused Feast/crop/config
-  run passes 101 tests. Live rate, idle/resume and new-line rendering remain open.
+  units while position, width and scale stay unchanged. Rate/config tests and
+  the existing chat-routing test cover these paths; the focused rate/message/
+  config/control run passes 28 tests, including 16 rate cases for half-life decay,
+  changing performance, cadence independence and a six-hour steady stream.
+  Live rate adaptation, timeout editing, pest gaps, rate idle/resume and new-line
+  rendering remain open. The user's reported 14 Kernels/h has no supplied trace
+  establishing a counting error. `feast-kernels` includes raw measurement totals,
+  weighted gains/time, calculated rate and pause state for future diagnosis.
   Exact `Kernels:` or `123 (+3) Kernels` server sidebar rows sync automatically;
   `Your Kernels:` lore in Grand Bakery is a confirmed second source. The user's
   Scott screenshot shows 123 and they report correct live sync after opening it.
@@ -148,6 +169,15 @@ Read the [code map](CODE_MAP.md), then only the topic needed for the task.
   Live donation counting with the prior fix, marker appearance/milestone transitions,
   season/profile changes and HUD checks also remain open.
   See [Feast Progress](FEAST_PROGRESS.md).
+- Kung now registers an optional `modmenu` settings-screen factory, consumed by
+  Mod Menu and OneConfig's compatibility bridge (including the standalone API shim
+  verified inside published OneConfig 1.2.0). Selecting Kung opens the existing menu; Escape returns to
+  the calling screen. Kung remains usable without either optional mod, and config
+  storage/layout are unchanged. Individual OneConfig option search and shared HUD
+  editing are not included. The full Java 25 build passes; packaged metadata and
+  bridge class were inspected, with neither optional library bundled or required.
+  Live opening, return navigation and optional-mod startup
+  checks remain open. See [menu integration](DEVELOPMENT.md#optional-oneconfig--mod-menu-integration).
 - Kung settings now render at 80% size, with feature columns another 10% narrower
   (171 logical units; 28% narrower overall). Search, title, tooltips and menu modals
   use the same transform; input and scrolling use the matching menu coordinates.
@@ -161,7 +191,18 @@ Read the [code map](CODE_MAP.md), then only the topic needed for the task.
   now passes; the rebuilt JAR contains the corrected paths. Live readability with
   this corrected JAR, clicks, dragging, scroll and modals remain open.
   See [layout conventions](DEVELOPMENT.md#changing-code-and-comments).
-- Kung checks for updates at startup and every five minutes, independently of the
+- Update installation now leaves the active JAR in place until a verified atomic
+  replacement after game exit. A separate JDK-only helper checks old/new hashes,
+  keeps the original filename and backup, serializes installers and retries pending
+  work after interrupted shutdowns without replacing an already loaded JAR at startup.
+  Downloads enforce size/hash/ZIP integrity and mod/version/dependency checks.
+  Modrinth starts show **Updates: Use Modrinth** and cannot self-install: its managed
+  path/hash validation matches the supplied repair/re-import error. The friend's
+  precise failure remains unproven. Legacy markers are preserved but not executed.
+  The game session lock does not cover Fabric's earlier discovery during an immediate
+  relaunch; live launcher/shutdown/restart checks and physical power loss remain open.
+  No real game profile was changed. See [safe updates](UPDATES.md#safe-installation-and-launcher-ownership--2026-09-16).
+- Kung checks for updates at startup and every 30 seconds, independently of the
   menu. A newly found compatible release shows a popup when ready on Hypixel.
   Polls continue with an available update, preserve it during refresh/failure and
   cannot overwrite a concurrent download or pending restart.
@@ -242,7 +283,7 @@ Read the [code map](CODE_MAP.md), then only the topic needed for the task.
   See [run-statistics evidence](RUN_STATISTICS_FIXES.md).
 - Splits now keep real-time personal bests for each phase separately per Entrance,
   F1–F7 and M1–M7 in `splitsOverlay.personalBests` in the existing Kung config.
-  Enabled, accurately completed phases contribute; one save at finish/exit uses
+  Enabled, accurately completed phases contribute; batched saves at finish/exit use
   the final floor metadata so late M7 detection cannot pollute F7 records.
   Unknown/interrupted phases and manual debug runs are excluded. Splits Overlay >
   Time Prediction is now a toggle with expandable Update setting, like Boss Messages.
@@ -251,10 +292,26 @@ Read the [code map](CODE_MAP.md), then only the topic needed for the task.
   and the additional M7 phases, with no Storm PB. Changes apply mid-phase; both
   settings persist. Turning prediction off removes its row/editor height while
   PB collection continues. Missing required PBs show `--`; confirmed completion
-  freezes both modes to Total. The full 486-test build passes, including the
-  explicit F7/M7 Storm example, mode switching, persistence and hidden-row bounds.
-  Live F6/M7 learning, restart restoration, menu toggle/expansion/mode clicks and
-  HUD appearance remain open.
+  freezes both modes to Total. The Time Lost label now matches the red loss value.
+  Enabled completed phases now post their time and
+  current PB in parentheses through local `[Kung Splits]` system messages;
+  first/strictly faster PBs add a separate line with bold pink `PERSONAL BEST!`, green result text and the
+  previous PB (`--` for a first record). Equal/slower times do not celebrate. Messages use
+  the phase's known floor/mode and selected time format, remain active with prediction
+  hidden, and exclude manual/unknown/interrupted phases. Seven added message tests
+  cover record comparisons, preserved previous PBs, mode/floor isolation, formatting
+  and duplicate suppression.
+  Live phase/PB chat appearance remains open. The friend's supplied 15:04:03 F1 trace exposes a
+  missing final PB: Team Score arrives three milliseconds before Defeated Bonzo,
+  and the old stopped-run guard ignored that victory. The score now freezes its
+  final sample, and a matching victory within five seconds confirms/saves it once
+  without advancing either clock or adding a split. Seven new regressions include
+  the unchanged message/timing replay, which fails before the fix and passes after;
+  serialized PBs then predict correctly in the next run. All 103 focused tests and
+  the full 537-test build pass. Run-start/end now record PB coverage/missing phases;
+  `run-victory-confirmed` identifies the follow-up save. Existing missing records
+  require a newly completed matching-floor run. The next live F1 run/early prediction,
+  F6/M7 learning, restart restoration, menu controls and HUD appearance remain open.
   See [splits and personal bests](RUN_STATISTICS.md#splits).
   Split clocks conserve every accepted tick. Full traces preserve 128 split
   records, including countdown/Mort start markers. The 18:16:58 live

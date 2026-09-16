@@ -176,6 +176,7 @@ public final class KungConfig {
         splits.setScale(splits.scale());
         safari.setScale(safari.scale());
         feast.setScale(feast.scale());
+        feast.setKernelTimeoutSeconds(feast.kernelTimeoutSeconds());
         visitorAlarm.setVolume(visitorAlarm.volume());
         splits.setFormat(splits.format());
         misc.setHypixelApiKey(misc.hypixelApiKey());

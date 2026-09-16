@@ -8,6 +8,7 @@ import com.github.beng420.kung.feature.dungeon.DungeonRoomClassifier;
 import com.github.beng420.kung.feature.misc.CustomSoundsFeature;
 import com.github.beng420.kung.feature.misc.LoadoutsAutoCloseFeature;
 import com.github.beng420.kung.ui.UiBounds;
+import com.github.beng420.kung.ui.UiHoverDelay;
 import com.github.beng420.kung.ui.UiTextField;
 import com.github.beng420.kung.ui.UiTheme;
 import com.github.beng420.kung.ui.UiScrollList;
@@ -63,6 +64,7 @@ public final class KungConfigScreen extends Screen {
     private static final int SCROLL_STEP = 42;
     private static final int CATEGORY_SCROLL_STEP = SETTING_HEIGHT * 3;
 
+    private final Screen parent;
     private final Font menuFont;
     private final List<CategoryEntry> categories;
     private final List<ClickRegion> clickRegions = new ArrayList<>();
@@ -77,6 +79,7 @@ public final class KungConfigScreen extends Screen {
     private String search = "";
     private boolean searchFocused;
     private TooltipRequest tooltip;
+    private final UiHoverDelay tooltipDelay = new UiHoverDelay();
     private KungReleaseNotesPopup releaseNotesPopup;
     private boolean releaseNotesChecked;
     private boolean forceReleaseNotes;
@@ -86,7 +89,12 @@ public final class KungConfigScreen extends Screen {
     }
 
     public KungConfigScreen(String expandedFeatureName) {
+        this(null, expandedFeatureName);
+    }
+
+    private KungConfigScreen(Screen parent, String expandedFeatureName) {
         super(Component.literal("Kung - v" + KungUpdater.currentVersion()));
+        this.parent = parent;
         menuFont = UiMenuFont.wrap(super.font);
         categories = createCategories();
         FeatureEntry initialFeature = findFeature(expandedFeatureName);
@@ -94,6 +102,10 @@ public final class KungConfigScreen extends Screen {
             expandedFeatures.add(initialFeature);
         }
         KungUpdater.INSTANCE.checkForUpdatesAsync();
+    }
+
+    public static KungConfigScreen fromParent(Screen parent) {
+        return new KungConfigScreen(parent, null);
     }
 
     public static KungConfigScreen updates() {
@@ -112,6 +124,7 @@ public final class KungConfigScreen extends Screen {
 
     @Override
     protected void init() {
+        tooltipDelay.reset();
         if (!releaseNotesChecked) {
             releaseNotesChecked = true;
             var notes = KungUpdater.INSTANCE.releaseNotes();
@@ -122,6 +135,11 @@ public final class KungConfigScreen extends Screen {
     @Override
     public boolean isPauseScreen() {
         return false;
+    }
+
+    @Override
+    public void onClose() {
+        minecraft.setScreen(parent);
     }
 
     public boolean hasReleaseNotesPopup() { return releaseNotesPopup != null; }
@@ -149,8 +167,10 @@ public final class KungConfigScreen extends Screen {
             drawTitle(graphics);
             drawColumns(graphics, releaseNotesPopup == null ? mouseX : -1, releaseNotesPopup == null ? mouseY : -1);
             drawSearchBox(graphics);
-            if (tooltip != null && textEditor == null) {
-                UiTooltip.draw(graphics, menuFont, List.of(tooltip.text()), tooltip.x(), tooltip.y(), THEME);
+            boolean showTooltip = tooltip != null && textEditor == null && releaseNotesPopup == null
+                && draggingSlider == null && capturingSetting == null;
+            if (tooltipDelay.ready(showTooltip ? tooltip.owner() : null, System.nanoTime() / 1_000_000)) {
+                UiTooltip.draw(graphics, menuFont, tooltip.lines(), tooltip.x(), tooltip.y(), menuWidth(), menuHeight(), THEME);
             }
             if (textEditor != null) {
                 textEditor.draw(graphics, mouseX, mouseY, partialTick);
@@ -165,6 +185,7 @@ public final class KungConfigScreen extends Screen {
 
     @Override
     public boolean mouseClicked(MouseButtonEvent event, boolean doubleClick) {
+        tooltipDelay.reset();
         int mouseX = toMenuCoordinate(event.x());
         int mouseY = toMenuCoordinate(event.y());
         int button = event.button();
@@ -225,6 +246,7 @@ public final class KungConfigScreen extends Screen {
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
+        tooltipDelay.reset();
         if (releaseNotesPopup != null) {
             releaseNotesPopup.scroll(toMenuCoordinate(mouseX), toMenuCoordinate(mouseY), scrollY);
             return true;
@@ -393,6 +415,9 @@ public final class KungConfigScreen extends Screen {
         UiShapes.rounded(graphics, x, rowY, COLUMN_WIDTH, ROW_HEIGHT, 0,
             rowY + ROW_HEIGHT == viewportBottom ? PANEL_RADIUS : 0, color);
         drawCentered(graphics, trimToWidth(feature.name(), COLUMN_WIDTH - 8), x + COLUMN_WIDTH / 2, rowY + 5, THEME.text(), true);
+        if (hovered && (!feature.tooltip().isEmpty() || menuFont.width(feature.name()) > COLUMN_WIDTH - 8)) {
+            requestTooltip(feature, feature.name(), feature.tooltip(), mouseX, mouseY);
+        }
         addClickRegion(x, rowY, COLUMN_WIDTH, ROW_HEIGHT, (clickX, clickY, button) -> clickFeature(feature, button));
     }
 
@@ -429,8 +454,8 @@ public final class KungConfigScreen extends Screen {
         int controlWidth = controlWidthFor(setting);
         int labelWidth = COLUMN_WIDTH - controlWidth - indent - 20;
         graphics.text(menuFont, trimToWidth(setting.label(), labelWidth), labelX, rowY + 4, THEME.text(), true);
-        if (hovered && menuFont.width(setting.label()) > labelWidth) {
-            tooltip = new TooltipRequest(setting.label(), mouseX + UiSpacing.MD, mouseY + UiSpacing.MD);
+        if (hovered && (!setting.tooltip().isEmpty() || menuFont.width(setting.label()) > labelWidth)) {
+            requestTooltip(setting, setting.label(), setting.tooltip(), mouseX, mouseY);
         }
         int controlX = x + COLUMN_WIDTH - controlWidth - 5;
         setting.draw(graphics, menuFont, THEME, controlX, rowY, controlWidth, SETTING_HEIGHT, setting == capturingSetting);
@@ -446,6 +471,13 @@ public final class KungConfigScreen extends Screen {
                 return clickSetting(setting, clickX, button, controlX, controlWidth);
             });
         }
+    }
+
+    private void requestTooltip(Object owner, String title, List<String> help, int mouseX, int mouseY) {
+        var lines = new ArrayList<String>();
+        lines.add(title);
+        lines.addAll(help);
+        tooltip = new TooltipRequest(owner, lines, mouseX + UiSpacing.MD, mouseY + UiSpacing.MD);
     }
 
     private int controlWidthFor(SettingEntry setting) {
@@ -965,11 +997,17 @@ public final class KungConfigScreen extends Screen {
                 () -> config.feast.setEnabled(!config.feast.enabled()),
                 List.of(
                     SettingEntry.toggle("Show in Hub Farm", config.feast::showInHubFarm,
-                        () -> config.feast.setShowInHubFarm(!config.feast.showInHubFarm())),
-                    SettingEntry.dynamicLabel(() -> "Progress: Feast menu"),
-                    SettingEntry.dynamicLabel(() -> "Kernels: Grand Bakery")
+                        () -> config.feast.setShowInHubFarm(!config.feast.showInHubFarm()))
+                        .withTooltip("Also show Feast Progress in the Hub farm area during an active Feast."),
+                    SettingEntry.text("Kernel Timeout (s)", () -> Integer.toString(config.feast.kernelTimeoutSeconds()),
+                        config.feast::setKernelTimeoutText)
+                        .withTooltip("Seconds without harvesting before Avg Kernels/h pauses.",
+                            "Range: 10-300 seconds. Default: 60 seconds.")
                 )
-            )
+            ).withTooltip("Open the Feast menu to sync milestone progress.",
+                "Kernels sync from the scoreboard or Grand Bakery.",
+                "Avg Kernels/h gives recent farming more weight.",
+                "Older gains and farming time lose half their weight every 5 farming minutes.")
         )));
         result.add(new CategoryEntry("Hunting", List.of(
             new FeatureEntry(
@@ -1510,7 +1548,7 @@ public final class KungConfigScreen extends Screen {
     private record ClickRegion(UiBounds bounds, ClickAction action) {
     }
 
-    private record TooltipRequest(String text, int x, int y) {
+    private record TooltipRequest(Object owner, List<String> lines, int x, int y) {
     }
 
     private record CategoryScrollArea(CategoryEntry category, int maxScroll) {
@@ -1525,11 +1563,12 @@ public final class KungConfigScreen extends Screen {
         BooleanSupplier clickableSupplier,
         Runnable toggle,
         List<SettingEntry> settings,
-        boolean alwaysExpanded
+        boolean alwaysExpanded,
+        List<String> tooltip
     ) {
         FeatureEntry(Supplier<String> name, BooleanSupplier enabled, BooleanSupplier clickable, Runnable toggle,
                      List<SettingEntry> settings) {
-            this(name, enabled, clickable, toggle, settings, false);
+            this(name, enabled, clickable, toggle, settings, false, List.of());
         }
 
         FeatureEntry(
@@ -1538,10 +1577,14 @@ public final class KungConfigScreen extends Screen {
             Runnable toggle,
             List<SettingEntry> settings
         ) {
-            this(() -> name, enabledSupplier, () -> toggle != null, toggle, settings, false);
+            this(() -> name, enabledSupplier, () -> toggle != null, toggle, settings, false, List.of());
         }
 
-        FeatureEntry pinnedOpen() { return new FeatureEntry(nameSupplier, enabledSupplier, clickableSupplier, toggle, settings, true); }
+        FeatureEntry pinnedOpen() { return new FeatureEntry(nameSupplier, enabledSupplier, clickableSupplier, toggle, settings, true, tooltip); }
+
+        FeatureEntry withTooltip(String... lines) {
+            return new FeatureEntry(nameSupplier, enabledSupplier, clickableSupplier, toggle, settings, alwaysExpanded, List.of(lines));
+        }
 
         String name() {
             return nameSupplier.get();

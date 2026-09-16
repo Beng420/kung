@@ -204,6 +204,7 @@ public final class FeastOverlayFeature extends ConfigurableFeature<FeastConfig> 
         var previous = session.snapshot();
         session.select(context.event(mayor.active(System.currentTimeMillis()), mayor.electionYear()), context.hasDate());
         kernels.selectFeast(session.event());
+        kernelRate.setTimeoutSeconds(config().kernelTimeoutSeconds(), now());
         kernelRate.updateContext(hypixel && inGarden, session.event(), now());
         if (previous != null && session.snapshot() == null) {
             KungDebugRecorder.event("feast", "reset reason=changed-or-inactive-feast");
@@ -363,7 +364,9 @@ public final class FeastOverlayFeature extends ConfigurableFeature<FeastConfig> 
         var rate = kernelRate.snapshot(now());
         KungDebugRecorder.event("feast-kernels", "source=" + source + " balance=" + kernels.balance()
             + " sidebar=" + kernels.sidebarBalance() + " pendingGains=" + kernels.pendingGains()
-            + " rateKernels=" + rate.kernels() + " farmingMs=" + rate.farmingMillis() + " ratePaused=" + rate.paused());
+            + " rateKernels=" + rate.kernels() + " farmingMs=" + rate.farmingMillis()
+            + String.format(Locale.US, " weightedKernels=%.4f weightedFarmingMs=%.1f", rate.weightedKernels(), rate.weightedFarmingMillis())
+            + " ratePerHour=" + rate.perHour() + " ratePaused=" + rate.paused());
     }
 
     private void recordProgress(String source) {
@@ -393,7 +396,7 @@ public final class FeastOverlayFeature extends ConfigurableFeature<FeastConfig> 
 
     public static void drawPreview(GuiGraphicsExtractor graphics, FeastConfig config) {
         draw(graphics, config, FeastProgress.Kind.GRAND, EXAMPLE, 1_234L,
-            new FeastKernelRate.Snapshot(40, FeastKernelRate.WINDOW_MILLIS, false));
+            new FeastKernelRate.Snapshot(40, 1_200_000, 10, 300_000, false));
     }
 
     private static void draw(GuiGraphicsExtractor graphics, FeastConfig config,

@@ -23,6 +23,9 @@
     ],
     "client": [
       "com.github.beng420.kung.KungClient"
+    ],
+    "modmenu": [
+      "com.github.beng420.kung.compat.KungModMenu"
     ]
   },
   "depends": {

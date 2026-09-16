@@ -4,7 +4,7 @@ The Kung settings header shows `Kung - v<installed version>` (for example,
 `Kung - v0.3.1`), read from Fabric's metadata for the loaded mod.
 
 The active Minecraft 26.1.2 client checks GitHub's latest release at startup and
-every five minutes from the client tick, independently of opening Kung settings.
+every 30 seconds from the client tick, independently of opening Kung settings.
 Menu/join requests share that interval instead of creating extra requests or
 postponing the next poll. Checks run on the existing updater worker; overlapping
 requests are coalesced. Polling continues with an already available update, but
@@ -73,6 +73,82 @@ updater selects a newer numeric release with an installable JAR for the running
 Minecraft version. Download and restart installation use the existing
 [update storage paths](FILE_STORAGE.md). Normal builds neither install the JAR
 nor download updates into a game profile.
+
+## Safe installation and launcher ownership — 2026-09-16
+
+Modrinth starts retain update checks/notices, but the installation control reads
+**Updates: Use Modrinth** and cannot replace a mod file. Use Modrinth's own update
+or import workflow. Detection uses its IPC system properties or the exact
+`theseus`/`modrinth` launcher brand, including starts with a custom brand but the
+standard IPC properties. This conservatively includes unmanaged files in those
+starts; Kung does not edit Modrinth's database or guess which JAR it owns.
+
+The supplied `mods/kung-26.1.2-0.3.1.jar needs repair or re-import` screenshot
+matches Modrinth's [managed-file validation error](https://github.com/modrinth/code/blob/1faf434ad5b1a6675f1acbc55c1c7342b2646a98/packages/app-lib/src/state/content_store/commands/instance_files.rs#L71-L116).
+Its managed records validate both the path and content; [rescanning preserves
+conflicting managed bindings](https://github.com/modrinth/code/blob/1faf434ad5b1a6675f1acbc55c1c7342b2646a98/packages/app-lib/src/state/instances/commands/sync_content_files.rs#L173-L227).
+Thus either renaming or replacing a managed JAR externally can invalidate it.
+The screenshot alone does not establish which operation caused the friend's error.
+
+For other launchers, installation follows these rules:
+
+- Only the loaded standalone JAR directly inside this profile's `mods/` can be
+  replaced. Symlink paths and external/cache origins are rejected. The installed
+  filename stays unchanged; Fabric's metadata determines the version.
+- Downloads stay under `config/kung/updates/`. The worker enforces the release's
+  exact byte count, a 128 MiB limit, the advertised SHA-256 when present, full ZIP
+  entry sizes/CRCs and bounded expansion, Kung identity/version/classes and Fabric
+  required dependencies/conflicts, including Minecraft, Java and loader versions.
+  Only a verified download is published as `verified-<sha256>.jar`.
+- The pending transaction records old/new SHA-256 values and exact paths using a
+  flushed temporary file and atomic marker publication. Unverified legacy or
+  malformed markers are preserved as `rejected-<uuid>.properties`, never executed.
+  A changed installed JAR cancels stale recovery rather than downgrading it.
+- A JDK-only helper runs from a separate content-addressed JAR, without shell or
+  VBS scripts. It waits for the exact game PID/start identity to exit. An installer
+  lock serializes transactions; a game session lock lasts until JVM exit and
+  prevents replacement once another initialized Kung session owns it.
+- The helper verifies the download again, flushes a temporary replacement and
+  preserves the old bytes as `previous.jar` outside `mods/`. Its only commit is an
+  atomic replacement of the exact original path. There is no delete-first or
+  copy-over-active-JAR fallback. Unsupported atomic moves, cross-volume custom
+  config paths, access errors and changed files leave the existing JAR intact.
+- Success clears the pending marker and keeps the verified source and backup.
+  A crash after the commit can be recognized by its new hash without reinstalling.
+  Interrupted downloads never create a pending transaction. An interrupted helper
+  leaves the transaction retryable: the next start validates it and queues a new
+  helper for that session's exit. Startup never replaces an already loaded JAR.
+  Consequently, after shutting down the PC before installation finishes, the next
+  launch may still use the old version and another close/start applies the update.
+
+The success chat now says **verified and queued**, not **installed**. Installer
+results appear in `logs/kung/update-installer.log`; preparation/recovery failures
+are in `logs/latest.log`. A blocked recovery disables further installation in that
+session instead of overwriting the pending transaction. Managed-launcher startup
+preserves any pending marker as rejected without applying it.
+
+`KungUpdateDownloadTest`, `KungUpdateInstallerTest`, `KungUpdateEnvironmentTest`
+and `KungUpdateProcessTest` cover local HTTP failures/limits, corrupt/wrong or
+incompatible JARs, launcher detection, transaction-boundary interruptions,
+unsupported atomic replacement, altered targets/sources, marker recovery and a
+real isolated Java helper process including session-lock contention. Temporary
+test profiles are the only installation targets. Windows may skip the symlink
+creation case when the OS denies that capability; path-confinement tests still run.
+The final Java-25 active-module build passed: 575 cases, 574 passed, zero failures
+or errors and one skipped Windows symlink-creation case; 71 cases belong to the
+update package (38 newly added). The real-process test kills a waiting helper,
+retries while a dummy game JVM is alive and confirms installation only after that
+JVM exits. The built 0.3.4 JAR includes the standalone helper and nested classes;
+`git diff --check` also passes.
+
+These checks do not prove live launcher compatibility or physical power-loss
+durability. File data is flushed, but directory flushing is unavailable on some
+filesystems, notably Windows. Disk/controller failure remains outside the atomic
+replacement guarantee. The session lock starts during Kung initialization, after
+Fabric discovery; a very fast new launch during an older helper's commit still
+needs live validation. Modrinth's update/import flow, normal exit, interrupted
+download, PC shutdown and immediate relaunch remain live checks. No user profile
+or launcher database was modified during development.
 
 ## Patch notes after installation
 
@@ -165,7 +241,7 @@ layering, history selection/scrolling, link confirmation, command opening and
 restart display remain live checks.
 
 `KungUpdater` owns asynchronous release/install state and the Fabric connection
-and tick callbacks. `KungUpdateCheckSchedule` owns the monotonic five-minute poll
+and tick callbacks. `KungUpdateCheckSchedule` owns the monotonic 30-second poll
 interval. `KungUpdateNotification` owns hostname matching, observed shared instance
 epochs, release eligibility and the monotonic cooldown. It only consumes
 `HypixelInstanceTracker.instanceEpoch()`; no dungeon lifecycle rules change.
@@ -189,7 +265,7 @@ immediate/periodic checks, menu/join requests, busy workers and monotonic clock 
 time, replacement/dismissal, click-through prevention and resized layout/hit
 targets. The update package's 33 tests pass after the polling/cooldown revision.
 See [current handoff](AI_HANDOFF.md) for the latest full-build count.
-The built JAR's 0.3.2 metadata and packaged toast were verified; `git diff --check`
+The built JAR's 0.3.4 metadata and packaged toast were verified; `git diff --check`
 passes. Live background polling, timed lobby reminders, preview fetching, Hypixel join, screen layering,
 GUI scales, buttons and browser link handling still require an in-game check.
 Use `/kung preview updates` to check the

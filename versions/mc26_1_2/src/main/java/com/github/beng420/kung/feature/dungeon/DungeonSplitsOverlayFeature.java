@@ -102,7 +102,7 @@ public final class DungeonSplitsOverlayFeature extends ConfigurableFeature<Split
             }
             if (config.timeLost()) {
                 y += ROW_HEIGHT;
-                graphics.text(client.font, "Time Lost", PADDING, y, TEXT, true);
+                graphics.text(client.font, "Time Lost", PADDING, y, LOST_TIME, true);
                 long loss = example ? lostTimeMillis(totalWall, totalServer) : settledTotalLostTimeMillis(tracker);
                 String lossText = formatLostTimeMillis(loss);
                 graphics.text(client.font, lossText, WIDTH - PADDING - LOSS_COLUMN_WIDTH - client.font.width(lossText),
