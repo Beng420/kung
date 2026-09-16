@@ -4,6 +4,13 @@ Kung writes its own persistent data below `config/kung/` and traces below
 `logs/kung/`. The mod JAR lives in `mods/`. These paths are relative to the game
 profile; a custom Fabric config directory is respected.
 
+Optional native OneConfig settings use the same Kung config and validated setters.
+Their `custom_save` hook prevents OneConfig from loading or writing a separate
+Kung config. OneConfig profile switches do not reset Kung's shared values.
+The optional OneConfig HUD editor uses these same saved positions, scales and
+feature toggles. Its wrappers opt out of OneConfig placement snapshots; moves,
+resizes and visibility edits persist through Kung's existing config setters.
+
 | Location | Created / used when |
 | --- | --- |
 | `config/kung/kung.json` | First successful config load and settings changes. Also stores `splitsOverlay.personalBests`: real phase milliseconds per Entrance/F1–F7/M1–M7, saved in batches at run end/exit when a record improves. A victory banner following Team Score can additionally confirm/save the frozen final-phase PB. Old configs start with no PBs. Old `config/kung.json` remains a readable migration source. |

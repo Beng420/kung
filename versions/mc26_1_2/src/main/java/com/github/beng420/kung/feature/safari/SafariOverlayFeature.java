@@ -2,6 +2,7 @@ package com.github.beng420.kung.feature.safari;
 
 import com.github.beng420.kung.KungMod;
 import com.github.beng420.kung.config.KungHudEditorScreen;
+import com.github.beng420.kung.config.KungHudEditorState;
 import com.github.beng420.kung.config.category.SafariConfig;
 import com.github.beng420.kung.feature.ConfigurableFeature;
 import com.github.beng420.kung.feature.Feature;
@@ -92,7 +93,7 @@ public final class SafariOverlayFeature extends ConfigurableFeature<SafariConfig
     private void render(GuiGraphicsExtractor graphics) {
         Minecraft client = Minecraft.getInstance();
         if (!isEnabled() || client.player == null || client.level == null || client.options.hideGui
-            || client.screen instanceof KungHudEditorScreen) return;
+            || client.screen instanceof KungHudEditorScreen || KungHudEditorState.externalEditing()) return;
         if (updateContext(client) && session.active()) draw(graphics, config(), session.caught());
     }
 

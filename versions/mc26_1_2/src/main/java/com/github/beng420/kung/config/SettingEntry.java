@@ -11,6 +11,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
+import java.util.function.Function;
 import java.util.function.IntConsumer;
 import java.util.function.IntSupplier;
 import java.util.function.Supplier;
@@ -32,7 +33,9 @@ public record SettingEntry(
     Supplier<String> textSupplier,
     Consumer<String> textConsumer,
     List<SettingEntry> children,
-    List<String> tooltip
+    List<String> tooltip,
+    List<String> choices,
+    Supplier<String> rawKeybindSupplier
 ) {
     public String label() { return labelSupplier.get(); }
 
@@ -66,6 +69,21 @@ public record SettingEntry(
         return create(label, SettingKind.CHOICE, null, null, null, null, 0, 0, 0, supplier, cycle, null, null);
     }
 
+    public static <E extends Enum<E>> SettingEntry choice(
+        String label, E[] values, Supplier<E> supplier, Consumer<E> consumer, Function<E, String> labeler
+    ) {
+        List<E> options = List.of(values);
+        if (options.isEmpty()) throw new IllegalArgumentException("Choice must have options");
+        IntSupplier selected = () -> Math.max(0, options.indexOf(supplier.get()));
+        IntConsumer select = index -> {
+            if (index >= 0 && index < options.size()) consumer.accept(options.get(index));
+        };
+        return new SettingEntry(() -> label, SettingKind.CHOICE, null, null, selected, select,
+            0, options.size() - 1, 1, () -> labeler.apply(options.get(selected.getAsInt())),
+            () -> select.accept((selected.getAsInt() + 1) % options.size()), null, null, List.of(), List.of(),
+            options.stream().map(labeler).toList(), null);
+    }
+
     public static SettingEntry text(String label, Supplier<String> supplier, Consumer<String> consumer) {
         return create(label, SettingKind.TEXT, null, null, null, null, 0, 0, 0, null, null, supplier, consumer);
     }
@@ -75,12 +93,18 @@ public record SettingEntry(
     }
 
     public static SettingEntry keybind(String label, Supplier<String> supplier, Consumer<String> consumer) {
-        return create(label, SettingKind.KEYBIND, null, null, null, null, 0, 0, 0, null, null, supplier, consumer);
+        return keybind(label, supplier, supplier, consumer);
+    }
+
+    public static SettingEntry keybind(String label, Supplier<String> display, Supplier<String> raw,
+                                      Consumer<String> consumer) {
+        return new SettingEntry(() -> label, SettingKind.KEYBIND, null, null, null, null, 0, 0, 0,
+            null, null, display, consumer, List.of(), List.of(), List.of(), raw);
     }
 
     public static SettingEntry dynamicLabel(Supplier<String> labelSupplier) {
         return new SettingEntry(labelSupplier, SettingKind.LABEL, null, null, null, null, 0, 0, 0,
-            null, null, null, null, List.of(), List.of());
+            null, null, null, null, List.of(), List.of(), List.of(), null);
     }
 
     public static SettingEntry button(String label, String text, Runnable action) {
@@ -89,12 +113,14 @@ public record SettingEntry(
 
     public SettingEntry withChildren(List<SettingEntry> children) {
         return new SettingEntry(labelSupplier, kind, booleanSupplier, toggle, intSupplier, intConsumer,
-            min, max, step, choiceSupplier, cycleChoice, textSupplier, textConsumer, List.copyOf(children), tooltip);
+            min, max, step, choiceSupplier, cycleChoice, textSupplier, textConsumer, List.copyOf(children), tooltip,
+            choices, rawKeybindSupplier);
     }
 
     public SettingEntry withTooltip(String... lines) {
         return new SettingEntry(labelSupplier, kind, booleanSupplier, toggle, intSupplier, intConsumer,
-            min, max, step, choiceSupplier, cycleChoice, textSupplier, textConsumer, children, List.of(lines));
+            min, max, step, choiceSupplier, cycleChoice, textSupplier, textConsumer, children, List.of(lines),
+            choices, rawKeybindSupplier);
     }
 
     public String textValue() {
@@ -245,6 +271,6 @@ public record SettingEntry(
         Consumer<String> textConsumer
     ) {
         return new SettingEntry(() -> label, kind, booleanSupplier, toggle, intSupplier, intConsumer,
-            min, max, step, choiceSupplier, cycleChoice, textSupplier, textConsumer, List.of(), List.of());
+            min, max, step, choiceSupplier, cycleChoice, textSupplier, textConsumer, List.of(), List.of(), List.of(), null);
     }
 }

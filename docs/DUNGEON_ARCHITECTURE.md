@@ -73,7 +73,11 @@ applies. See [split PB ordering](RUN_STATISTICS.md#score-before-victory-pb-corre
   anchoring accepts PLAYER/BLUE_MARKER when FRAME is absent. Inspect `map-check`
   and `map-change` before assuming a drawing defect.
 
-Map Scale and Text Scale are independent controls in `/kung hud`. Text scale must
+Map Scale and Text Scale are independent controls in `/kung hud` and the optional
+OneConfig HUD editor. Both editors share Kung's stored position/scale; the native
+adapter subtracts the scaled border/text margin from box coordinates. Its map
+preview is only a labeled bounds box and must not trigger room learning or scans.
+Text scale must
 cover labels, secrets, unknown/debug markers, Prince glyphs, footer and legend,
 including their measured bounds. Do not silently clamp map size to the window.
 

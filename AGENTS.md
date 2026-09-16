@@ -17,6 +17,9 @@
   in English. Feature master toggles default off; useful subsetting defaults are fine.
 - Preserve HUD/settings layouts during cleanup. HUD position and scale belong in
   `/kung hud`; shared message/UI/config helpers are the normal extension points.
+- Use `versions/mc26_1_2/src/main/resources/assets/kung/icon.png` as the canonical
+  mod icon for future builds and branding. It is the user's supplied `KUNG.png`
+  ("Key Utilities Needed in-Game"); preserve its artwork unless asked to change it.
 - Dungeon work must preserve bounded scans, cached matching and packet-confirmed
   instance state. Read [dungeon architecture](docs/DUNGEON_ARCHITECTURE.md) before
   changing lifecycle, scanning, room ownership or player markers.

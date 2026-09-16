@@ -8,8 +8,13 @@ Read the [code map](CODE_MAP.md), then only the topic needed for the task.
 - Active module: Minecraft **26.1.2**, version **0.3.4**, Java **25**.
   The version source is [gradle.properties](../gradle.properties).
   The user's existing version change to 0.3.4 is preserved.
+- The canonical mod icon is the user's supplied `KUNG.png` (167 x 167), copied
+  unchanged to `versions/mc26_1_2/src/main/resources/assets/kung/icon.png`.
+  Fabric metadata already references that resource, including the icon exposed
+  to Mod Menu/OneConfig. Future builds and branding should use this artwork.
+  The active-module build passed; the packaged PNG's SHA-256 matches the original.
 - Last code validation: full shared-root active-module build with Java 25,
-  **578 test cases: 577 passed, zero failures/errors, one skipped** because Windows
+  **603 test cases: 602 passed, zero failures/errors, one skipped** because Windows
   denies test symlink creation. Includes 71 update-package cases covering verified
   downloads, launcher ownership, atomic replacement, interruption/retry and a real
   separate helper waiting for a live parent JVM, plus local phase-time/PERSONAL BEST messages and score-before-victory final split PB confirmation,
@@ -18,8 +23,24 @@ Read the [code map](CODE_MAP.md), then only the topic needed for the task.
   Kernel milestone claims, per-floor split PB persistence, prediction toggle and both update modes,
   Visitor Alarm reminder replacement/chat mute and immediate offer-click acknowledgement,
   update polling/cooldown and independent Kernel donation/sidebar reconciliation.
+  Twelve added cases cover the shared settings catalog, enum/raw-key metadata and
+  native OneConfig controls, storage ownership, defaults, profile-write guard,
+  dependencies, numeric units, key capture and replacement of the old launcher card.
+  Twelve additional HUD cases cover shared placement, offset conversion, scale limits,
+  default-off visibility, native write guards and isolated class loading without
+  either optional API. The simplification pass removes the standalone HUD editor's
+  duplicate layout adapter, shares per-file sound controls and removes redundant
+  OneConfig registration state. Catalog labels, callbacks and ordering are unchanged;
+  one added regression verifies independent Arrow/Wither file settings and persistence.
+  Existing tests remain unchanged. The full Java 25 build and `git diff --check` pass.
+  VS Code's later unresolved Polyfrost test imports were traced to its stale Gradle
+  Build Server classpath (Polyfrost/Kotlin absent, importer crash logged). The local
+  workspace now selects the standard Gradle importer; the user confirms the red marks
+  cleared after reload. IDE annotation-processor discovery is also disabled to avoid
+  its separate Gradle 9 parallel-import failure; the active module has no processors.
+  Gradle test compilation and all 14 focused OneConfig tests pass independently.
   Artifact: `versions/mc26_1_2/build/libs/kung-26.1.2-0.3.4.jar`
-  (optional OneConfig/Mod Menu settings entrypoint, verified atomic updates and Modrinth ownership guard, exponentially weighted Kernel farming rate with configurable idle pause, per-floor split PBs and finish prediction, 6th Visitor Alarm with Wild Rose/flower/pumpkin timing, 30-second update polling and lobby reminders, Kernel donation/sidebar ordering and persisted pending gains,
+  (optional native OneConfig settings and HUD editor, new canonical Kung icon, verified atomic updates and Modrinth ownership guard, exponentially weighted Kernel farming rate with configurable idle pause, per-floor split PBs and finish prediction, 6th Visitor Alarm with Wild Rose/flower/pumpkin timing, 30-second update polling and lobby reminders, Kernel donation/sidebar ordering and persisted pending gains,
   Safari Uniques, Feast Hub farm option and profile persistence, Grand Feast Kernel balance, donation format/filter fix, yellow active tier and progress marker, Roman-tier parsing/diagnostics, menu-font resource fix, Feast Progress, menu redesign, dismissal fix, changelog history/command, chat-emote alias,
   realistic update preview, patch notes, update popup, Mimic discovery/diagnostics
   and unfinished-room score correction).
@@ -169,15 +190,30 @@ Read the [code map](CODE_MAP.md), then only the topic needed for the task.
   Live donation counting with the prior fix, marker appearance/milestone transitions,
   season/profile changes and HUD checks also remain open.
   See [Feast Progress](FEAST_PROGRESS.md).
-- Kung now registers an optional `modmenu` settings-screen factory, consumed by
-  Mod Menu and OneConfig's compatibility bridge (including the standalone API shim
-  verified inside published OneConfig 1.2.0). Selecting Kung opens the existing menu; Escape returns to
-  the calling screen. Kung remains usable without either optional mod, and config
-  storage/layout are unchanged. Individual OneConfig option search and shared HUD
-  editing are not included. The full Java 25 build passes; packaged metadata and
-  bridge class were inspected, with neither optional library bundled or required.
-  Live opening, return navigation and optional-mod startup
-  checks remain open. See [menu integration](DEVELOPMENT.md#optional-oneconfig--mod-menu-integration).
+- The user confirms the first OneConfig entrypoint opened Kung's own screen.
+  It now lazily registers native OneConfig 1.2.0 settings before the compatibility
+  bridge decides whether a screen redirect is needed. `KungSettings` supplies the
+  same six categories/22 features to both UIs. Native switches, numerical controls,
+  dropdowns, text, actions and all 12 loadout bindings use Kung's validated setters;
+  nested labels remain searchable. The custom-save hook prevents another config
+  file, and a profile-rebinding guard protects shared Kung values from automatic
+  reset. Explicit resets use fresh defaults. Single-input keys never become global
+  OneConfig actions. Custom sound list changes refresh native controls after leaving
+  the editor; dynamic status text may need reopening. The original `/kung` layout,
+  standalone Mod Menu access and `/kung hud` remain available without OneConfig.
+  The full Java 25 build and released-API tests pass. The packaged bridge, optional
+  dependencies and exact supplied icon were inspected; no profile was installed.
+  Native opening/search, live edits, profile switches, persistence, key capture,
+  sound-list refresh and optional-mod startup still need a game check.
+  The optional HUD integration registers at client-started after OneConfig initializes.
+  All five HUDs appear on its editor canvas, including disabled previews; moves,
+  25–300% scale and visibility use the same saved settings as `/kung hud`.
+  Dungeon Map additionally exposes independent 50–200% text scale. Kung owns placement
+  and blocks automatic OneConfig profile replay. Splits/Feast/Safari reuse their
+  renderers; Map/Superpairs use safe labeled bounds, without synthetic game observations.
+  External editing requires a loaded world in OneConfig 1.2.0. Live native HUD
+  drawing, drag/resize, visibility, text scale and returning to `/kung hud` remain open.
+  See [menu integration](DEVELOPMENT.md#optional-oneconfig--mod-menu-integration).
 - Kung settings now render at 80% size, with feature columns another 10% narrower
   (171 logical units; 28% narrower overall). Search, title, tooltips and menu modals
   use the same transform; input and scrolling use the matching menu coordinates.

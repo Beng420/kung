@@ -4,6 +4,7 @@ import static com.github.beng420.kung.util.GuiDraw.fill;
 
 import com.github.beng420.kung.KungMod;
 import com.github.beng420.kung.config.KungHudEditorScreen;
+import com.github.beng420.kung.config.KungHudEditorState;
 import com.github.beng420.kung.config.category.FeastConfig;
 import com.github.beng420.kung.feature.ConfigurableFeature;
 import com.github.beng420.kung.feature.Feature;
@@ -378,7 +379,8 @@ public final class FeastOverlayFeature extends ConfigurableFeature<FeastConfig> 
 
     private void render(GuiGraphicsExtractor graphics) {
         Minecraft client = Minecraft.getInstance();
-        if (!isEnabled() || client.player == null || client.screen instanceof KungHudEditorScreen) return;
+        if (!isEnabled() || client.player == null || client.screen instanceof KungHudEditorScreen
+            || KungHudEditorState.externalEditing()) return;
         // Consult fresh shared instance state at render time, including the first frame after a warp.
         updateContext();
         if (!visible(hypixel, inGarden, inHubFarm, config().showInHubFarm(), session.event())) return;

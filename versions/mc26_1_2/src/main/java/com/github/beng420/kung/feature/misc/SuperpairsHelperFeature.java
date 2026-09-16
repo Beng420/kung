@@ -2,6 +2,7 @@ package com.github.beng420.kung.feature.misc;
 
 import static com.github.beng420.kung.util.GuiDraw.fill;
 
+import com.github.beng420.kung.config.KungHudEditorState;
 import com.github.beng420.kung.config.category.MiscConfig;
 import com.github.beng420.kung.feature.ConfigurableFeature;
 import com.github.beng420.kung.feature.Feature;
@@ -80,7 +81,7 @@ public final class SuperpairsHelperFeature extends ConfigurableFeature<MiscConfi
 
     private static void renderAfterScreen(Screen screen, GuiGraphicsExtractor graphics) {
         Minecraft client = Minecraft.getInstance();
-        if (!INSTANCE.isEnabled() || screen != client.screen || !ensureSession(client)) {
+        if (KungHudEditorState.externalEditing() || !INSTANCE.isEnabled() || screen != client.screen || !ensureSession(client)) {
             return;
         }
         drawPanel(graphics, client, board.summary(), board.cards(), INSTANCE.config());

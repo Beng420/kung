@@ -8,9 +8,43 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import com.github.beng420.kung.config.category.SplitsConfig;
 import org.junit.Test;
 
 public final class SettingEntryTest {
+    @Test
+    public void dropdownSelectionWritesOnlyTheRequestedEnumAndKeepsCycling() {
+        AtomicReference<SplitsConfig.TimeFormat> selected = new AtomicReference<>(SplitsConfig.TimeFormat.MINUTES);
+        AtomicInteger writes = new AtomicInteger();
+        SettingEntry choice = SettingEntry.choice("Format", SplitsConfig.TimeFormat.values(), selected::get,
+            value -> { selected.set(value); writes.incrementAndGet(); }, SplitsConfig.TimeFormat::label)
+            .withTooltip("Clock format").withChildren(List.of(SettingEntry.group("Details")));
+        assertEquals(SplitsConfig.TimeFormat.values().length, choice.choices().size());
+        assertEquals(0, writes.get());
+        choice.intConsumer().accept(1);
+        assertEquals(SplitsConfig.TimeFormat.values()[1], selected.get());
+        assertEquals(1, writes.get());
+        assertEquals(1, choice.intSupplier().getAsInt());
+        assertEquals(choice.choices().get(1), choice.choiceSupplier().get());
+        choice.intConsumer().accept(-1);
+        choice.intConsumer().accept(99);
+        assertEquals(1, writes.get());
+        choice.cycleChoice().run();
+        assertEquals(2, writes.get());
+        assertEquals(choice.choices().get(choice.intSupplier().getAsInt()), choice.choiceSupplier().get());
+    }
+
+    @Test
+    public void keybindMetadataRetainsRawEncodingSeparatelyFromItsDisplayLabel() {
+        AtomicReference<String> raw = new AtomicReference<>("key:65:30");
+        SettingEntry keybind = SettingEntry.keybind("Loadout 1", () -> "A", raw::get, raw::set)
+            .withTooltip("Choose a key").withChildren(List.of());
+        assertEquals("A", keybind.textValue());
+        assertEquals("key:65:30", keybind.rawKeybindSupplier().get());
+        keybind.setText("mouse:3");
+        assertEquals("mouse:3", raw.get());
+    }
+
     @Test
     public void generatesTypedSettingsAndAppliesValidatedValues() {
         AtomicBoolean enabled = new AtomicBoolean();

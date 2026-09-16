@@ -24,6 +24,11 @@ tasks.withType(JavaCompile).configureEach {
 
 repositories {
   maven {
+    name = "Polyfrost"
+    url = uri("https://repo.polyfrost.org/releases")
+    content { includeGroup "org.polyfrost.oneconfig" }
+  }
+  maven {
     name = "Terraformers"
     url = uri("https://maven.terraformersmc.com/")
     content { includeGroup "com.terraformersmc" }
@@ -37,6 +42,13 @@ dependencies {
   implementation "net.fabricmc.fabric-api:fabric-api:${fabric_api_version_26_1_2}"
   // Optional screen entrypoint; neither Mod Menu nor OneConfig is bundled or required.
   compileOnly("com.terraformersmc:modmenu:18.0.0") { transitive = false }
+  ["config", "config-impl", "ui", "utils", "hud"].each { module ->
+    compileOnly("org.polyfrost.oneconfig:${module}:1.2.0") { transitive = false }
+    testImplementation("org.polyfrost.oneconfig:${module}:1.2.0") { transitive = false }
+  }
+  compileOnly("org.polyfrost.oneconfig:26.1-fabric:1.2.0") { transitive = false }
+  compileOnly "org.jetbrains.kotlin:kotlin-stdlib:2.4.10"
+  testImplementation "org.jetbrains.kotlin:kotlin-stdlib:2.4.10"
   include implementation("com.googlecode.soundlibs:mp3spi:1.9.5.4")
   include implementation("com.googlecode.soundlibs:tritonus-share:0.3.7.4")
   include implementation("javazoom:jlayer:1.0.1")

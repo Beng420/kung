@@ -4,6 +4,7 @@ import static com.github.beng420.kung.util.GuiDraw.fill;
 
 import com.github.beng420.kung.KungMod;
 import com.github.beng420.kung.config.KungConfig;
+import com.github.beng420.kung.config.KungHudEditorState;
 import com.github.beng420.kung.config.category.DungeonConfig;
 import com.github.beng420.kung.feature.ConfigurableFeature;
 import com.github.beng420.kung.feature.Feature;
@@ -128,7 +129,7 @@ public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> 
         DeltaTracker deltaTracker,
         DungeonStateTracker dungeonStateTracker
     ) {
-        if (!config().enabled() || !dungeonStateTracker.isInDungeonArea()) return;
+        if (KungHudEditorState.externalEditing() || !config().enabled() || !dungeonStateTracker.isInDungeonArea()) return;
         long started = System.nanoTime();
         try {
             renderUnsafe(graphics, deltaTracker, dungeonStateTracker);

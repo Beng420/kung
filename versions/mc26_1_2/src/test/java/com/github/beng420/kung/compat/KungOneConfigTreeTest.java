@@ -1,0 +1,189 @@
+package com.github.beng420.kung.compat;
+
+import static org.junit.Assert.*;
+
+import com.github.beng420.kung.config.KungSettings;
+import com.github.beng420.kung.config.SettingEntry;
+import com.github.beng420.kung.config.SettingKind;
+import com.github.beng420.kung.config.category.SplitsConfig;
+import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
+import org.junit.Test;
+import org.polyfrost.oneconfig.api.config.v1.Property;
+import org.polyfrost.oneconfig.api.config.v1.Tree;
+import org.polyfrost.oneconfig.api.config.v1.Visualizer;
+import org.polyfrost.oneconfig.api.config.v1.backend.Backend;
+import org.polyfrost.oneconfig.api.ui.v1.keybind.OneConfigKeybind;
+
+public final class KungOneConfigTreeTest {
+    @Test
+    public void wholeCatalogUsesNativeControlsAndHasNoForeignScreenAction() {
+        List<KungSettings.CategoryEntry> categories = KungSettings.defaults();
+        var bridge = new KungOneConfigTree(categories, () -> { }, () -> true);
+        Tree tree = bridge.tree();
+        assertEquals("kung", tree.getID());
+        assertNull(tree.getMetadata("on_click"));
+        assertNull(tree.getMetadata(Backend.UI_ONLY_METADATA));
+        assertEquals("assets/kung/icon.png", tree.getMetadata("icon_path"));
+        int expected = categories.stream().mapToInt(category -> category.features().stream()
+            .mapToInt(feature -> 1 + countControls(feature.settings())).sum()).sum();
+        assertEquals(expected, tree.map.size());
+        assertEquals(6, tree.map.values().stream().map(node -> node.getMetadata("category")).distinct().count());
+        long keybinds = tree.map.values().stream().filter(node -> node.getMetadata("visualizer") == Visualizer.KeybindVisualizer.class).count();
+        assertEquals(12, keybinds);
+        assertEquals(Property.Display.DISABLED, property(tree, "Crypts", "Enabled").getDisplay());
+    }
+
+    @Test
+    public void liveControlsUseSameBackingValuesAndProfileResetAttemptsAreIgnored() {
+        AtomicBoolean enabled = new AtomicBoolean();
+        AtomicBoolean writesAllowed = new AtomicBoolean(true);
+        AtomicInteger writes = new AtomicInteger();
+        AtomicInteger value = new AtomicInteger(14);
+        var feature = feature("Feature", enabled, () -> { enabled.set(!enabled.get()); writes.incrementAndGet(); },
+            List.of(SettingEntry.stepper("Number", value::get, value::set, 0, 28, 2)));
+        var bridge = create(feature, writesAllowed);
+        Property<?> master = property(bridge.tree(), "Feature", "Enabled");
+        master.setAs(true);
+        master.setAs(true);
+        assertTrue(enabled.get());
+        assertEquals(1, writes.get());
+        enabled.set(false);
+        assertEquals(false, master.get());
+        Property<?> number = property(bridge.tree(), "Feature", "Number");
+        number.setAs(15);
+        assertEquals(16, value.get());
+        number.setAs(999);
+        assertEquals(28, value.get());
+        writesAllowed.set(false);
+        master.setAs(true);
+        number.setAs(0);
+        assertFalse(enabled.get());
+        assertEquals(28, value.get());
+        writesAllowed.set(true);
+        master.setAs(true);
+        assertEquals(2, writes.get());
+    }
+
+    @Test
+    public void enumsAndNestedDependenciesFollowValidatedSettingsWithoutCycling() {
+        AtomicBoolean prediction = new AtomicBoolean(true);
+        AtomicReference<SplitsConfig.PredictionMode> selected = new AtomicReference<>(SplitsConfig.PredictionMode.PHASE_END);
+        AtomicInteger writes = new AtomicInteger();
+        var choice = SettingEntry.choice("Update", SplitsConfig.PredictionMode.values(), selected::get,
+            value -> { selected.set(value); writes.incrementAndGet(); }, SplitsConfig.PredictionMode::label);
+        var bridge = create(feature("Splits", new AtomicBoolean(), () -> { }, List.of(
+            SettingEntry.toggle("Prediction", prediction::get, () -> prediction.set(!prediction.get())).withChildren(List.of(choice))
+        )), new AtomicBoolean(true));
+        Property<?> nativeChoice = property(bridge.tree(), "Splits", "Prediction / Update");
+        assertArrayEquals(new String[] {"Phase End", "Live"}, nativeChoice.getMetadata("options"));
+        nativeChoice.setAs(1);
+        assertEquals(SplitsConfig.PredictionMode.LIVE, selected.get());
+        assertEquals(1, writes.get());
+        property(bridge.tree(), "Splits", "Prediction").setAs(false);
+        assertEquals(Property.Display.DISABLED, nativeChoice.getDisplay());
+        property(bridge.tree(), "Splits", "Prediction").setAs(true);
+        assertEquals(Property.Display.SHOWN, nativeChoice.getDisplay());
+    }
+
+    @Test
+    public void numericUnitsAndDefaultsMatchKungRatherThanRawStorageUnits() {
+        var defaults = new KungOneConfigTree(KungSettings.defaults(), () -> { }, () -> true);
+        Tree tree = defaults.tree();
+        assertEquals(70, property(tree, "6th Visitor Alarm", "Volume (%)").get());
+        assertEquals(0.5, (Double) property(tree, "Blood rush helper", "Title Time (s)").get(), 0.00001);
+        Property<?> volume = property(tree, "Custom Sounds", "Arrow Default Volume (x)");
+        assertEquals(1.0, (Double) volume.get(), 0.00001);
+        assertEquals(0.1f, (Float) volume.getMetadata("step"), 0.00001f);
+        Property<?> pitch = property(tree, "Custom Sounds", "Arrow Default Pitch (x)");
+        assertEquals(0.25f, (Float) pitch.getMetadata("min"), 0.00001f);
+        assertEquals(0.05f, (Float) pitch.getMetadata("step"), 0.00001f);
+        var live = new KungOneConfigTree(KungSettings.defaults(), () -> { }, () -> true);
+        live.applyDefaults(defaults);
+        assertEquals(false, property(live.tree(), "Feast Progress", "Enabled").getMetadata("default"));
+        assertEquals("60", property(live.tree(), "Feast Progress", "Kernel Timeout (s)").getMetadata("default"));
+    }
+
+    @Test
+    public void nativeBackendReplacesOldLauncherCardWithoutReadingOrWritingAnotherConfig() {
+        AtomicInteger saves = new AtomicInteger();
+        AtomicBoolean allowed = new AtomicBoolean(true);
+        var bridge = new KungOneConfigTree(KungSettings.defaults(), saves::incrementAndGet, allowed::get);
+        var backend = new NoDiskBackend();
+        var oldCard = Tree.tree("kung");
+        oldCard.addMetadata(Backend.UI_ONLY_METADATA, true);
+        oldCard.addMetadata("on_click", (Runnable) () -> fail("Old Kung overlay callback must not survive"));
+        backend.register(oldCard);
+        Tree registered = backend.register(bridge.tree()).get();
+        assertSame(bridge.tree(), registered);
+        assertNull(registered.getMetadata("on_click"));
+        assertTrue(backend.save(registered));
+        assertEquals(1, saves.get());
+        allowed.set(false);
+        backend.save(registered);
+        assertEquals(1, saves.get());
+    }
+
+    @Test
+    public void mouseKeyboardAndClearingKeepKungInputOwnershipAndExistingScanCodes() {
+        AtomicReference<String> raw = new AtomicReference<>("key:65:30");
+        var setting = SettingEntry.keybind("Loadout", () -> "A", raw::get, raw::set);
+        var bridge = create(feature("Loadouts", new AtomicBoolean(), () -> { }, List.of(setting)), new AtomicBoolean(true));
+        Property<?> property = property(bridge.tree(), "Loadouts", "Loadout");
+        assertEquals(true, property.getMetadata("singleKey"));
+        assertEquals(true, property.getMetadata("oc_no_mc_mirror"));
+        OneConfigKeybind initial = (OneConfigKeybind) property.get();
+        assertSame(initial, property.get());
+        assertArrayEquals(new int[] {65}, initial.getKeyCodes());
+        assertFalse(initial.getAction().invoke(true));
+        property.setAs(new OneConfigKeybind(new int[] {65}, new int[0], (byte) 0, 0, pressed -> false));
+        assertEquals("key:65:30", raw.get());
+        property.setAs(new OneConfigKeybind(new int[0], new int[] {3}, (byte) 0, 0, pressed -> false));
+        assertEquals("mouse:3", raw.get());
+        raw.set("key:66:48");
+        assertArrayEquals(new int[] {66}, ((OneConfigKeybind) property.get()).getKeyCodes());
+        property.setAs(new OneConfigKeybind(new int[] {67}, new int[0], (byte) 0, 0, pressed -> false));
+        assertEquals("key:67:0", raw.get());
+        property.setAs(new OneConfigKeybind(new int[0], new int[0], (byte) 0, 0, pressed -> false));
+        assertEquals("", raw.get());
+    }
+
+    @Test
+    public void flatteningRetainsSimilarlyNamedFileGroupsAndActionButtons() {
+        AtomicInteger actions = new AtomicInteger();
+        var first = SettingEntry.group("Arrow: a-b.wav").withChildren(List.of(SettingEntry.button("Test", "Play", actions::incrementAndGet)));
+        var second = SettingEntry.group("Arrow: a_b.wav").withChildren(List.of(SettingEntry.button("Test", "Play", actions::incrementAndGet)));
+        var bridge = create(feature("Custom Sounds", new AtomicBoolean(), () -> { }, List.of(first, second)), new AtomicBoolean(true));
+        assertEquals(3, bridge.tree().map.size());
+        Property<?> button = property(bridge.tree(), "Custom Sounds", "Arrow: a-b.wav / Test");
+        assertEquals(Visualizer.ButtonVisualizer.class, button.getMetadata("visualizer"));
+        ((Runnable) button.getMetadata("runnable")).run();
+        assertEquals(1, actions.get());
+    }
+
+    private static int countControls(List<SettingEntry> settings) {
+        return settings.stream().mapToInt(setting -> (setting.kind() == SettingKind.GROUP ? 0 : 1) + countControls(setting.children())).sum();
+    }
+
+    private static KungOneConfigTree create(KungSettings.FeatureEntry feature, AtomicBoolean allowed) {
+        return new KungOneConfigTree(List.of(new KungSettings.CategoryEntry("Category", List.of(feature))), () -> { }, allowed::get);
+    }
+
+    private static KungSettings.FeatureEntry feature(String name, AtomicBoolean enabled, Runnable toggle, List<SettingEntry> settings) {
+        return new KungSettings.FeatureEntry(() -> name, enabled::get, () -> true, toggle, settings, false, List.of(), false);
+    }
+
+    private static Property<?> property(Tree tree, String feature, String title) {
+        return tree.map.values().stream().filter(node -> title.equals(node.getTitle()) && feature.equals(node.getMetadata("subcategory")))
+            .map(node -> (Property<?>) node).findFirst().orElseThrow(() -> new AssertionError(feature + " / " + title));
+    }
+
+    private static final class NoDiskBackend extends Backend {
+        @Override protected Tree load0(String id) { throw new AssertionError("OneConfig must not load over Kung settings"); }
+        @Override protected boolean save0(Tree tree) { throw new AssertionError("OneConfig must not save a separate Kung config"); }
+        @Override protected boolean delete0(Tree tree) { throw new AssertionError("OneConfig must not delete Kung settings"); }
+        @Override protected boolean corrupt0(Tree tree) { throw new AssertionError("OneConfig must not back up Kung settings"); }
+    }
+}

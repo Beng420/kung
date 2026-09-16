@@ -2,6 +2,7 @@ package com.github.beng420.kung.feature.dungeon;
 
 import com.github.beng420.kung.KungMod;
 import com.github.beng420.kung.config.KungHudEditorScreen;
+import com.github.beng420.kung.config.KungHudEditorState;
 import com.github.beng420.kung.config.category.SplitsConfig;
 import com.github.beng420.kung.feature.ConfigurableFeature;
 import com.github.beng420.kung.feature.Feature;
@@ -43,11 +44,19 @@ public final class DungeonSplitsOverlayFeature extends ConfigurableFeature<Split
     }
 
     private void render(GuiGraphicsExtractor graphics) {
+        if (KungHudEditorState.externalEditing()) return;
         SplitsConfig config = config();
         DungeonSplitTracker tracker = dungeonStateTracker.splitTracker();
         boolean editing = Minecraft.getInstance().screen instanceof KungHudEditorScreen;
         if (!config.enabled() || !isVisible(editing, dungeonStateTracker.isInDungeonArea(), tracker)) return;
+        draw(graphics, config, tracker, editing);
+    }
 
+    public static void drawPreview(GuiGraphicsExtractor graphics, SplitsConfig config, DungeonSplitTracker tracker) {
+        draw(graphics, config, tracker, true);
+    }
+
+    private static void draw(GuiGraphicsExtractor graphics, SplitsConfig config, DungeonSplitTracker tracker, boolean editing) {
         boolean example = editing && !tracker.started();
         String[] names = displayedNames(tracker);
         List<DungeonSplitTracker.CompletedSplit> completed = tracker.completedSplits();

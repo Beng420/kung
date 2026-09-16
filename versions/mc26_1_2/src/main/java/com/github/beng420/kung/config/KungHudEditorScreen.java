@@ -2,17 +2,13 @@ package com.github.beng420.kung.config;
 
 import static com.github.beng420.kung.util.GuiDraw.fill;
 
-import com.github.beng420.kung.feature.dungeon.DungeonMapFeature;
-import com.github.beng420.kung.feature.dungeon.DungeonSplitsOverlayFeature;
+import com.github.beng420.kung.config.KungHudLayout.Bounds;
+import com.github.beng420.kung.config.KungHudLayout.Entry;
 import com.github.beng420.kung.feature.dungeon.DungeonStateTracker;
 import com.github.beng420.kung.feature.garden.FeastOverlayFeature;
-import com.github.beng420.kung.feature.misc.SuperpairsHelperFeature;
 import com.github.beng420.kung.feature.safari.SafariOverlayFeature;
 import com.github.beng420.kung.ui.UiTheme;
-import java.util.ArrayList;
 import java.util.List;
-import java.util.function.IntConsumer;
-import java.util.function.IntSupplier;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.screens.Screen;
@@ -35,7 +31,7 @@ public final class KungHudEditorScreen extends Screen {
     private static final int SLIDER_HEIGHT = 18;
 
     private final DungeonStateTracker dungeonStateTracker;
-    private HudEntry dragging;
+    private Entry dragging;
     private int dragOffsetX;
     private int dragOffsetY;
     private SettingEntry draggingSlider;
@@ -56,28 +52,25 @@ public final class KungHudEditorScreen extends Screen {
         graphics.text(font, "Kung HUD Editor", 10, 10, TEXT, true);
         graphics.text(font, "Drag to move. Scroll to resize. Right click for settings.", 10, 22, MUTED, true);
 
-        List<HudEntry> entries = hudEntries();
+        List<Entry> entries = hudEntries();
 
-        HudEntry hovered = inMapControls(mouseX, mouseY) ? null : hoveredEntry(entries, mouseX, mouseY);
-        HudEntry currentDragging = currentEntryFor(dragging, entries);
-        for (HudEntry entry : entries) {
-            boolean isHovered = hovered != null && hovered.featureName().equals(entry.featureName());
-            drawHudBox(
-                graphics,
-                entry,
-                isHovered,
-                currentDragging != null && currentDragging.featureName().equals(entry.featureName())
-            );
+        Entry hovered = inMapControls(mouseX, mouseY) ? null : hoveredEntry(entries, mouseX, mouseY);
+        Entry currentDragging = null;
+        for (Entry entry : entries) {
+            boolean isDragging = dragging != null && dragging.id().equals(entry.id());
+            if (isDragging) currentDragging = entry;
+            drawHudBox(graphics, entry, hovered == entry, isDragging);
         }
 
         if (currentDragging != null) {
+            Bounds bounds = currentDragging.bounds();
             String coords = "x " + currentDragging.configX().getAsInt()
                 + "  y " + currentDragging.configY().getAsInt();
             graphics.text(
                 font,
                 coords,
-                currentDragging.x() + 4,
-                currentDragging.y() + currentDragging.height() + 5,
+                bounds.x() + 4,
+                bounds.y() + bounds.height() + 5,
                 TEXT,
                 true
             );
@@ -108,16 +101,17 @@ public final class KungHudEditorScreen extends Screen {
             return true;
         }
 
-        HudEntry entry = hoveredEntry(hudEntries(), mouseX, mouseY);
+        Entry entry = hoveredEntry(hudEntries(), mouseX, mouseY);
         if (entry != null) {
             if (button == 0) {
                 dragging = entry;
-                dragOffsetX = mouseX - entry.x();
-                dragOffsetY = mouseY - entry.y();
+                // Capture the content origin so resizing during a drag preserves its anchor.
+                dragOffsetX = mouseX - entry.configX().getAsInt();
+                dragOffsetY = mouseY - entry.configY().getAsInt();
                 return true;
             }
             if (button == 1) {
-                Minecraft.getInstance().setScreen(new KungConfigScreen(entry.featureName()));
+                Minecraft.getInstance().setScreen(new KungConfigScreen(entry.name()));
                 return true;
             }
         }
@@ -135,10 +129,8 @@ public final class KungHudEditorScreen extends Screen {
             return super.mouseDragged(event, dragX, dragY);
         }
 
-        int nextX = (int) event.x() - dragOffsetX - dragging.configOffsetX();
-        int nextY = (int) event.y() - dragOffsetY - dragging.configOffsetY();
-        dragging.setX().accept(nextX);
-        dragging.setY().accept(nextY);
+        dragging.setX().accept((int) event.x() - dragOffsetX);
+        dragging.setY().accept((int) event.y() - dragOffsetY);
         return true;
     }
 
@@ -147,13 +139,13 @@ public final class KungHudEditorScreen extends Screen {
         if (scrollY == 0 || inMapControls((int) mouseX, (int) mouseY)) {
             return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
         }
-        HudEntry hovered = hoveredEntry(hudEntries(), (int) mouseX, (int) mouseY);
-        if (hovered == null || hovered.setScale() == null || hovered.scale() == null) {
+        Entry hovered = hoveredEntry(hudEntries(), (int) mouseX, (int) mouseY);
+        if (hovered == null) {
             return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
         }
 
         int step = scrollY > 0 ? 5 : -5;
-        hovered.setScale().accept(Math.clamp(hovered.scale().getAsInt() + step, 25, 300));
+        hovered.setScalePercent().accept(Math.clamp(hovered.scalePercent().getAsInt() + step, 25, 300));
         return true;
     }
 
@@ -179,95 +171,29 @@ public final class KungHudEditorScreen extends Screen {
         return super.keyPressed(event);
     }
 
-    private List<HudEntry> hudEntries() {
-        KungConfig config = KungConfig.get();
-        List<HudEntry> entries = new ArrayList<>();
-
-        DungeonMapFeature.OverlayBounds dungeonMapBounds = DungeonMapFeature.overlayBounds(config.dungeon);
-        entries.add(new HudEntry(
-            "Dungeon Map",
-            dungeonMapBounds.x(),
-            dungeonMapBounds.y(),
-            dungeonMapBounds.width(),
-            dungeonMapBounds.height(),
-            dungeonMapBounds.x() - config.dungeon.x(),
-            dungeonMapBounds.y() - config.dungeon.y(),
-            config.dungeon::x,
-            config.dungeon::y,
-            config.dungeon::setX,
-            config.dungeon::setY,
-            config.dungeon::scale,
-            config.dungeon::setScale
-        ));
-
-        DungeonSplitsOverlayFeature.OverlayBounds splitsBounds =
-            DungeonSplitsOverlayFeature.overlayBounds(config.splits, dungeonStateTracker.splitTracker());
-        entries.add(new HudEntry(
-            "Splits Overlay",
-            splitsBounds.x(),
-            splitsBounds.y(),
-            splitsBounds.width(),
-            splitsBounds.height(),
-            splitsBounds.x() - config.splits.x(),
-            splitsBounds.y() - config.splits.y(),
-            config.splits::x,
-            config.splits::y,
-            config.splits::setX,
-            config.splits::setY,
-            config.splits::scale,
-            config.splits::setScale
-        ));
-
-        SuperpairsHelperFeature.OverlayBounds superpairsBounds = SuperpairsHelperFeature.overlayBounds(config.misc);
-        entries.add(new HudEntry(
-            "Superpairs Helper",
-            superpairsBounds.x(),
-            superpairsBounds.y(),
-            superpairsBounds.width(),
-            superpairsBounds.height(),
-            superpairsBounds.x() - config.misc.superpairsHelperX(),
-            superpairsBounds.y() - config.misc.superpairsHelperY(),
-            config.misc::superpairsHelperX,
-            config.misc::superpairsHelperY,
-            config.misc::setSuperpairsHelperX,
-            config.misc::setSuperpairsHelperY,
-            config.misc::superpairsHelperScale,
-            config.misc::setSuperpairsHelperScale
-        ));
-
-        FeastOverlayFeature.OverlayBounds feastBounds = FeastOverlayFeature.overlayBounds(config.feast);
-        entries.add(new HudEntry(
-            "Feast Progress", feastBounds.x(), feastBounds.y(), feastBounds.width(), feastBounds.height(),
-            0, 0, config.feast::x, config.feast::y, config.feast::setX, config.feast::setY,
-            config.feast::scale, config.feast::setScale
-        ));
-        SafariOverlayFeature.OverlayBounds safariBounds = SafariOverlayFeature.overlayBounds(config.safari);
-        entries.add(new HudEntry(
-            "Safari Uniques", safariBounds.x(), safariBounds.y(), safariBounds.width(), safariBounds.height(),
-            0, 0, config.safari::x, config.safari::y, config.safari::setX, config.safari::setY,
-            config.safari::scale, config.safari::setScale
-        ));
-        return entries;
+    private List<Entry> hudEntries() {
+        return KungHudLayout.entries(KungConfig.get(), dungeonStateTracker);
     }
 
-    private void drawHudBox(GuiGraphicsExtractor graphics, HudEntry entry, boolean hovered, boolean draggingEntry) {
+    private void drawHudBox(GuiGraphicsExtractor graphics, Entry entry, boolean hovered, boolean draggingEntry) {
+        Bounds bounds = entry.bounds();
         int color = draggingEntry ? HUD_BOX_DRAG : hovered ? HUD_BOX_HOVER : HUD_BOX;
-        fill(graphics, entry.x(), entry.y(), entry.x() + entry.width(), entry.y() + entry.height(), color);
-        fill(graphics, entry.x(), entry.y(), entry.x() + entry.width(), entry.y() + 1, BORDER);
-        fill(graphics, entry.x(), entry.y() + entry.height() - 1, entry.x() + entry.width(), entry.y() + entry.height(), BORDER);
-        fill(graphics, entry.x(), entry.y(), entry.x() + 1, entry.y() + entry.height(), BORDER);
-        fill(graphics, entry.x() + entry.width() - 1, entry.y(), entry.x() + entry.width(), entry.y() + entry.height(), BORDER);
-        if (entry.featureName().equals("Safari Uniques")) {
+        fill(graphics, bounds.x(), bounds.y(), bounds.x() + bounds.width(), bounds.y() + bounds.height(), color);
+        fill(graphics, bounds.x(), bounds.y(), bounds.x() + bounds.width(), bounds.y() + 1, BORDER);
+        fill(graphics, bounds.x(), bounds.y() + bounds.height() - 1, bounds.x() + bounds.width(), bounds.y() + bounds.height(), BORDER);
+        fill(graphics, bounds.x(), bounds.y(), bounds.x() + 1, bounds.y() + bounds.height(), BORDER);
+        fill(graphics, bounds.x() + bounds.width() - 1, bounds.y(), bounds.x() + bounds.width(), bounds.y() + bounds.height(), BORDER);
+        if (entry.id().equals("safari_uniques")) {
             SafariOverlayFeature.drawPreview(graphics, KungConfig.get().safari);
-        } else if (entry.featureName().equals("Feast Progress")) {
+        } else if (entry.id().equals("feast_progress")) {
             FeastOverlayFeature.drawPreview(graphics, KungConfig.get().feast);
         } else {
-            drawCentered(graphics, entry.featureName(), entry.x() + entry.width() / 2, entry.y() + entry.height() / 2 - 4);
+            drawCentered(graphics, entry.name(), bounds.x() + bounds.width() / 2, bounds.y() + bounds.height() / 2 - 4);
         }
     }
 
-    private void drawTooltip(GuiGraphicsExtractor graphics, HudEntry entry, int mouseX, int mouseY) {
-        String lineOne = entry.featureName() + "  " + entry.scale().getAsInt() + "%";
+    private void drawTooltip(GuiGraphicsExtractor graphics, Entry entry, int mouseX, int mouseY) {
+        String lineOne = entry.name() + "  " + entry.scalePercent().getAsInt() + "%";
         String lineTwo = "Drag to move, scroll to resize, right click for settings";
         int tooltipWidth = Math.max(font.width(lineOne), font.width(lineTwo)) + 10;
         int x = Math.min(mouseX + 12, width - tooltipWidth - 4);
@@ -316,23 +242,10 @@ public final class KungHudEditorScreen extends Screen {
             && mouseY >= mapControlsY() && mouseY < mapControlsY() + MAP_CONTROLS_HEIGHT;
     }
 
-    private static HudEntry currentEntryFor(HudEntry target, List<HudEntry> entries) {
-        if (target == null) {
-            return null;
-        }
-
-        for (HudEntry entry : entries) {
-            if (entry.featureName().equals(target.featureName())) {
-                return entry;
-            }
-        }
-        return null;
-    }
-
-    private static HudEntry hoveredEntry(List<HudEntry> entries, int mouseX, int mouseY) {
+    private static Entry hoveredEntry(List<Entry> entries, int mouseX, int mouseY) {
         for (int index = entries.size() - 1; index >= 0; index--) {
-            HudEntry entry = entries.get(index);
-            if (contains(entry, mouseX, mouseY)) {
+            Entry entry = entries.get(index);
+            if (contains(entry.bounds(), mouseX, mouseY)) {
                 return entry;
             }
         }
@@ -343,27 +256,10 @@ public final class KungHudEditorScreen extends Screen {
         graphics.text(font, text, centerX - font.width(text) / 2, y, TEXT, true);
     }
 
-    private static boolean contains(HudEntry entry, int mouseX, int mouseY) {
-        return mouseX >= entry.x()
-            && mouseX < entry.x() + entry.width()
-            && mouseY >= entry.y()
-            && mouseY < entry.y() + entry.height();
-    }
-
-    private record HudEntry(
-        String featureName,
-        int x,
-        int y,
-        int width,
-        int height,
-        int configOffsetX,
-        int configOffsetY,
-        IntSupplier configX,
-        IntSupplier configY,
-        IntConsumer setX,
-        IntConsumer setY,
-        IntSupplier scale,
-        IntConsumer setScale
-    ) {
+    private static boolean contains(Bounds bounds, int mouseX, int mouseY) {
+        return mouseX >= bounds.x()
+            && mouseX < bounds.x() + bounds.width()
+            && mouseY >= bounds.y()
+            && mouseY < bounds.y() + bounds.height();
     }
 }

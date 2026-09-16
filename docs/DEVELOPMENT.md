@@ -31,6 +31,25 @@ environment, request the required tool permissions rather than repeatedly runnin
 a build already known to be blocked. A build does not install its JAR. When installation
 is requested, ensure the target game is stopped before replacing the mod.
 
+### VS Code dependency import errors
+
+If Gradle compiles the tests but VS Code cannot resolve `org.polyfrost` or `kotlin`,
+check the Java language server's imported classpath. The Gradle Build Server can
+retain an older dependency list after an import failure. This workspace uses these
+local, gitignored `.vscode/settings.json` overrides:
+
+```json
+"java.gradle.buildServer.enabled": "off",
+"java.import.gradle.annotationProcessing.enabled": false
+```
+
+The first selects the standard Java Gradle importer. The second avoids its
+[Gradle 9 parallel-import bug](https://github.com/eclipse-jdtls/eclipse.jdt.ls/issues/3807);
+the active module has no annotation processors. These settings do not disable Java
+diagnostics or change Gradle builds. Run **Java: Clean Java Language Server Workspace**
+and choose **Reload and delete** to rebuild an existing IDE cache. Keep test
+dependencies in the active module's Gradle file.
+
 ## Diagnostics
 
 `KungDebugRecorder` keeps an in-memory trace ring buffer. After reproducing an issue:
@@ -81,28 +100,74 @@ migrations, master toggles and HUD layout unless the task changes their behavior
 
 ### Optional OneConfig / Mod Menu integration
 
-`compat/KungModMenu` supplies the existing `KungConfigScreen` through the standard
-`modmenu` entrypoint. Mod Menu is a compile-only dependency; neither Mod Menu nor
-OneConfig is bundled or required by Kung. The compatibility class is not referenced
-by Kung's main/client initialization. With both absent, `/kung` and `/kung hud`
-remain the normal entrypoints.
+`config/KungSettings` is the shared catalog for the existing `KungConfigScreen`
+and native OneConfig controls. It exposes six categories and 22 feature entries,
+including enum choices, nested settings, actions, help and raw loadout bindings.
+Keep new settings in this catalog so both menus reach the same validated setters.
 
-OneConfig's Mod Menu compatibility displays a Kung card that opens the unchanged
-Kung settings screen. Published OneConfig **1.2.0** for 26.1.x also contains a Mod
-Menu API shim when Mod Menu is absent; older releases may need a compatible Mod
-Menu installation. The published JAR was inspected for this shim and its factory
-bridge; this does not replace a live Minecraft compatibility check.
-Use OneConfig and, if needed, Mod Menu releases compatible with Fabric 26.1.2.
-The same entrypoint works directly from Mod Menu's Kung configuration button.
-The factory creates a fresh screen on demand and retains the supplied parent;
-Escape returns to that parent after closing any active Kung popup/editor first.
-Command-opened screens keep their existing return-to-game behavior.
+`compat/KungModMenu` retains the standard `modmenu` screen factory. When OneConfig
+is present, that factory lazily registers `KungOneConfigTree` under `kung` before
+returning. OneConfig **1.2.0** recognizes the native tree and opens its own settings
+page instead of the Kung screen; its published standalone Mod Menu API shim does
+this too, without a separate Mod Menu install. The native tree has no `on_click`
+screen redirect or `ui_only` flag. Flat property IDs contain no path separators;
+category/subcategory metadata and ancestor labels retain nested settings in both
+the native page and global search (OneConfig only renders one tree nesting level).
 
-All controls continue to use Kung's existing config and layout. Individual settings
-are not registered in OneConfig's global option search, and Kung HUDs still use
-`/kung hud`. Those require separate integration beyond the menu entrypoint.
-Live validation should cover opening from OneConfig and Mod Menu, return navigation,
-setting persistence, the title screen, and startup with both optional mods absent.
+Both APIs are compile-only and are not bundled or required by Kung. All OneConfig
+class references stay behind optional-mod checks. `KungOneConfigBridge` also registers
+the native settings and HUD wrappers at `CLIENT_STARTED`, after OneConfig initializes;
+without OneConfig, neither native integration class is loaded. Incompatible optional API versions
+log a warning and retain the existing screen factory. `/kung`, standalone Mod Menu
+and `/kung hud` continue to open Kung's existing screens. Escape retains the caller;
+the explicit changelog action also returns to OneConfig when its Kung dialog closes.
+
+OneConfig properties delegate to Kung's existing getters and setters. `custom_save`
+bypasses OneConfig loading/writing a second Kung config. Setters ignore OneConfig's
+profile-rebinding defaults pass, so its profiles cannot reset shared Kung values.
+Explicit resets use a fresh Kung defaults catalog. Per-file audio controls absent
+from that defaults catalog reset to 1x. Display units are seconds, percent or audio
+multipliers rather than their stored tenths/hundredths. Child-toggle dependencies
+refresh after edits. Loadout keybinds use native single-input capture, but opt out
+of OneConfig global binding/Minecraft-control registration; Kung retains execution
+ownership in the loadout menu. Existing scan codes survive unchanged-key edits.
+
+Custom audio file-list changes rebuild a fresh native tree after leaving OneConfig,
+at most once per second, refreshing search and file-specific controls without
+interrupting text entry. HUD panels retain and refresh their own linked controls
+across that rebuild. Dynamic status text may need reopening the page because
+OneConfig caches its UI values.
+
+`KungHudLayout` supplies the same five HUD bounds and config setters to `/kung hud`
+and the optional OneConfig HUD editor. Native wrappers use GUI coordinates, subtract
+the map/Superpairs border offset when moving, and convert scale multipliers to
+Kung's 25–300% range. Map text scale remains independent (50–200%) in its native HUD
+settings. Each HUD links its native feature settings; visibility controls the original
+feature toggle. Registration and previews never enable a feature. Disabled HUDs
+appear on the canvas with OneConfig's disabled styling; these single-instance wrappers
+are existing canvas entries, not additional copies in the Add library.
+
+Kung retains placement ownership (`ownsPlacement=true`) and profile-rebinding guards;
+position, scale and visibility setters save through Kung even for spinner/resize edits
+that do not trigger OneConfig's drag-end callback. The editor redraws the existing
+Splits, Feast and Safari previews above its background. Map and Superpairs use the same
+safe labeled bounds as `/kung hud`, without creating dungeon/container observations.
+Normal HUD drawing pauses while those external previews render. Gameplay appearance
+and the existing standalone editor layout remain unchanged. OneConfig 1.2.0 can only
+edit external HUD placement in a loaded world, not from the title screen.
+
+Live validation still needs native opening/search, all control kinds, persistence,
+profile switches, audio-list refresh, title-screen settings access, optional-mod absence,
+and all five HUDs' drag/resize/visibility, map text scale and switching between editors.
+
+`KungSettingsTest` checks catalog coverage and persistence shared with the original
+menu. `KungOneConfigTreeTest` exercises the released OneConfig API for native
+control coverage, guarded writes, units/defaults, dependencies, keys, actions and
+replacement of the old launcher card without additional config-file I/O.
+`KungHudLayoutTest` and `KungOneConfigHudTest` cover offset-aware placement, live
+bounds, scale limits, shared values, default-off visibility and guarded native writes.
+An isolated class-loader test also loads the client entrypoints while both optional
+APIs are unavailable; this does not replace a full standalone game-start check.
 
 API references: [Mod Menu](https://github.com/TerraformersMC/ModMenu/tree/26.1#java-api),
 [OneConfig with Mod Menu](https://github.com/Polyfrost/OneConfig/blob/v1/minecraft/src/main/kotlin/org/polyfrost/oneconfig/internal/compat/ModMenuCompat.kt),

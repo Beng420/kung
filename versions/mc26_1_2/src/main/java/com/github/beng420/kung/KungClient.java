@@ -1,6 +1,7 @@
 package com.github.beng420.kung;
 
 import com.github.beng420.kung.command.KungCommands;
+import com.github.beng420.kung.compat.KungOneConfigBridge;
 import com.github.beng420.kung.config.KungConfig;
 import com.github.beng420.kung.feature.FeatureRegistry;
 import com.github.beng420.kung.feature.dungeon.DungeonStateTracker;
@@ -23,6 +24,7 @@ public final class KungClient implements ClientModInitializer {
         KungConfig.INSTANCE.load();
         ServiceRegistry.initializeClient(services);
         FeatureRegistry.initializeClient(services);
+        KungOneConfigBridge.initialize(dungeonStateTracker);
         KungCommands.register(services);
         ClientLifecycleEvents.CLIENT_STOPPING.register(client -> {
             KungUpdater.INSTANCE.releaseNotes().flushAcknowledgement();
