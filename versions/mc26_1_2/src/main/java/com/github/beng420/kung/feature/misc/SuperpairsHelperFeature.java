@@ -1,11 +1,8 @@
 package com.github.beng420.kung.feature.misc;
 
-import static com.github.beng420.kung.util.GuiDraw.fill;
-
 import com.github.beng420.kung.config.KungHudEditorState;
 import com.github.beng420.kung.config.category.MiscConfig;
 import com.github.beng420.kung.feature.ConfigurableFeature;
-import com.github.beng420.kung.feature.Feature;
 import com.github.beng420.kung.feature.misc.SuperpairsBoard.CardCount;
 import com.github.beng420.kung.feature.misc.SuperpairsBoard.PairStats;
 import com.github.beng420.kung.util.KungDebugRecorder;
@@ -24,7 +21,7 @@ import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.item.ItemStack;
 
-public final class SuperpairsHelperFeature extends ConfigurableFeature<MiscConfig> implements Feature {
+public final class SuperpairsHelperFeature extends ConfigurableFeature<MiscConfig> {
     public static final SuperpairsHelperFeature INSTANCE = new SuperpairsHelperFeature();
     private static final int PLAYER_INVENTORY_SLOT_COUNT = 36;
     private static final int MAX_CARD_LINES = 14;
@@ -264,8 +261,8 @@ public final class SuperpairsHelperFeature extends ConfigurableFeature<MiscConfi
         try {
             graphics.pose().translate(config.superpairsHelperX(), config.superpairsHelperY());
             graphics.pose().scale(scale, scale);
-            fill(graphics, -PADDING_X - 1, -PADDING_Y - 1, textWidth + PADDING_X + 1, panelHeight + 1, BORDER);
-            fill(graphics, -PADDING_X, -PADDING_Y, textWidth + PADDING_X, panelHeight, PANEL);
+            graphics.fill(-PADDING_X - 1, -PADDING_Y - 1, textWidth + PADDING_X + 1, panelHeight + 1, BORDER);
+            graphics.fill(-PADDING_X, -PADDING_Y, textWidth + PADDING_X, panelHeight, PANEL);
             for (int index = 0; index < lines.size(); index++) {
                 graphics.text(client.font, trimToWidth(client, lines.get(index), textWidth), 0, index * ROW_HEIGHT, TEXT, true);
             }

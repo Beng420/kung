@@ -2,7 +2,6 @@ package com.github.beng420.kung.feature.misc;
 
 import com.github.beng420.kung.config.category.MiscConfig;
 import com.github.beng420.kung.feature.ConfigurableFeature;
-import com.github.beng420.kung.feature.Feature;
 import com.github.beng420.kung.util.KungDebugRecorder;
 import java.util.Locale;
 import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
@@ -18,7 +17,7 @@ import net.minecraft.world.inventory.ContainerInput;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
 
-public final class LoadoutsAutoCloseFeature extends ConfigurableFeature<MiscConfig> implements Feature {
+public final class LoadoutsAutoCloseFeature extends ConfigurableFeature<MiscConfig> {
     public static final LoadoutsAutoCloseFeature INSTANCE = new LoadoutsAutoCloseFeature();
     private static final int PLAYER_INVENTORY_SLOT_COUNT = 36;
     private static final int SLOT_UPDATE_LOG_LIMIT = 24;

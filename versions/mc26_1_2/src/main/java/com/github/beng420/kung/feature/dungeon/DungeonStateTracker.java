@@ -36,14 +36,14 @@ public final class DungeonStateTracker {
     private static final int DEBUG_DOOR_SIZE = 6;
     private static final int DEBUG_CELL_GAP = 1;
     private static final int PLAYER_IDENTITY_MATCH_DISTANCE = 12;
-    private final DungeonState state = new DungeonState();
     private final DungeonRoomRepository roomRepository;
-    private final DungeonRunDetector runDetector = new DungeonRunDetector();
     private final DungeonScanRecorder scanRecorder = new DungeonScanRecorder();
     private final DungeonRunStats runStats = new DungeonRunStats();
     private final DungeonSplitTracker splitTracker = new DungeonSplitTracker();
     private final BloodRushHelperFeature bloodRushHelper = BloodRushHelperFeature.INSTANCE;
     private boolean dungeonInstanceActive;
+    // Commit scan readiness only after instance setup/reset reaches its existing boundary.
+    private boolean scanReady;
     private boolean inDungeonArea;
     private boolean mapVisibleArea;
     private long dungeonTick;
@@ -91,8 +91,8 @@ public final class DungeonStateTracker {
         return roomRepository;
     }
 
-    public DungeonState state() {
-        return state;
+    boolean canScanDungeon() {
+        return scanReady;
     }
 
     public DungeonMapSnapshot mapSnapshot() {
@@ -289,7 +289,7 @@ public final class DungeonStateTracker {
         appendLine(debug, "state dungeonInstanceActive=" + dungeonInstanceActive
             + " inDungeonArea=" + inDungeonArea
             + " mapVisibleArea=" + mapVisibleArea
-            + " stateInDungeon=" + state.isInDungeon()
+            + " stateInDungeon=" + scanReady
             + " recording=" + scanRecorder.isRecording()
             + " dungeonTick=" + dungeonTick);
         appendLine(debug, "config enabled=" + KungConfig.get().dungeon.enabled()
@@ -758,13 +758,13 @@ public final class DungeonStateTracker {
             lastRunFinishedSignalTick = Long.MIN_VALUE;
             scanRecorder.stopRecording();
         }
-        boolean inCatacombs = runDetector.isDungeonInstanceCandidate(client);
+        boolean inCatacombs = canAcceptDungeonLifecycleSignal(client);
         if (inCatacombs && !dungeonInstanceActive) startDungeonInstance(client);
         else if (!inCatacombs) endDungeonInstance(client);
         if (inCatacombs) configureDungeonFloor();
         inDungeonArea = inCatacombs;
         mapVisibleArea = inCatacombs;
-        state.setInDungeon(inCatacombs);
+        scanReady = inCatacombs;
     }
 
     private void configureDungeonFloor() {
@@ -1579,8 +1579,8 @@ public final class DungeonStateTracker {
     private void tickUnsafe(Minecraft client) {
         dungeonTick++;
         synchronizeInstance(client);
-        if (!runDetector.hasClientWorld(client)) return;
-        boolean insideDungeonGrid = runDetector.isInsideDungeonGrid(client);
+        if (!hasClientWorld(client)) return;
+        boolean insideDungeonGrid = isInsideDungeonGrid(client);
         if (instanceEntrance == null && dungeonInstanceActive && insideDungeonGrid) {
             instanceEntrance = DungeonScanUtils.getRoomGridPosition(client.player.blockPosition());
         }
@@ -1605,7 +1605,7 @@ public final class DungeonStateTracker {
         if (pendingRunSummaryTick != Long.MIN_VALUE && dungeonTick >= pendingRunSummaryTick) {
             sendRunSummaryOnce(client);
         }
-        state.setInDungeon(dungeonInstanceActive);
+        scanReady = dungeonInstanceActive;
         logDungeonState();
     }
 
@@ -1901,7 +1901,7 @@ public final class DungeonStateTracker {
         KungMod.LOGGER.info("Dungeon instance detected. Starting instance tracking.");
         KungDebugRecorder.event("dungeon", "start instance");
         dungeonInstanceActive = true;
-        instanceEntrance = runDetector.isInsideDungeonGrid(client)
+        instanceEntrance = isInsideDungeonGrid(client)
             ? DungeonScanUtils.getRoomGridPosition(client.player.blockPosition()) : null;
         cachedRenderPlan = null;
         cachedRenderPlanRevision = Long.MIN_VALUE;
@@ -1914,7 +1914,6 @@ public final class DungeonStateTracker {
         lastClearStateObserveTick = Long.MIN_VALUE;
         lastLiveRoomSyncTick = Long.MIN_VALUE;
         lastObservedClearStateRevision = Long.MIN_VALUE;
-        state.setRooms(java.util.List.of());
         runStats.reset();
         runStats.startRun(dungeonTick);
         splitTracker.reset();
@@ -1931,7 +1930,7 @@ public final class DungeonStateTracker {
             scanRecorder.restartRecording();
             sendRunStartedMessage(client);
         }
-        state.setInDungeon(true);
+        scanReady = true;
         scanRecorder.scanNow(client, this);
     }
 
@@ -1965,7 +1964,6 @@ public final class DungeonStateTracker {
         runSummarySent = false;
         boolean preparedRun = !realRunStarted;
         realRunStarted = true;
-        state.setRooms(java.util.List.of());
         int floor = runStats.floor();
         boolean masterMode = runStats.masterMode();
         if (preparedRun) runStats.resetForCountdown();
@@ -1977,7 +1975,7 @@ public final class DungeonStateTracker {
         // The countdown belongs to the same instance. Keep pre-run cores and door evidence;
         // the bounded scanner will pick up changed columns after the run starts.
         sendRunStartedMessage(client);
-        state.setInDungeon(true);
+        scanReady = true;
         scanRecorder.scanNow(client, this);
     }
 
@@ -2021,8 +2019,7 @@ public final class DungeonStateTracker {
         lastStatsObserveTick = Long.MIN_VALUE;
         lastClearStateObserveTick = Long.MIN_VALUE;
         lastObservedClearStateRevision = Long.MIN_VALUE;
-        state.setRooms(java.util.List.of());
-        state.setInDungeon(false);
+        scanReady = false;
     }
 
     private void observeRunStartSignal(Minecraft client, String text) {
@@ -2166,12 +2163,27 @@ public final class DungeonStateTracker {
         return DungeonLifecycleSignals.isRunFinished(text);
     }
 
-    private boolean canAcceptDungeonLifecycleSignal(Minecraft client) {
-        return runDetector.isDungeonInstanceCandidate(client);
+    private static boolean hasClientWorld(Minecraft client) {
+        return client != null && client.level != null && client.player != null;
+    }
+
+    private static boolean isInsideDungeonGrid(Minecraft client) {
+        if (!hasClientWorld(client) || !HypixelInstanceTracker.INSTANCE.positionKnown()) return false;
+        int min = DungeonScanUtils.START_X - DungeonScanUtils.ROOM_SIZE_BLOCKS / 2;
+        int max = DungeonScanUtils.START_X
+            + DungeonScanUtils.ROOM_SIZE_BLOCKS * (DungeonScanUtils.SCAN_GRID_SIZE / 2)
+            + DungeonScanUtils.ROOM_SIZE_BLOCKS / 2;
+        int x = client.player.blockPosition().getX();
+        int z = client.player.blockPosition().getZ();
+        return x >= min && x <= max && z >= min && z <= max;
+    }
+
+    private static boolean canAcceptDungeonLifecycleSignal(Minecraft client) {
+        return hasClientWorld(client) && HypixelInstanceTracker.INSTANCE.catacombs();
     }
 
     private boolean canProcessDungeonRunMessage(Minecraft client) {
-        return dungeonInstanceActive && runDetector.isDungeonInstanceCandidate(client);
+        return dungeonInstanceActive && canAcceptDungeonLifecycleSignal(client);
     }
 
     private boolean consumePendingRunStartSignal() {

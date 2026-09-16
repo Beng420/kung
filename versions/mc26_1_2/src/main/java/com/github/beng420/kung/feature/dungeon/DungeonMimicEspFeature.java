@@ -3,7 +3,6 @@ package com.github.beng420.kung.feature.dungeon;
 import com.github.beng420.kung.KungMod;
 import com.github.beng420.kung.config.category.DungeonConfig;
 import com.github.beng420.kung.feature.ConfigurableFeature;
-import com.github.beng420.kung.feature.Feature;
 import com.github.beng420.kung.feature.dungeon.room.RoomType;
 import com.github.beng420.kung.util.KungDebugRecorder;
 import java.util.HashSet;
@@ -27,7 +26,7 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
 
-public final class DungeonMimicEspFeature extends ConfigurableFeature<DungeonConfig> implements Feature {
+public final class DungeonMimicEspFeature extends ConfigurableFeature<DungeonConfig> {
     private static final Identifier WAYPOINT_HUD_ID = Identifier.fromNamespaceAndPath(KungMod.MOD_ID, "mimic_esp_waypoint");
     private static final long SCAN_INTERVAL_TICKS = 10L;
     private static final long OPENED_CHEST_COMBAT_WINDOW_TICKS = 20L * 25L;

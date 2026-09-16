@@ -5,10 +5,9 @@ import com.github.beng420.kung.config.KungHudEditorScreen;
 import com.github.beng420.kung.config.KungHudEditorState;
 import com.github.beng420.kung.config.category.SafariConfig;
 import com.github.beng420.kung.feature.ConfigurableFeature;
-import com.github.beng420.kung.feature.Feature;
 import com.github.beng420.kung.skyblock.HypixelInstanceTracker;
+import com.github.beng420.kung.skyblock.HypixelLocation;
 import com.github.beng420.kung.util.KungDebugRecorder;
-import java.util.Locale;
 import java.util.Set;
 import java.util.function.Consumer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
@@ -19,11 +18,10 @@ import net.fabricmc.fabric.api.client.rendering.v1.hud.VanillaHudElements;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
-import net.minecraft.client.multiplayer.resolver.ServerAddress;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 
-public final class SafariOverlayFeature extends ConfigurableFeature<SafariConfig> implements Feature {
+public final class SafariOverlayFeature extends ConfigurableFeature<SafariConfig> {
     private static final Identifier HUD_ID = Identifier.fromNamespaceAndPath(KungMod.MOD_ID, "safari_uniques");
     private static final int COLUMN_WIDTH = 108;
     private static final int PADDING = 4;
@@ -67,7 +65,7 @@ public final class SafariOverlayFeature extends ConfigurableFeature<SafariConfig
             return false;
         }
         var server = client.getCurrentServer();
-        if (server == null || !isHypixel(server.ip)) {
+        if (server == null || !HypixelLocation.isHypixelAddress(server.ip)) {
             onReset();
             return false;
         }
@@ -138,13 +136,6 @@ public final class SafariOverlayFeature extends ConfigurableFeature<SafariConfig
     public static OverlayBounds overlayBounds(SafariConfig config) {
         float scale = config.scale() / 100.0F;
         return new OverlayBounds(config.x(), config.y(), Math.round(WIDTH * scale), Math.round(HEIGHT * scale));
-    }
-
-    static boolean isHypixel(String address) {
-        if (address == null || address.isBlank()) return false;
-        String host = ServerAddress.parseString(address).getHost().toLowerCase(Locale.ROOT);
-        if (host.endsWith(".")) host = host.substring(0, host.length() - 1);
-        return host.equals("hypixel.net") || host.endsWith(".hypixel.net");
     }
 
     public record OverlayBounds(int x, int y, int width, int height) {}

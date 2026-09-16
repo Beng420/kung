@@ -2,9 +2,9 @@ package com.github.beng420.kung.feature.garden;
 
 import com.github.beng420.kung.config.category.VisitorAlarmConfig;
 import com.github.beng420.kung.feature.ConfigurableFeature;
-import com.github.beng420.kung.feature.Feature;
 import com.github.beng420.kung.message.KungMessages;
 import com.github.beng420.kung.skyblock.HypixelInstanceTracker;
+import com.github.beng420.kung.skyblock.HypixelLocation;
 import com.github.beng420.kung.util.KungDebugRecorder;
 import java.util.Comparator;
 import java.util.List;
@@ -26,7 +26,7 @@ import net.minecraft.sounds.SoundEvents;
 import net.minecraft.world.inventory.ContainerInput;
 import net.minecraft.world.level.GameType;
 
-public final class VisitorAlarmFeature extends ConfigurableFeature<VisitorAlarmConfig> implements Feature {
+public final class VisitorAlarmFeature extends ConfigurableFeature<VisitorAlarmConfig> {
     public static final VisitorAlarmFeature INSTANCE = new VisitorAlarmFeature();
     // Vanilla tab ordering; the shared context's unordered rows cannot associate visitor names with their header.
     private static final Comparator<PlayerInfo> TAB_ORDER = Comparator.comparingInt(PlayerInfo::getTabListOrder).reversed()
@@ -73,7 +73,7 @@ public final class VisitorAlarmFeature extends ConfigurableFeature<VisitorAlarmC
             return;
         }
         var server = client.getCurrentServer();
-        if (server == null || !FeastOverlayFeature.isHypixel(server.ip) || client.getConnection() == null) {
+        if (server == null || !HypixelLocation.isHypixelAddress(server.ip) || client.getConnection() == null) {
             onReset();
             return;
         }

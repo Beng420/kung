@@ -2,13 +2,12 @@ package com.github.beng420.kung.feature.dungeon;
 
 import com.github.beng420.kung.config.category.DungeonChatFilterConfig;
 import com.github.beng420.kung.feature.ConfigurableFeature;
-import com.github.beng420.kung.feature.Feature;
 import com.github.beng420.kung.util.KungDebugRecorder;
 import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
 
-public final class DungeonChatFilterFeature extends ConfigurableFeature<DungeonChatFilterConfig> implements Feature {
+public final class DungeonChatFilterFeature extends ConfigurableFeature<DungeonChatFilterConfig> {
     private static final String BOSS_PREFIX = "[BOSS] ";
     private final DungeonStateTracker tracker;
 

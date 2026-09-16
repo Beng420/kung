@@ -1,7 +1,5 @@
 package com.github.beng420.kung.config;
 
-import static com.github.beng420.kung.util.GuiDraw.fill;
-
 import com.github.beng420.kung.config.KungSettings.CategoryEntry;
 import com.github.beng420.kung.config.KungSettings.FeatureEntry;
 import com.github.beng420.kung.feature.misc.LoadoutsAutoCloseFeature;
@@ -158,7 +156,7 @@ public final class KungConfigScreen extends Screen {
         graphics.pose().pushMatrix();
         try {
             graphics.pose().scale((float) MENU_SCALE, (float) MENU_SCALE);
-            fill(graphics, 0, 0, menuWidth(), menuHeight(), THEME.backdrop());
+            graphics.fill(0, 0, menuWidth(), menuHeight(), THEME.backdrop());
             drawTitle(graphics);
             drawColumns(graphics, releaseNotesPopup == null ? mouseX : -1, releaseNotesPopup == null ? mouseY : -1);
             drawSearchBox(graphics);
@@ -385,7 +383,7 @@ public final class KungConfigScreen extends Screen {
                     }
                 }
                 if (rowY > viewportTop && rowY < panelBottom) {
-                    fill(graphics, x + 5, rowY - 1, x + COLUMN_WIDTH - 5, rowY, THEME.border());
+                    graphics.fill(x + 5, rowY - 1, x + COLUMN_WIDTH - 5, rowY, THEME.border());
                 }
             }
         }
@@ -771,7 +769,7 @@ public final class KungConfigScreen extends Screen {
         private void draw(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick) {
             layout();
             graphics.nextStratum();
-            fill(graphics, 0, 0, menuWidth(), menuHeight(), MODAL_BACKDROP);
+            graphics.fill(0, 0, menuWidth(), menuHeight(), MODAL_BACKDROP);
             UiShapes.shadow(graphics, panelX, panelY, panelWidth, panelHeight, 5);
             UiShapes.rounded(graphics, panelX - 1, panelY - 1, panelWidth + 2, panelHeight + 2, 6, MODAL_BORDER);
             UiShapes.rounded(graphics, panelX, panelY, panelWidth, panelHeight, 5, THEME.panel());

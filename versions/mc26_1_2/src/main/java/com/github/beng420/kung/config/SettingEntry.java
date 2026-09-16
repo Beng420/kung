@@ -1,7 +1,5 @@
 package com.github.beng420.kung.config;
 
-import static com.github.beng420.kung.util.GuiDraw.fill;
-
 import com.github.beng420.kung.ui.UiBounds;
 import com.github.beng420.kung.ui.UiNumberField;
 import com.github.beng420.kung.ui.UiTheme;
@@ -153,12 +151,12 @@ public record SettingEntry(
             case CHOICE, BUTTON -> drawButton(graphics, font, theme, x, y, width, height, choiceSupplier.get());
             case LABEL -> graphics.text(font, label(), x + width - font.width(label()), y + 4, theme.muted(), true);
             case TEXT -> {
-                fill(graphics, x + 1, y + 3, x + width - 1, y + height - 3, theme.accentDark());
+                graphics.fill(x + 1, y + 3, x + width - 1, y + height - 3, theme.accentDark());
                 graphics.text(font, font.plainSubstrByWidth(textSupplier.get(), width - 8), x + 4, y + 4, theme.text(), true);
             }
             case KEYBIND -> {
                 String text = capturing ? "Press..." : textSupplier.get();
-                fill(graphics, x + 1, y + 3, x + width - 1, y + height - 3,
+                graphics.fill(x + 1, y + 3, x + width - 1, y + height - 3,
                     capturing ? theme.accent() : theme.accentDark());
                 String shown = font.plainSubstrByWidth(text, width - 8);
                 graphics.text(font, shown, x + width / 2 - font.width(shown) / 2, y + 4, theme.text(), true);
@@ -206,8 +204,8 @@ public record SettingEntry(
     }
 
     private void drawStepper(GuiGraphicsExtractor graphics, Font font, UiTheme theme, int x, int y, int width, int height) {
-        fill(graphics, x + 1, y + 3, x + 13, y + height - 3, theme.accentDark());
-        fill(graphics, x + width - 13, y + 3, x + width - 1, y + height - 3, theme.accentDark());
+        graphics.fill(x + 1, y + 3, x + 13, y + height - 3, theme.accentDark());
+        graphics.fill(x + width - 13, y + 3, x + width - 1, y + height - 3, theme.accentDark());
         graphics.text(font, "-", x + 5, y + 4, theme.text(), true);
         graphics.text(font, "+", x + width - 10, y + 4, theme.text(), true);
         String suffix = label().toLowerCase(Locale.ROOT).matches(".*(scale|alpha).*") ? "%" : "";
@@ -219,9 +217,9 @@ public record SettingEntry(
         int trackRight = x + width - 2;
         int knobX = trackLeft + (int) Math.round(numberField().progress(intSupplier.getAsInt()) * (trackRight - trackLeft));
         int trackY = y + height / 2 - 1;
-        fill(graphics, trackLeft, trackY, trackRight, trackY + 2, theme.accentDark());
-        fill(graphics, trackLeft, trackY, knobX, trackY + 2, theme.accent());
-        fill(graphics, knobX - 2, y + 3, knobX + 2, y + height - 3, theme.text());
+        graphics.fill(trackLeft, trackY, trackRight, trackY + 2, theme.accentDark());
+        graphics.fill(trackLeft, trackY, knobX, trackY + 2, theme.accent());
+        graphics.fill(knobX - 2, y + 3, knobX + 2, y + height - 3, theme.text());
         String lower = label().toLowerCase(Locale.ROOT);
         String value = lower.contains("scale") || lower.contains("alpha")
             ? intSupplier.getAsInt() + "%"

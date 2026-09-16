@@ -1,5 +1,6 @@
 package com.github.beng420.kung.feature.garden;
 
+import com.github.beng420.kung.skyblock.HypixelLocation;
 import java.util.List;
 import org.junit.Test;
 import static org.junit.Assert.*;
@@ -45,8 +46,8 @@ public class FeastContextTest {
         assertFalse(FeastOverlayFeature.visible(false, true, event));
         assertFalse(FeastOverlayFeature.visible(true, false, event));
         assertFalse(FeastOverlayFeature.visible(true, true, null));
-        assertTrue(FeastOverlayFeature.isHypixel("mc.hypixel.net:25565"));
-        assertFalse(FeastOverlayFeature.isHypixel("hypixel.net.example.com"));
+        assertTrue(HypixelLocation.isHypixelAddress("mc.hypixel.net:25565"));
+        assertFalse(HypixelLocation.isHypixelAddress("hypixel.net.example.com"));
     }
 
     @Test

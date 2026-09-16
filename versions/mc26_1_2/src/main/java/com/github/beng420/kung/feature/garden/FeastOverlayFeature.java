@@ -1,13 +1,10 @@
 package com.github.beng420.kung.feature.garden;
 
-import static com.github.beng420.kung.util.GuiDraw.fill;
-
 import com.github.beng420.kung.KungMod;
 import com.github.beng420.kung.config.KungHudEditorScreen;
 import com.github.beng420.kung.config.KungHudEditorState;
 import com.github.beng420.kung.config.category.FeastConfig;
 import com.github.beng420.kung.feature.ConfigurableFeature;
-import com.github.beng420.kung.feature.Feature;
 import com.github.beng420.kung.runtime.KungPaths;
 import com.github.beng420.kung.skyblock.HypixelInstanceTracker;
 import com.github.beng420.kung.skyblock.HypixelLocation;
@@ -27,7 +24,6 @@ import net.fabricmc.fabric.api.client.rendering.v1.hud.VanillaHudElements;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
-import net.minecraft.client.multiplayer.resolver.ServerAddress;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.resources.Identifier;
@@ -35,7 +31,7 @@ import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.ContainerInput;
 import net.minecraft.world.item.ItemStack;
 
-public final class FeastOverlayFeature extends ConfigurableFeature<FeastConfig> implements Feature {
+public final class FeastOverlayFeature extends ConfigurableFeature<FeastConfig> {
     public static final FeastOverlayFeature INSTANCE = new FeastOverlayFeature();
     private static final Identifier HUD_ID = Identifier.fromNamespaceAndPath(KungMod.MOD_ID, "feast_progress");
     private static final int WIDTH = 180;
@@ -164,7 +160,7 @@ public final class FeastOverlayFeature extends ConfigurableFeature<FeastConfig> 
             return;
         }
         var server = client.getCurrentServer();
-        hypixel = server != null && isHypixel(server.ip);
+        hypixel = server != null && HypixelLocation.isHypixelAddress(server.ip);
         if (!hypixel) {
             onReset();
             return;
@@ -311,7 +307,7 @@ public final class FeastOverlayFeature extends ConfigurableFeature<FeastConfig> 
     private static AbstractContainerMenu currentGrandMenu(Minecraft client, int containerId) {
         if (!INSTANCE.isEnabled() || client.player == null) return null;
         var server = client.getCurrentServer();
-        if (server == null || !isHypixel(server.ip) || !(client.screen instanceof AbstractContainerScreen<?> screen)
+        if (server == null || !HypixelLocation.isHypixelAddress(server.ip) || !(client.screen instanceof AbstractContainerScreen<?> screen)
             || FeastProgress.Kind.fromTitle(screen.getTitle().getString()) != FeastProgress.Kind.GRAND) return null;
         var menu = screen.getMenu();
         int topSlots = menu.slots.size() - 36;
@@ -452,8 +448,8 @@ public final class FeastOverlayFeature extends ConfigurableFeature<FeastConfig> 
     }
 
     private static void drawBar(GuiGraphicsExtractor graphics, int segments, FeastProgress.Snapshot value) {
-        fill(graphics, BAR_X, BAR_Y, BAR_X + BAR_WIDTH, BAR_Y + BAR_HEIGHT, BAR_OUTLINE);
-        fill(graphics, BAR_X + 1, BAR_Y + 1, BAR_X + BAR_WIDTH - 1, BAR_Y + BAR_HEIGHT - 1, 0xBBE0E7E0);
+        graphics.fill(BAR_X, BAR_Y, BAR_X + BAR_WIDTH, BAR_Y + BAR_HEIGHT, BAR_OUTLINE);
+        graphics.fill(BAR_X + 1, BAR_Y + 1, BAR_X + BAR_WIDTH - 1, BAR_Y + BAR_HEIGHT - 1, 0xBBE0E7E0);
         int previousGoal = 0;
         int markerX = -1;
         for (int index = 0; index < segments; index++) {
@@ -463,33 +459,26 @@ public final class FeastOverlayFeature extends ConfigurableFeature<FeastConfig> 
             if (value != null) {
                 int tierGoal = value.goals().get(index);
                 if (value.donations() >= tierGoal) {
-                    fill(graphics, contentLeft, BAR_Y + 1, right, BAR_Y + BAR_HEIGHT - 1, GREEN);
+                    graphics.fill(contentLeft, BAR_Y + 1, right, BAR_Y + BAR_HEIGHT - 1, GREEN);
                 } else if (value.donations() >= previousGoal) {
-                    fill(graphics, contentLeft, BAR_Y + 1, right, BAR_Y + BAR_HEIGHT - 1, YELLOW);
+                    graphics.fill(contentLeft, BAR_Y + 1, right, BAR_Y + BAR_HEIGHT - 1, YELLOW);
                     double progress = (value.donations() - previousGoal) / (double) (tierGoal - previousGoal);
                     markerX = contentLeft + (int) Math.round((right - contentLeft - 1) * progress);
                 }
                 previousGoal = tierGoal;
             }
-            if (index > 0) fill(graphics, left, BAR_Y + 1, left + 1, BAR_Y + BAR_HEIGHT - 1, 0xDD101510);
+            if (index > 0) graphics.fill(left, BAR_Y + 1, left + 1, BAR_Y + BAR_HEIGHT - 1, 0xDD101510);
         }
         // Extend beyond the bar so the progress marker stays distinct from milestone dividers.
         if (markerX >= 0) {
-            fill(graphics, markerX - 1, BAR_Y - 2, markerX + 2, BAR_Y + BAR_HEIGHT + 2, BAR_OUTLINE);
-            fill(graphics, markerX, BAR_Y - 1, markerX + 1, BAR_Y + BAR_HEIGHT + 1, TEXT);
+            graphics.fill(markerX - 1, BAR_Y - 2, markerX + 2, BAR_Y + BAR_HEIGHT + 2, BAR_OUTLINE);
+            graphics.fill(markerX, BAR_Y - 1, markerX + 1, BAR_Y + BAR_HEIGHT + 1, TEXT);
         }
     }
 
     public static OverlayBounds overlayBounds(FeastConfig config) {
         float scale = config.scale() / 100.0F;
         return new OverlayBounds(config.x(), config.y(), Math.round(WIDTH * scale), Math.round(HEIGHT * scale));
-    }
-
-    static boolean isHypixel(String address) {
-        if (address == null || address.isBlank()) return false;
-        String host = ServerAddress.parseString(address).getHost().toLowerCase(Locale.ROOT);
-        if (host.endsWith(".")) host = host.substring(0, host.length() - 1);
-        return host.equals("hypixel.net") || host.endsWith(".hypixel.net");
     }
 
     public record OverlayBounds(int x, int y, int width, int height) {}

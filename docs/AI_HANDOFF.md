@@ -5,16 +5,29 @@ Read the [code map](CODE_MAP.md), then only the topic needed for the task.
 
 ## Current state — 2026-09-16
 
-- Active module: Minecraft **26.1.2**, version **0.3.4**, Java **25**.
+- Active module: Minecraft **26.1.2**, version **0.3.5**, Java **25**.
   The version source is [gradle.properties](../gradle.properties).
-  The user's existing version change to 0.3.4 is preserved.
+  The user's existing version change to 0.3.5 is preserved.
+- Behavior-preserving cleanup lives on `codex/beta`, based on the complete 0.3.5
+  checkpoint `d1b3fc5`. It removes **535 production lines and nine Java files net**:
+  fixed chat commands share one enum, profile providers share their request/retry
+  pipeline, party/guild membership each uses one name map, and feature lifecycle
+  uses one interface. Unused dungeon models/helpers, service fields and forwarding
+  wrappers are gone. Dungeon scan readiness keeps its original assignment boundaries;
+  UI drawing calls retain their coordinates, colors and order. Feature settings,
+  defaults, persisted formats, packet gates, scan budgets and provider retry policy
+  are preserved. Nine added regressions cover command gates/matching, provider
+  requests/retries, member names/UUIDs and prepared dungeon start/countdown/reset.
+  The full build passes and all 33 packaged non-class resources match the baseline
+  byte-for-byte; live beta checks remain for HUD/settings rendering,
+  dungeon entry/countdown/exit and chat-command replies on Hypixel.
 - The canonical mod icon is the user's supplied `KUNG.png` (167 x 167), copied
   unchanged to `versions/mc26_1_2/src/main/resources/assets/kung/icon.png`.
   Fabric metadata already references that resource, including the icon exposed
   to Mod Menu/OneConfig. Future builds and branding should use this artwork.
   The active-module build passed; the packaged PNG's SHA-256 matches the original.
 - Last code validation: full shared-root active-module build with Java 25,
-  **603 test cases: 602 passed, zero failures/errors, one skipped** because Windows
+  **612 test cases: 611 passed, zero failures/errors, one skipped** because Windows
   denies test symlink creation. Includes 71 update-package cases covering verified
   downloads, launcher ownership, atomic replacement, interruption/retry and a real
   separate helper waiting for a live parent JVM, plus local phase-time/PERSONAL BEST messages and score-before-victory final split PB confirmation,
@@ -32,14 +45,14 @@ Read the [code map](CODE_MAP.md), then only the topic needed for the task.
   duplicate layout adapter, shares per-file sound controls and removes redundant
   OneConfig registration state. Catalog labels, callbacks and ordering are unchanged;
   one added regression verifies independent Arrow/Wither file settings and persistence.
-  Existing tests remain unchanged. The full Java 25 build and `git diff --check` pass.
+  Existing behavioral assertions are retained. The full Java 25 build and `git diff --check` pass.
   VS Code's later unresolved Polyfrost test imports were traced to its stale Gradle
   Build Server classpath (Polyfrost/Kotlin absent, importer crash logged). The local
   workspace now selects the standard Gradle importer; the user confirms the red marks
   cleared after reload. IDE annotation-processor discovery is also disabled to avoid
   its separate Gradle 9 parallel-import failure; the active module has no processors.
   Gradle test compilation and all 14 focused OneConfig tests pass independently.
-  Artifact: `versions/mc26_1_2/build/libs/kung-26.1.2-0.3.4.jar`
+  Artifact: `versions/mc26_1_2/build/libs/kung-26.1.2-0.3.5.jar`
   (optional native OneConfig settings and HUD editor, new canonical Kung icon, verified atomic updates and Modrinth ownership guard, exponentially weighted Kernel farming rate with configurable idle pause, per-floor split PBs and finish prediction, 6th Visitor Alarm with Wild Rose/flower/pumpkin timing, 30-second update polling and lobby reminders, Kernel donation/sidebar ordering and persisted pending gains,
   Safari Uniques, Feast Hub farm option and profile persistence, Grand Feast Kernel balance, donation format/filter fix, yellow active tier and progress marker, Roman-tier parsing/diagnostics, menu-font resource fix, Feast Progress, menu redesign, dismissal fix, changelog history/command, chat-emote alias,
   realistic update preview, patch notes, update popup, Mimic discovery/diagnostics

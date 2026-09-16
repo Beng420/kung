@@ -1,7 +1,5 @@
 package com.github.beng420.kung.config;
 
-import static com.github.beng420.kung.util.GuiDraw.fill;
-
 import com.github.beng420.kung.config.KungHudLayout.Bounds;
 import com.github.beng420.kung.config.KungHudLayout.Entry;
 import com.github.beng420.kung.feature.dungeon.DungeonStateTracker;
@@ -48,7 +46,7 @@ public final class KungHudEditorScreen extends Screen {
 
     @Override
     public void extractRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick) {
-        fill(graphics, 0, 0, width, height, BACKDROP);
+        graphics.fill(0, 0, width, height, BACKDROP);
         graphics.text(font, "Kung HUD Editor", 10, 10, TEXT, true);
         graphics.text(font, "Drag to move. Scroll to resize. Right click for settings.", 10, 22, MUTED, true);
 
@@ -178,11 +176,11 @@ public final class KungHudEditorScreen extends Screen {
     private void drawHudBox(GuiGraphicsExtractor graphics, Entry entry, boolean hovered, boolean draggingEntry) {
         Bounds bounds = entry.bounds();
         int color = draggingEntry ? HUD_BOX_DRAG : hovered ? HUD_BOX_HOVER : HUD_BOX;
-        fill(graphics, bounds.x(), bounds.y(), bounds.x() + bounds.width(), bounds.y() + bounds.height(), color);
-        fill(graphics, bounds.x(), bounds.y(), bounds.x() + bounds.width(), bounds.y() + 1, BORDER);
-        fill(graphics, bounds.x(), bounds.y() + bounds.height() - 1, bounds.x() + bounds.width(), bounds.y() + bounds.height(), BORDER);
-        fill(graphics, bounds.x(), bounds.y(), bounds.x() + 1, bounds.y() + bounds.height(), BORDER);
-        fill(graphics, bounds.x() + bounds.width() - 1, bounds.y(), bounds.x() + bounds.width(), bounds.y() + bounds.height(), BORDER);
+        graphics.fill(bounds.x(), bounds.y(), bounds.x() + bounds.width(), bounds.y() + bounds.height(), color);
+        graphics.fill(bounds.x(), bounds.y(), bounds.x() + bounds.width(), bounds.y() + 1, BORDER);
+        graphics.fill(bounds.x(), bounds.y() + bounds.height() - 1, bounds.x() + bounds.width(), bounds.y() + bounds.height(), BORDER);
+        graphics.fill(bounds.x(), bounds.y(), bounds.x() + 1, bounds.y() + bounds.height(), BORDER);
+        graphics.fill(bounds.x() + bounds.width() - 1, bounds.y(), bounds.x() + bounds.width(), bounds.y() + bounds.height(), BORDER);
         if (entry.id().equals("safari_uniques")) {
             SafariOverlayFeature.drawPreview(graphics, KungConfig.get().safari);
         } else if (entry.id().equals("feast_progress")) {
@@ -198,7 +196,7 @@ public final class KungHudEditorScreen extends Screen {
         int tooltipWidth = Math.max(font.width(lineOne), font.width(lineTwo)) + 10;
         int x = Math.min(mouseX + 12, width - tooltipWidth - 4);
         int y = Math.min(mouseY + 12, height - 30);
-        fill(graphics, x, y, x + tooltipWidth, y + 28, TOOLTIP_BG);
+        graphics.fill(x, y, x + tooltipWidth, y + 28, TOOLTIP_BG);
         graphics.text(font, lineOne, x + 5, y + 5, TEXT, true);
         graphics.text(font, lineTwo, x + 5, y + 16, MUTED, true);
     }
@@ -214,7 +212,7 @@ public final class KungHudEditorScreen extends Screen {
     private void drawMapControls(GuiGraphicsExtractor graphics) {
         int x = mapControlsX();
         int y = mapControlsY();
-        fill(graphics, x, y, x + MAP_CONTROLS_WIDTH, y + MAP_CONTROLS_HEIGHT, TOOLTIP_BG);
+        graphics.fill(x, y, x + MAP_CONTROLS_WIDTH, y + MAP_CONTROLS_HEIGHT, TOOLTIP_BG);
         graphics.text(font, "Dungeon Map", x + 8, y + 7, TEXT, true);
         List<SettingEntry> sliders = mapSliders();
         for (int index = 0; index < sliders.size(); index++) {

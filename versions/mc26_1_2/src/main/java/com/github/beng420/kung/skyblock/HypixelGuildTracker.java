@@ -2,7 +2,6 @@ package com.github.beng420.kung.skyblock;
 
 import com.github.beng420.kung.util.KungDebugRecorder;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
@@ -29,8 +28,7 @@ public final class HypixelGuildTracker {
     private static final int LIST_CAPTURE_TICKS = 120;
     private static final int NEXT_PAGE_DELAY_TICKS = 12;
 
-    private final Set<String> guildPlayerNames = new HashSet<>();
-    private final Map<String, String> displayPlayerNames = new HashMap<>();
+    private final Map<String, String> guildPlayerNames = new HashMap<>();
     private boolean initialized;
     private int listCaptureTicks;
     private int pendingNextPage;
@@ -47,11 +45,7 @@ public final class HypixelGuildTracker {
     }
 
     public synchronized Set<String> knownGuildMemberNames() {
-        Set<String> names = new HashSet<>();
-        for (String name : guildPlayerNames) {
-            names.add(displayPlayerNames.getOrDefault(name, name));
-        }
-        return Set.copyOf(names);
+        return Set.copyOf(guildPlayerNames.values());
     }
 
     public synchronized boolean shouldRefreshMemberList() {
@@ -196,8 +190,7 @@ public final class HypixelGuildTracker {
             return;
         }
         String normalized = normalizeName(name);
-        boolean added = guildPlayerNames.add(normalized);
-        displayPlayerNames.put(normalized, name);
+        boolean added = guildPlayerNames.put(normalized, name) == null;
         if (added) {
             logGuildState("register " + name + " " + reason);
         }
@@ -209,12 +202,11 @@ public final class HypixelGuildTracker {
         }
         String normalized = normalizeName(name);
         guildPlayerNames.remove(normalized);
-        displayPlayerNames.remove(normalized);
         logGuildState("remove " + name);
     }
 
     private void logGuildState(String reason) {
-        String state = "reason=" + reason + " count=" + guildPlayerNames.size() + " players=" + guildPlayerNames;
+        String state = "reason=" + reason + " count=" + guildPlayerNames.size() + " players=" + guildPlayerNames.keySet();
         if (!state.equals(lastLoggedGuildState)) {
             lastLoggedGuildState = state;
             KungDebugRecorder.event("guild", state);

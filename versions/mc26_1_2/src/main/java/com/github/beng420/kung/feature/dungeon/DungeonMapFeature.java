@@ -1,13 +1,10 @@
 package com.github.beng420.kung.feature.dungeon;
 
-import static com.github.beng420.kung.util.GuiDraw.fill;
-
 import com.github.beng420.kung.KungMod;
 import com.github.beng420.kung.config.KungConfig;
 import com.github.beng420.kung.config.KungHudEditorState;
 import com.github.beng420.kung.config.category.DungeonConfig;
 import com.github.beng420.kung.feature.ConfigurableFeature;
-import com.github.beng420.kung.feature.Feature;
 import com.github.beng420.kung.feature.dungeon.room.RoomType;
 import com.github.beng420.kung.skyblock.HypixelInstanceTracker;
 import com.github.beng420.kung.util.KungDebugRecorder;
@@ -35,7 +32,7 @@ import net.minecraft.world.level.saveddata.maps.MapDecorationTypes;
 import net.minecraft.world.level.saveddata.maps.MapItemSavedData;
 import net.minecraft.world.phys.Vec3;
 
-public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> implements Feature {
+public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> {
     private static final Identifier HUD_ID = Identifier.fromNamespaceAndPath(KungMod.MOD_ID, "dungeon_map_overlay");
     private static final int ROOM_SIZE = 19;
     private static final int DOOR_SIZE = 6;
@@ -305,10 +302,10 @@ public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> 
     }
 
     private static void drawBorder(GuiGraphicsExtractor graphics, int x, int y, int width, int height, int color) {
-        fill(graphics, x, y, x + width, y + 1, color);
-        fill(graphics, x, y + height - 1, x + width, y + height, color);
-        fill(graphics, x, y, x + 1, y + height, color);
-        fill(graphics, x + width - 1, y, x + width, y + height, color);
+        graphics.fill(x, y, x + width, y + 1, color);
+        graphics.fill(x, y + height - 1, x + width, y + height, color);
+        graphics.fill(x, y, x + 1, y + height, color);
+        graphics.fill(x + width - 1, y, x + width, y + height, color);
     }
 
     static DungeonRoomRenderLayout roomLayoutFor(DungeonLiveMapWriter.MatchRenderPlan renderPlan) {
@@ -428,7 +425,7 @@ public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> 
         Set<DungeonLiveMapWriter.CellKey> occupiedScanCells = occupiedScanCellsForRoomShape(roomCells);
         for (DungeonLiveMapWriter.CellKey scanCell : occupiedScanCells) {
             Rect rect = expandedRectForScanCell(scanCell.x(), scanCell.z());
-            fill(graphics, rect.x(), rect.y(), rect.right(), rect.bottom(), MIMIC_ROOM_GLOW);
+            graphics.fill(rect.x(), rect.y(), rect.right(), rect.bottom(), MIMIC_ROOM_GLOW);
         }
         for (DungeonLiveMapWriter.CellKey scanCell : occupiedScanCells) {
             drawMimicPerimeterEdges(graphics, occupiedScanCells, scanCell);
@@ -468,16 +465,16 @@ public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> 
     ) {
         Rect rect = expandedRectForScanCell(scanCell.x(), scanCell.z());
         if (!occupiedScanCells.contains(new DungeonLiveMapWriter.CellKey(scanCell.x(), scanCell.z() - 1))) {
-            fill(graphics, rect.x(), rect.y() - 1, rect.right(), rect.y() + 1, MIMIC_ROOM_OUTLINE);
+            graphics.fill(rect.x(), rect.y() - 1, rect.right(), rect.y() + 1, MIMIC_ROOM_OUTLINE);
         }
         if (!occupiedScanCells.contains(new DungeonLiveMapWriter.CellKey(scanCell.x(), scanCell.z() + 1))) {
-            fill(graphics, rect.x(), rect.bottom() - 1, rect.right(), rect.bottom() + 1, MIMIC_ROOM_OUTLINE);
+            graphics.fill(rect.x(), rect.bottom() - 1, rect.right(), rect.bottom() + 1, MIMIC_ROOM_OUTLINE);
         }
         if (!occupiedScanCells.contains(new DungeonLiveMapWriter.CellKey(scanCell.x() - 1, scanCell.z()))) {
-            fill(graphics, rect.x() - 1, rect.y(), rect.x() + 1, rect.bottom(), MIMIC_ROOM_OUTLINE);
+            graphics.fill(rect.x() - 1, rect.y(), rect.x() + 1, rect.bottom(), MIMIC_ROOM_OUTLINE);
         }
         if (!occupiedScanCells.contains(new DungeonLiveMapWriter.CellKey(scanCell.x() + 1, scanCell.z()))) {
-            fill(graphics, rect.right() - 1, rect.y(), rect.right() + 1, rect.bottom(), MIMIC_ROOM_OUTLINE);
+            graphics.fill(rect.right() - 1, rect.y(), rect.right() + 1, rect.bottom(), MIMIC_ROOM_OUTLINE);
         }
     }
 
@@ -550,7 +547,7 @@ public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> 
 
         int x = left + scanGridToPixel(playerGrid.gridX() * 2);
         int y = top + scanGridToPixel(playerGrid.gridZ() * 2);
-        fill(graphics, x, y, x + ROOM_SIZE, y + ROOM_SIZE, RoomType.START.color());
+        graphics.fill(x, y, x + ROOM_SIZE, y + ROOM_SIZE, RoomType.START.color());
     }
 
     private static void drawMatchedRooms(
@@ -594,9 +591,9 @@ public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> 
         int roomColor,
         boolean visited
     ) {
-        fill(graphics, x, y, x + width, y + height, visited ? roomColor : unopenedRoomColor(roomColor));
+        graphics.fill(x, y, x + width, y + height, visited ? roomColor : unopenedRoomColor(roomColor));
         if (!visited) {
-            fill(graphics, 
+            graphics.fill(
                 x,
                 y,
                 x + width,
@@ -924,12 +921,12 @@ public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> 
 
         if (isHorizontalDoor(gridX, gridZ)) {
             int centeredY = y + (ROOM_SIZE - DOOR_SIZE) / 2;
-            fill(graphics, x - CELL_GAP, centeredY, x + DOOR_SIZE + CELL_GAP, centeredY + DOOR_SIZE, color);
+            graphics.fill(x - CELL_GAP, centeredY, x + DOOR_SIZE + CELL_GAP, centeredY + DOOR_SIZE, color);
             return;
         }
 
         int centeredX = x + (ROOM_SIZE - DOOR_SIZE) / 2;
-        fill(graphics, centeredX, y - CELL_GAP, centeredX + DOOR_SIZE, y + DOOR_SIZE + CELL_GAP, color);
+        graphics.fill(centeredX, y - CELL_GAP, centeredX + DOOR_SIZE, y + DOOR_SIZE + CELL_GAP, color);
     }
 
     private static void drawCell(
@@ -959,7 +956,7 @@ public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> 
                 );
             } else if (DungeonScanUtils.isRoomScanPoint(gridX, gridZ)
                 && renderPlan.isRemoteRoom(gridX / 2, gridZ / 2)) {
-                fill(graphics, x, y, x + size, y + size, RoomType.UNKNOWN.color());
+                graphics.fill(x, y, x + size, y + size, RoomType.UNKNOWN.color());
                 drawCenteredText(graphics, "?", x + size / 2, y + size / 2 - 4, MUTED_TEXT, false);
             }
             return;
@@ -992,7 +989,7 @@ public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> 
         RoomType roomType = snapshot.isStartRoom(gridX, gridZ) ? RoomType.START
             : renderPlan.roomTypeAt(gridX / 2, gridZ / 2);
         if (roomType == RoomType.START) {
-            fill(graphics, x, y, x + size, y + size, roomType.color());
+            graphics.fill(x, y, x + size, y + size, roomType.color());
         } else if (roomType != RoomType.UNKNOWN) {
             drawRoomFill(graphics, x, y, size, size, roomType.color(),
                 renderPlan.isVisitedRoom(gridX / 2, gridZ / 2));
@@ -1098,7 +1095,7 @@ public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> 
         boolean done = stats.princeKilled();
         drawScaledText(graphics, icon, x, y, done ? MUTED_TEXT : SECRET_TARGET_TEXT, iconScale, true);
         if (done) {
-            fill(graphics, x - 1, y + height / 2, x + width + 1, y + height / 2 + 1, BAD_TEXT);
+            graphics.fill(x - 1, y + height / 2, x + width + 1, y + height / 2 + 1, BAD_TEXT);
         }
     }
 
@@ -1904,11 +1901,11 @@ public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> 
 
     private static void drawPlayerFrame(GuiGraphicsExtractor graphics, int classColor, int headSize) {
         int half = headSize / 2;
-        fill(graphics, -half - 1, -half - 1, half + 1, -half, classColor);
-        fill(graphics, -half - 1, half, half + 1, half + 1, classColor);
-        fill(graphics, -half - 1, -half - 1, -half, half + 1, classColor);
-        fill(graphics, half, -half - 1, half + 1, half + 1, classColor);
-        fill(graphics, -1, -half - 3, 1, -half - 1, classColor);
+        graphics.fill(-half - 1, -half - 1, half + 1, -half, classColor);
+        graphics.fill(-half - 1, half, half + 1, half + 1, classColor);
+        graphics.fill(-half - 1, -half - 1, -half, half + 1, classColor);
+        graphics.fill(half, -half - 1, half + 1, half + 1, classColor);
+        graphics.fill(-1, -half - 3, 1, -half - 1, classColor);
     }
 
     private static MarkerPose smoothMarker(String key, float targetX, float targetY, float targetRotation, long frame) {
@@ -2050,7 +2047,7 @@ public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> 
 
     private static int drawLegendItem(GuiGraphicsExtractor graphics, int x, int y, RoomType roomType, String label) {
         Minecraft client = Minecraft.getInstance();
-        fill(graphics, x, y, x + 7, y + 7, roomType.color());
+        graphics.fill(x, y, x + 7, y + 7, roomType.color());
         graphics.text(client.font, label, x + 10, y, MUTED_TEXT, true);
         return x + 10 + client.font.width(label) + 8;
     }
@@ -2063,7 +2060,7 @@ public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> 
         DungeonMapSnapshot snapshot,
         DungeonLiveMapWriter.MatchRenderPlan renderPlan
     ) {
-        fill(graphics, left - 3, top, left + GRID_PIXEL_SIZE + 3, top + FOOTER_HEIGHT - 4, PANEL);
+        graphics.fill(left - 3, top, left + GRID_PIXEL_SIZE + 3, top + FOOTER_HEIGHT - 4, PANEL);
         int estimatedSecretsAvailable = stats.catalogSecretsAvailable(renderPlan);
         int fullSecrets = bestSecretTotal(stats, estimatedSecretsAvailable);
         int foundSecrets = displayedSecretsFound(stats, fullSecrets);
@@ -2474,15 +2471,6 @@ public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> 
         int bottom() {
             return y + height;
         }
-    }
-
-    private static String currentPlayerGridText() {
-        Minecraft client = Minecraft.getInstance();
-        if (client.player == null) {
-            return "?,?";
-        }
-        DungeonScanUtils.GridPosition grid = DungeonScanUtils.getRoomGridPosition(client.player.blockPosition());
-        return grid.gridX() + "," + grid.gridZ();
     }
 
     private static int scanGridToPixel(int gridPosition) {

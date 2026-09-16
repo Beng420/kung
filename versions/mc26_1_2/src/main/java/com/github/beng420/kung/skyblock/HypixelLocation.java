@@ -4,6 +4,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import net.minecraft.client.multiplayer.resolver.ServerAddress;
 
 /** Parses actual location fields, never location mentions in social or combat text. */
 public record HypixelLocation(Kind kind, String name) {
@@ -53,5 +54,12 @@ public record HypixelLocation(Kind kind, String name) {
 
     public static String clean(String text) {
         return text == null ? "" : text.replaceAll("§.", "").replaceAll("\\s+", " ").trim();
+    }
+
+    public static boolean isHypixelAddress(String address) {
+        if (address == null || address.isBlank()) return false;
+        String host = ServerAddress.parseString(address).getHost().toLowerCase(Locale.ROOT);
+        if (host.endsWith(".")) host = host.substring(0, host.length() - 1);
+        return host.equals("hypixel.net") || host.endsWith(".hypixel.net");
     }
 }

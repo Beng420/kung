@@ -20,6 +20,8 @@ import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.function.Supplier;
 
 public final class HypixelSkyBlockProfileClient {
     public static final HypixelSkyBlockProfileClient INSTANCE = new HypixelSkyBlockProfileClient();
@@ -133,80 +135,19 @@ public final class HypixelSkyBlockProfileClient {
     }
 
     private CompletableFuture<JsonObject> loadAdjectilsObject(URI baseUri, String parameter, String value) {
-        return loadAdjectilsObject(baseUri, parameter, value, 1);
-    }
-
-    private CompletableFuture<JsonObject> loadAdjectilsObject(
-        URI baseUri,
-        String parameter,
-        String value,
-        int attempt
-    ) {
         URI uri = URI.create(baseUri + "?" + parameter + "=" + URLEncoder.encode(value, StandardCharsets.UTF_8));
-        HttpRequest request = HttpRequest.newBuilder(uri)
+        return loadObject("Adjectils", () -> HttpRequest.newBuilder(uri)
             .timeout(Duration.ofSeconds(12))
             .header("Accept", "application/json")
             .header("X-Timestamp", Long.toString(System.currentTimeMillis()))
             .header("User-Agent", "Kung-CA50-AdjectilsFallback")
             .GET()
-            .build();
-        return httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString())
-            .handle((response, throwable) -> {
-                if (throwable != null) {
-                    if (attempt < API_ATTEMPTS) {
-                        return retryAdjectilsObject(baseUri, parameter, value, attempt);
-                    }
-                    return failedFuture(throwable);
-                }
-                if (response.statusCode() < 200 || response.statusCode() >= 300) {
-                    IllegalStateException error =
-                        new IllegalStateException("Adjectils returned HTTP " + response.statusCode());
-                    if (shouldRetry(response.statusCode()) && attempt < API_ATTEMPTS) {
-                        return retryAdjectilsObject(baseUri, parameter, value, attempt);
-                    }
-                    return failedFuture(error);
-                }
-                try {
-                    JsonObject root = JsonParser.parseString(response.body()).getAsJsonObject();
-                    if (!bool(root, "success")) {
-                        throw new IllegalStateException("Adjectils returned success=false");
-                    }
-                    return CompletableFuture.completedFuture(root);
-                } catch (RuntimeException exception) {
-                    return failedFuture(exception);
-                }
-            })
-            .thenCompose(future -> future);
-    }
-
-    private CompletableFuture<JsonObject> retryAdjectilsObject(
-        URI baseUri,
-        String parameter,
-        String value,
-        int previousAttempt
-    ) {
-        long delayMillis = 300L * previousAttempt;
-        return CompletableFuture.supplyAsync(
-                () -> null,
-                CompletableFuture.delayedExecutor(delayMillis, java.util.concurrent.TimeUnit.MILLISECONDS)
-            )
-            .thenCompose(ignored -> loadAdjectilsObject(baseUri, parameter, value, previousAttempt + 1));
+            .build(), 1);
     }
 
     private CompletableFuture<JsonObject> loadHypixelObject(URI baseUri, String parameter, String value, String apiKey) {
-        return loadHypixelObject(baseUri, parameter, value, apiKey, 1);
-    }
-
-    private CompletableFuture<JsonObject> loadHypixelObject(
-        URI baseUri,
-        String parameter,
-        String value,
-        String apiKey,
-        int attempt
-    ) {
-        URI uri = URI.create(baseUri + "?" + parameter + "=" + URLEncoder.encode(value, StandardCharsets.UTF_8)
-            + "&_kungFresh=" + System.currentTimeMillis());
-        HttpRequest request = HttpRequest.newBuilder(uri)
+        String query = baseUri + "?" + parameter + "=" + URLEncoder.encode(value, StandardCharsets.UTF_8);
+        return loadObject("Hypixel", () -> HttpRequest.newBuilder(URI.create(query + "&_kungFresh=" + System.currentTimeMillis()))
             .timeout(Duration.ofSeconds(12))
             .header("Accept", "application/json")
             .header("API-Key", apiKey)
@@ -214,59 +155,50 @@ public final class HypixelSkyBlockProfileClient {
             .header("Pragma", "no-cache")
             .header("User-Agent", "Kung-HypixelProfile")
             .GET()
-            .build();
-        return httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString())
-            .handle((response, throwable) -> {
+            .build(), 1);
+    }
+
+    private CompletableFuture<JsonObject> loadObject(String service, Supplier<HttpRequest> request, int attempt) {
+        // Rebuild each attempt so provider-specific freshness timestamps advance on retries.
+        return httpClient.sendAsync(request.get(), HttpResponse.BodyHandlers.ofString())
+            .<CompletableFuture<JsonObject>>handle((response, throwable) -> {
                 if (throwable != null) {
                     if (attempt < API_ATTEMPTS) {
-                        return retryHypixelObject(baseUri, parameter, value, apiKey, attempt);
+                        return retryObject(service, request, attempt);
                     }
-                    return failedFuture(throwable);
+                    return CompletableFuture.failedFuture(throwable);
                 }
                 if (response.statusCode() < 200 || response.statusCode() >= 300) {
                     IllegalStateException error =
-                        new IllegalStateException("Hypixel returned HTTP " + response.statusCode());
+                        new IllegalStateException(service + " returned HTTP " + response.statusCode());
                     if (shouldRetry(response.statusCode()) && attempt < API_ATTEMPTS) {
-                        return retryHypixelObject(baseUri, parameter, value, apiKey, attempt);
+                        return retryObject(service, request, attempt);
                     }
-                    return failedFuture(error);
+                    return CompletableFuture.failedFuture(error);
                 }
                 try {
                     JsonObject root = JsonParser.parseString(response.body()).getAsJsonObject();
                     if (!bool(root, "success")) {
-                        throw new IllegalStateException("Hypixel returned success=false");
+                        throw new IllegalStateException(service + " returned success=false");
                     }
                     return CompletableFuture.completedFuture(root);
                 } catch (RuntimeException exception) {
-                    return failedFuture(exception);
+                    return CompletableFuture.failedFuture(exception);
                 }
             })
             .thenCompose(future -> future);
     }
 
-    private CompletableFuture<JsonObject> retryHypixelObject(
-        URI baseUri,
-        String parameter,
-        String value,
-        String apiKey,
-        int previousAttempt
-    ) {
-        long delayMillis = 300L * previousAttempt;
+    private CompletableFuture<JsonObject> retryObject(String service, Supplier<HttpRequest> request, int previousAttempt) {
         return CompletableFuture.supplyAsync(
                 () -> null,
-                CompletableFuture.delayedExecutor(delayMillis, java.util.concurrent.TimeUnit.MILLISECONDS)
+                CompletableFuture.delayedExecutor(300L * previousAttempt, TimeUnit.MILLISECONDS)
             )
-            .thenCompose(ignored -> loadHypixelObject(baseUri, parameter, value, apiKey, previousAttempt + 1));
-    }
-
-    private static CompletableFuture<JsonObject> failedFuture(Throwable throwable) {
-        CompletableFuture<JsonObject> future = new CompletableFuture<>();
-        future.completeExceptionally(throwable);
-        return future;
+            .thenCompose(ignored -> loadObject(service, request, previousAttempt + 1));
     }
 
     private static boolean shouldRetry(int statusCode) {
-        return statusCode == 429 || statusCode == 502 || statusCode == 503 || statusCode == 504 || statusCode >= 500;
+        return statusCode == 429 || statusCode >= 500;
     }
 
     private ProfileResult parse(MinecraftProfile minecraftProfile, JsonObject playerRoot, JsonObject profilesRoot) {

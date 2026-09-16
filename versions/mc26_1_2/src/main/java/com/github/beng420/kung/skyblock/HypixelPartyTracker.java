@@ -26,8 +26,7 @@ public final class HypixelPartyTracker {
     private static final Pattern PARTY_LEAVE_PATTERN = Pattern.compile("^(?:\\[[^\\]]+]\\s*)*(?<name>[A-Za-z0-9_]{3,16})\\s+(?:has left|left) the party\\.?$", Pattern.CASE_INSENSITIVE);
     private static final Pattern PARTY_REMOVE_PATTERN = Pattern.compile("^(?:(?:\\[[^\\]]+]\\s*)*(?<name>[A-Za-z0-9_]{3,16})\\s+(?:was removed from your party|has been kicked from the party).*|You kicked (?:\\[[^\\]]+]\\s*)*(?<kicked>[A-Za-z0-9_]{3,16}) from the party!?).*$", Pattern.CASE_INSENSITIVE);
 
-    private final Set<String> partyPlayerNames = new HashSet<>();
-    private final Map<String, String> displayPlayerNames = new HashMap<>();
+    private final Map<String, String> partyPlayerNames = new HashMap<>();
     private final Map<String, UUID> playerUuids = new HashMap<>();
     private long tickCounter;
     private boolean initialized;
@@ -41,7 +40,7 @@ public final class HypixelPartyTracker {
     }
 
     public boolean isKnownPartyPlayer(String name) {
-        return name != null && partyPlayerNames.contains(normalizeName(name));
+        return name != null && partyPlayerNames.containsKey(normalizeName(name));
     }
 
     public int partyPlayerCount() {
@@ -49,16 +48,12 @@ public final class HypixelPartyTracker {
     }
 
     public Set<String> knownPartyPlayerNames() {
-        Set<String> names = new HashSet<>();
-        for (String name : partyPlayerNames) {
-            names.add(displayPlayerNames.getOrDefault(name, name));
-        }
-        return Set.copyOf(names);
+        return Set.copyOf(partyPlayerNames.values());
     }
 
     public Set<UUID> knownPartyPlayerUuids() {
         Set<UUID> uuids = new HashSet<>();
-        for (String name : partyPlayerNames) {
+        for (String name : partyPlayerNames.keySet()) {
             uuids.add(partyPlayerUuid(name));
         }
         return Set.copyOf(uuids);
@@ -83,7 +78,7 @@ public final class HypixelPartyTracker {
         if (uuid == null) {
             return "";
         }
-        for (String name : partyPlayerNames) {
+        for (String name : partyPlayerNames.keySet()) {
             if (partyPlayerUuid(name).equals(uuid)) {
                 return name;
             }
@@ -138,7 +133,6 @@ public final class HypixelPartyTracker {
         String lower = plainMessage.toLowerCase(Locale.ROOT);
         if (isPartyResetMessage(lower)) {
             partyPlayerNames.clear();
-            displayPlayerNames.clear();
             logPartyState("reset");
             return;
         }
@@ -215,8 +209,7 @@ public final class HypixelPartyTracker {
         }
 
         String normalized = normalizeName(name);
-        boolean added = partyPlayerNames.add(normalized);
-        displayPlayerNames.put(normalized, name);
+        boolean added = partyPlayerNames.put(normalized, name) == null;
         UUID playerUuid = uuid;
         if (playerUuid == null) {
             playerUuid = playerUuids.get(normalized);
@@ -235,13 +228,12 @@ public final class HypixelPartyTracker {
         if (name != null) {
             String normalized = normalizeName(name);
             partyPlayerNames.remove(normalized);
-            displayPlayerNames.remove(normalized);
             logPartyState("remove " + name);
         }
     }
 
     private void logPartyState(String reason) {
-        String state = "reason=" + reason + " players=" + partyPlayerNames;
+        String state = "reason=" + reason + " players=" + partyPlayerNames.keySet();
         if (!state.equals(lastLoggedPartyState)) {
             lastLoggedPartyState = state;
             KungDebugRecorder.event("party", state);

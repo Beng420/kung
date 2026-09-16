@@ -2,7 +2,6 @@ package com.github.beng420.kung.feature.misc;
 
 import com.github.beng420.kung.config.category.MiscConfig;
 import com.github.beng420.kung.feature.ConfigurableFeature;
-import com.github.beng420.kung.feature.Feature;
 import com.github.beng420.kung.skyblock.HypixelInstanceTracker;
 import java.util.LinkedHashSet;
 import java.util.Set;
@@ -12,7 +11,7 @@ import net.minecraft.client.resources.sounds.SimpleSoundInstance;
 import net.minecraft.network.chat.Component;
 import net.minecraft.sounds.SoundEvents;
 
-public final class LobbyHopHelperFeature extends ConfigurableFeature<MiscConfig> implements Feature {
+public final class LobbyHopHelperFeature extends ConfigurableFeature<MiscConfig> {
     public static final LobbyHopHelperFeature INSTANCE = new LobbyHopHelperFeature();
     private static final int MAX_HISTORY_SIZE = 128;
 

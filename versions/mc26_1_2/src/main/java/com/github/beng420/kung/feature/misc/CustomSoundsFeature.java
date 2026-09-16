@@ -4,7 +4,6 @@ import com.github.beng420.kung.KungMod;
 import com.github.beng420.kung.config.KungConfig;
 import com.github.beng420.kung.config.category.MiscConfig;
 import com.github.beng420.kung.feature.ConfigurableFeature;
-import com.github.beng420.kung.feature.Feature;
 import com.github.beng420.kung.util.KungDebugRecorder;
 import java.io.IOException;
 import java.io.InputStream;
@@ -39,7 +38,7 @@ import net.minecraft.sounds.SoundEvent;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.item.ItemStack;
 
-public final class CustomSoundsFeature extends ConfigurableFeature<MiscConfig> implements Feature {
+public final class CustomSoundsFeature extends ConfigurableFeature<MiscConfig> {
     public static final CustomSoundsFeature INSTANCE = new CustomSoundsFeature();
     private static final String SOUND_DIRECTORY_LABEL = "config/kung/custom-sounds";
     private static final String BUNDLED_SOUND_RESOURCE_PREFIX = "/assets/kung/sounds/custom/";

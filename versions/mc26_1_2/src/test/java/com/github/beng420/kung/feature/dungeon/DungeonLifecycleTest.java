@@ -1,12 +1,57 @@
 package com.github.beng420.kung.feature.dungeon;
 
 import static org.junit.Assert.*;
+import com.github.beng420.kung.config.KungConfig;
+import com.github.beng420.kung.config.category.BRHelperConfig;
+import com.github.beng420.kung.config.category.DungeonConfig;
+import com.github.beng420.kung.runtime.AppServices;
 import com.github.beng420.kung.skyblock.HypixelInstanceState;
 import com.github.beng420.kung.skyblock.HypixelLocation;
 import java.util.List;
+import net.minecraft.client.Minecraft;
 import org.junit.Test;
 
 public final class DungeonLifecycleTest {
+    @Test public void scanReadinessSurvivesCountdownAndClearsOnInstanceExit() throws Exception {
+        var config = KungConfig.get();
+        var previousDungeon = config.dungeon;
+        var previousBloodRush = config.bloodRush;
+        boolean bloodRushInitialized = BloodRushHelperFeature.INSTANCE.initialized();
+        config.dungeon = new DungeonConfig();
+        config.bloodRush = new BRHelperConfig();
+        try {
+            var tracker = new DungeonStateTracker();
+            BloodRushHelperFeature.INSTANCE.initialize(AppServices.create(config, tracker));
+            assertFalse(tracker.canScanDungeon());
+            lifecycle(tracker, "startDungeonInstance");
+            assertTrue(tracker.canScanDungeon());
+            assertFalse(tracker.realRunStarted());
+            assertFalse(tracker.isRecording());
+            tracker.mapSnapshot().observeStartRoom(1, 5);
+
+            lifecycle(tracker, "restartDungeonRun");
+            assertTrue(tracker.canScanDungeon());
+            assertTrue(tracker.realRunStarted());
+            assertEquals(new DungeonMapSnapshot.GridKey(2, 10), tracker.mapSnapshot().startRoom());
+
+            lifecycle(tracker, "endDungeonInstance");
+            assertFalse(tracker.canScanDungeon());
+            assertFalse(tracker.realRunStarted());
+            tracker.synchronizeInstance(null);
+            assertFalse(tracker.canScanDungeon());
+        } finally {
+            if (!bloodRushInitialized) BloodRushHelperFeature.INSTANCE.shutdown();
+            config.dungeon = previousDungeon;
+            config.bloodRush = previousBloodRush;
+        }
+    }
+
+    private static void lifecycle(DungeonStateTracker tracker, String methodName) throws Exception {
+        var method = DungeonStateTracker.class.getDeclaredMethod(methodName, Minecraft.class);
+        method.setAccessible(true);
+        method.invoke(tracker, (Minecraft) null);
+    }
+
     @Test public void recognizesFormattedLifecycleMessages() {
         assertTrue(DungeonLifecycleSignals.isRunStart("  §aStarting   in 1 second.  "));
         assertTrue(DungeonLifecycleSignals.isRunFinished("§r§cS Defeated Necron in 05m 42s (NEW RECORD!)"));

@@ -1,7 +1,5 @@
 package com.github.beng420.kung.ui;
 
-import static com.github.beng420.kung.util.GuiDraw.fill;
-
 import java.util.List;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
@@ -26,7 +24,7 @@ public final class HudTextBlockRenderer {
             graphics.pose().translate(options.x(), options.y());
             graphics.pose().scale(options.scale(), options.scale());
             if ((options.backgroundColor() >>> 24) != 0) {
-                fill(graphics, 0, 0, width, height, options.backgroundColor());
+                graphics.fill(0, 0, width, height, options.backgroundColor());
             }
             for (int index = 0; index < lines.size(); index++) {
                 Line line = lines.get(index);

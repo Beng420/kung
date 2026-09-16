@@ -1,7 +1,6 @@
 package com.github.beng420.kung.update;
 
-import java.util.Locale;
-import net.minecraft.client.multiplayer.resolver.ServerAddress;
+import com.github.beng420.kung.skyblock.HypixelLocation;
 
 /** Client-thread notice eligibility; world changes never bypass a completed card's cooldown. */
 final class KungUpdateNotification {
@@ -63,10 +62,7 @@ final class KungUpdateNotification {
     }
 
     static boolean isHypixelAddress(String address) {
-        if (address == null || address.isBlank()) return false;
-        String host = ServerAddress.parseString(address.trim()).getHost().toLowerCase(Locale.ROOT);
-        if (host.endsWith(".")) host = host.substring(0, host.length() - 1);
-        return host.equals("hypixel.net") || host.endsWith(".hypixel.net");
+        return HypixelLocation.isHypixelAddress(address == null ? null : address.trim());
     }
 
 }

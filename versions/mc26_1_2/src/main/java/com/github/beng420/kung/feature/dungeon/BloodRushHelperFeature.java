@@ -2,7 +2,6 @@ package com.github.beng420.kung.feature.dungeon;
 
 import com.github.beng420.kung.config.category.BRHelperConfig;
 import com.github.beng420.kung.feature.ConfigurableFeature;
-import com.github.beng420.kung.runtime.ClientService;
 import com.github.beng420.kung.feature.dungeon.room.RoomType;
 import com.github.beng420.kung.message.KungMessages;
 import com.github.beng420.kung.util.KungDebugRecorder;
@@ -13,7 +12,7 @@ import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
 
-public final class BloodRushHelperFeature extends ConfigurableFeature<BRHelperConfig> implements ClientService {
+public final class BloodRushHelperFeature extends ConfigurableFeature<BRHelperConfig> {
     public static final BloodRushHelperFeature INSTANCE = new BloodRushHelperFeature();
     private static final long DOOR_TITLE_STABLE_TICKS = 1;
 

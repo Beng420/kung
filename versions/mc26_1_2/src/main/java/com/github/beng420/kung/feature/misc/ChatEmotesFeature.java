@@ -2,10 +2,9 @@ package com.github.beng420.kung.feature.misc;
 
 import com.github.beng420.kung.config.category.MiscConfig;
 import com.github.beng420.kung.feature.ConfigurableFeature;
-import com.github.beng420.kung.feature.Feature;
 import net.fabricmc.fabric.api.client.message.v1.ClientSendMessageEvents;
 
-public final class ChatEmotesFeature extends ConfigurableFeature<MiscConfig> implements Feature {
+public final class ChatEmotesFeature extends ConfigurableFeature<MiscConfig> {
     public ChatEmotesFeature() {
         super(config -> config.misc);
     }

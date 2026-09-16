@@ -1,7 +1,5 @@
 package com.github.beng420.kung.ui;
 
-import static com.github.beng420.kung.util.GuiDraw.fill;
-
 import java.util.List;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
@@ -34,8 +32,8 @@ public final class UiTooltip {
         x = Math.clamp(x, 1, Math.max(1, viewportWidth - width - 1));
         if (y + height + 1 > viewportHeight) y -= height + UiSpacing.MD * 2;
         y = Math.clamp(y, 1, Math.max(1, viewportHeight - height - 1));
-        fill(graphics, x - 1, y - 1, x + width + 1, y + height + 1, theme.border());
-        fill(graphics, x, y, x + width, y + height, theme.panelDark());
+        graphics.fill(x - 1, y - 1, x + width + 1, y + height + 1, theme.border());
+        graphics.fill(x, y, x + width, y + height, theme.panelDark());
         for (int index = 0; index < wrapped.size(); index++) {
             graphics.text(
                 font,

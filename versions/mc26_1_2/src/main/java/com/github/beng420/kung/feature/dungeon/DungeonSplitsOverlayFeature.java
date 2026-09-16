@@ -5,7 +5,6 @@ import com.github.beng420.kung.config.KungHudEditorScreen;
 import com.github.beng420.kung.config.KungHudEditorState;
 import com.github.beng420.kung.config.category.SplitsConfig;
 import com.github.beng420.kung.feature.ConfigurableFeature;
-import com.github.beng420.kung.feature.Feature;
 import java.util.List;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.VanillaHudElements;
@@ -14,7 +13,7 @@ import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.resources.Identifier;
 
 /** Compact colored phase labels and aligned times, following Odin's splits HUD. */
-public final class DungeonSplitsOverlayFeature extends ConfigurableFeature<SplitsConfig> implements Feature {
+public final class DungeonSplitsOverlayFeature extends ConfigurableFeature<SplitsConfig> {
     private static final Identifier HUD_ID = Identifier.fromNamespaceAndPath(KungMod.MOD_ID, "dungeon_splits_overlay");
     private static final int WIDTH = 300;
     private static final int LOSS_COLUMN_WIDTH = 60;

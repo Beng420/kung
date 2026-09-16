@@ -36,14 +36,9 @@ import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.EquipmentSlotGroup;
 import net.minecraft.world.entity.monster.zombie.Zombie;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.level.saveddata.maps.MapDecoration;
-import net.minecraft.world.level.saveddata.maps.MapDecorationTypes;
-import net.minecraft.world.level.saveddata.maps.MapItemSavedData;
 
 public final class DungeonRunStats {
     private static final int MAX_DUNGEON_PLAYERS = 5;
-    private static final int ROOM_SIZE = 19;
-    private static final int DOOR_SIZE = 6;
     private static final int TARGET_CRYPTS = 5;
     private static final long ROOM_CLEAR_PLAYER_STALE_TICKS = 40;
     private static final long RUN_SECRET_FINAL_TIMEOUT_TICKS = 60;
@@ -1018,96 +1013,6 @@ public final class DungeonRunStats {
         observePlayerRoom(player.getUUID(), player.blockPosition(), nowTick);
     }
 
-    private void observeMapPlayerRooms(Minecraft client, long nowTick) {
-        MapItemSavedData mapData = DungeonMapItems.mapData(client);
-        if (mapData == null) {
-            return;
-        }
-
-        for (MapDecoration decoration : mapData.getDecorations()) {
-            if (!isKnownDungeonPlayerDecoration(client, decoration)) {
-                continue;
-            }
-            RoomKey room = roomFromMapDecoration(decoration);
-            if (room != null) {
-                lastRoomPresenceTick.put(room, nowTick);
-            }
-        }
-    }
-
-    private static boolean isPlayerDecoration(MapDecoration decoration) {
-        return decoration.type().equals(MapDecorationTypes.PLAYER)
-            || decoration.type().equals(MapDecorationTypes.PLAYER_OFF_MAP)
-            || decoration.type().equals(MapDecorationTypes.PLAYER_OFF_LIMITS)
-            || decoration.type().equals(MapDecorationTypes.BLUE_MARKER)
-            || decoration.type().equals(MapDecorationTypes.FRAME);
-    }
-
-    private boolean isKnownDungeonPlayerDecoration(Minecraft client, MapDecoration decoration) {
-        if (!isPlayerDecoration(decoration) || client.player == null) {
-            return false;
-        }
-        String name = decorationName(decoration);
-        if (!name.isEmpty()) {
-            return name.equalsIgnoreCase(client.player.getName().getString()) || isKnownTrackedPlayer(name);
-        }
-
-        RoomKey room = roomFromMapDecoration(decoration);
-        if (room == null) {
-            return false;
-        }
-        DungeonScanUtils.GridPosition selfGrid = DungeonScanUtils.getRoomGridPosition(client.player.blockPosition());
-        if (selfGrid.gridX() == room.roomGridX() && selfGrid.gridZ() == room.roomGridZ()) {
-            return true;
-        }
-        if (client.level == null || client.getConnection() == null) {
-            return false;
-        }
-        for (AbstractClientPlayer player : client.level.players()) {
-            if (player == client.player || player.isInvisible() || !isKnownTrackedPlayer(player.getName().getString())) {
-                continue;
-            }
-            if (client.getConnection().getPlayerInfo(player.getUUID()) == null) {
-                continue;
-            }
-            DungeonScanUtils.GridPosition playerGrid = DungeonScanUtils.getRoomGridPosition(player.blockPosition());
-            if (playerGrid.gridX() == room.roomGridX() && playerGrid.gridZ() == room.roomGridZ()) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private static String decorationName(MapDecoration decoration) {
-        return decoration.name()
-            .map(component -> component.getString().replaceAll("\u00a7.", "").trim())
-            .orElse("");
-    }
-
-    private static RoomKey roomFromMapDecoration(MapDecoration decoration) {
-        int mapPixelX = Math.round((((decoration.x() >> 1) + 64) / 128.0F) * mapGridPixelSize());
-        int mapPixelZ = Math.round((((decoration.y() >> 1) + 64) / 128.0F) * mapGridPixelSize());
-        int roomGridX = Math.round((mapPixelX - ROOM_SIZE / 2.0F) / pixelsPerRoom());
-        int roomGridZ = Math.round((mapPixelZ - ROOM_SIZE / 2.0F) / pixelsPerRoom());
-        if (!isValidRoomGrid(roomGridX, roomGridZ)) {
-            return null;
-        }
-        return new RoomKey(roomGridX, roomGridZ);
-    }
-
-    private static int mapGridPixelSize() {
-        int pixel = 0;
-        for (int index = 0; index < DungeonScanUtils.SCAN_GRID_SIZE; index++) {
-            pixel += (index & 1) == 0 ? ROOM_SIZE : DOOR_SIZE;
-            pixel += 1;
-        }
-        return pixel;
-    }
-
-    private static int pixelsPerRoom() {
-        return ROOM_SIZE + DOOR_SIZE + 2;
-    }
-
     private void observeScoreboard(Minecraft client) {
         for (String line : DungeonSidebarReader.lines(client)) {
             observeScoreboardLine(client, line);
@@ -1857,31 +1762,6 @@ public final class DungeonRunStats {
 
     private static String shortUuid(UUID uuid) {
         return uuid == null ? "null" : uuid.toString().substring(0, 8);
-    }
-
-    private static String stripFormatting(String text) {
-        return text == null ? "" : text.replaceAll("\u00a7.", "");
-    }
-
-    private static boolean containsPlayerName(String lowerMessage, String lowerName) {
-        int index = lowerMessage.indexOf(lowerName);
-        while (index >= 0) {
-            int before = index - 1;
-            int after = index + lowerName.length();
-            boolean leftBoundary = before < 0 || !isNameCharacter(lowerMessage.charAt(before));
-            boolean rightBoundary = after >= lowerMessage.length() || !isNameCharacter(lowerMessage.charAt(after));
-            if (leftBoundary && rightBoundary) {
-                return true;
-            }
-            index = lowerMessage.indexOf(lowerName, index + 1);
-        }
-        return false;
-    }
-
-    private static boolean isNameCharacter(char character) {
-        return (character >= 'a' && character <= 'z')
-            || (character >= '0' && character <= '9')
-            || character == '_';
     }
 
     private static boolean isPlayerName(String name) {

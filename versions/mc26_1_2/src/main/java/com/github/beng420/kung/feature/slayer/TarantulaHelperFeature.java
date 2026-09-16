@@ -3,7 +3,6 @@ package com.github.beng420.kung.feature.slayer;
 import com.github.beng420.kung.config.KungConfig;
 import com.github.beng420.kung.config.category.SlayerConfig;
 import com.github.beng420.kung.feature.ConfigurableFeature;
-import com.github.beng420.kung.feature.Feature;
 import com.github.beng420.kung.message.KungMessages;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
@@ -26,7 +25,7 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 
-public final class TarantulaHelperFeature extends ConfigurableFeature<SlayerConfig> implements Feature {
+public final class TarantulaHelperFeature extends ConfigurableFeature<SlayerConfig> {
     public static final TarantulaHelperFeature INSTANCE = new TarantulaHelperFeature();
 
     private static final double SEARCH_RANGE = 30.0;

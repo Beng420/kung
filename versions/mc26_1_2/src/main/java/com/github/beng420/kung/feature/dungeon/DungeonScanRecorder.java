@@ -55,7 +55,7 @@ public final class DungeonScanRecorder {
 
     public void scanNow(Minecraft client, DungeonStateTracker tracker) {
         if (!DungeonWorkload.current().rooms()
-            || client.level == null || client.player == null || !tracker.state().isInDungeon()) {
+            || client.level == null || client.player == null || !tracker.canScanDungeon()) {
             return;
         }
 
@@ -88,7 +88,7 @@ public final class DungeonScanRecorder {
 
     private void tick(Minecraft client, DungeonStateTracker tracker) {
         if (!DungeonWorkload.current().rooms() || client.level == null || client.player == null
-            || !tracker.state().isInDungeon()) {
+            || !tracker.canScanDungeon()) {
             stopRecording();
             return;
         }

@@ -1,21 +1,16 @@
 package com.github.beng420.kung.feature.misc;
 
+import com.github.beng420.kung.config.KungConfig;
 import com.github.beng420.kung.config.category.MiscConfig;
 import com.github.beng420.kung.feature.ConfigurableFeature;
-import com.github.beng420.kung.feature.Feature;
-import com.github.beng420.kung.feature.misc.commands.CataChatCommand;
-import com.github.beng420.kung.feature.misc.commands.ChatCommand;
-import com.github.beng420.kung.feature.misc.commands.TpsChatCommand;
 import com.github.beng420.kung.message.HypixelChatSender;
 import com.github.beng420.kung.skyblock.HypixelGuildTracker;
 import com.github.beng420.kung.skyblock.HypixelPartyTracker;
-import com.github.beng420.kung.util.CatacombsAverageCalculator.Goal;
 import com.github.beng420.kung.util.KungDebugRecorder;
 import java.util.ArrayDeque;
 import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
-import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Queue;
@@ -26,13 +21,9 @@ import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
 import net.minecraft.client.Minecraft;
 
-public final class ChatCommandsFeature extends ConfigurableFeature<MiscConfig> implements Feature {
+public final class ChatCommandsFeature extends ConfigurableFeature<MiscConfig> {
     public static final ChatCommandsFeature INSTANCE = new ChatCommandsFeature();
-    private static final List<ChatCommand> COMMANDS = List.of(
-        new CataChatCommand("c50", Goal.CATACOMBS_50),
-        new CataChatCommand("ca50", Goal.CLASS_AVERAGE_50),
-        new TpsChatCommand()
-    );
+    private static final ChatCommand[] COMMANDS = ChatCommand.values();
 
     private static final Pattern PARTY_GUILD_CHAT_PATTERN =
         Pattern.compile("^(?<channel>Party|Guild)\\s*>\\s*(?<sender>.+?)\\s*:\\s*(?<message>.+)$");
@@ -106,12 +97,12 @@ public final class ChatCommandsFeature extends ConfigurableFeature<MiscConfig> i
         String body = chatContext.message().trim();
 
         for (ChatCommand command : COMMANDS) {
-            Matcher matcher = command.pattern().matcher(body);
+            Matcher matcher = command.pattern.matcher(body);
             if (!matcher.matches()) {
                 continue;
             }
 
-            if (!command.isEnabled(channel)) {
+            if (!command.isEnabled(KungConfig.get().misc, channel)) {
                 KungDebugRecorder.event("chat-command", "ignored source=" + source + " reason=disabled-channel line=" + clean);
                 return;
             }
@@ -123,13 +114,7 @@ public final class ChatCommandsFeature extends ConfigurableFeature<MiscConfig> i
                 return;
             }
 
-            String targetName = null;
-            try {
-                targetName = matcher.group("name");
-            } catch (IllegalArgumentException ignored) {
-                // Command pattern doesn't capture a target name
-            }
-
+            String targetName = command.target(matcher);
             if (targetName == null || targetName.isBlank()) {
                 targetName = senderName;
             } else {
@@ -140,7 +125,6 @@ public final class ChatCommandsFeature extends ConfigurableFeature<MiscConfig> i
                         channel,
                         senderName,
                         targetName,
-                        matcher,
                         GUILD_RESOLVE_WAIT_TICKS,
                         chatContext.replyTarget()
                     ));
@@ -167,22 +151,9 @@ public final class ChatCommandsFeature extends ConfigurableFeature<MiscConfig> i
                 return;
             }
 
-            executeCommand(command, client, channel, senderName, targetName, matcher, chatContext.replyTarget());
+            command.execute(client, channel, targetName, response -> queue(channel, chatContext.replyTarget(), response));
             return;
         }
-    }
-
-    private static void executeCommand(
-        ChatCommand command,
-        Minecraft client,
-        ChatChannel channel,
-        String senderName,
-        String targetName,
-        Matcher matcher,
-        String replyTarget
-    ) {
-        command.execute(client, channel, senderName, targetName, matcher, response ->
-            queue(channel, replyTarget, response));
     }
 
     private static ChatContext chatContext(Minecraft client, String clean) {
@@ -349,7 +320,6 @@ public final class ChatCommandsFeature extends ConfigurableFeature<MiscConfig> i
                     pending.channel(),
                     pending.senderName(),
                     pending.inputName(),
-                    pending.matcher(),
                     ticksLeft,
                     pending.replyTarget()
                 ));
@@ -366,15 +336,8 @@ public final class ChatCommandsFeature extends ConfigurableFeature<MiscConfig> i
                 queue(pending.channel(), pending.replyTarget(), "Could not match " + pending.inputName() + " to a player.");
                 continue;
             }
-            executeCommand(
-                pending.command(),
-                client,
-                pending.channel(),
-                pending.senderName(),
-                resolution.name(),
-                pending.matcher(),
-                pending.replyTarget()
-            );
+            pending.command().execute(client, pending.channel(), resolution.name(), response ->
+                queue(pending.channel(), pending.replyTarget(), response));
         }
     }
 
@@ -474,7 +437,6 @@ public final class ChatCommandsFeature extends ConfigurableFeature<MiscConfig> i
         ChatChannel channel,
         String senderName,
         String inputName,
-        Matcher matcher,
         int ticksLeft,
         String replyTarget
     ) {

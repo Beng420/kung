@@ -1,6 +1,7 @@
 package com.github.beng420.kung.feature.safari;
 
 import com.github.beng420.kung.config.category.SafariConfig;
+import com.github.beng420.kung.skyblock.HypixelLocation;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
@@ -38,11 +39,11 @@ public class SafariOverlayTest {
 
     @Test
     public void onlyHypixelHostsAreAccepted() {
-        assertTrue(SafariOverlayFeature.isHypixel("mc.hypixel.net:25565"));
-        assertTrue(SafariOverlayFeature.isHypixel("HYPIXEL.NET."));
-        assertFalse(SafariOverlayFeature.isHypixel("hypixel.net.example.com"));
-        assertFalse(SafariOverlayFeature.isHypixel("fakehypixel.net"));
-        assertFalse(SafariOverlayFeature.isHypixel("localhost"));
+        assertTrue(HypixelLocation.isHypixelAddress("mc.hypixel.net:25565"));
+        assertTrue(HypixelLocation.isHypixelAddress("HYPIXEL.NET."));
+        assertFalse(HypixelLocation.isHypixelAddress("hypixel.net.example.com"));
+        assertFalse(HypixelLocation.isHypixelAddress("fakehypixel.net"));
+        assertFalse(HypixelLocation.isHypixelAddress("localhost"));
     }
 
     @Test

@@ -1589,22 +1589,6 @@ public final class DungeonKnownRoomCatalog {
         }
     }
 
-    private static boolean hasConflictingKnownHint(
-        Map<Integer, KnownCoreHint> knownHintsByCoreHash,
-        int coreHash,
-        int stableCoreHash,
-        RoomTemplate template
-    ) {
-        KnownCoreHint hint = knownHintsByCoreHash.get(coreHash);
-        if (hint == null && stableCoreHash != 0) {
-            hint = knownHintsByCoreHash.get(stableCoreHash);
-        }
-        return hint != null
-            && (!hint.name().equals(template.name())
-                || hint.type() != template.type()
-                || hint.secrets() != template.secrets());
-    }
-
     private static boolean matchesComponent(DungeonScanPoint point, TemplateComponent component) {
         return component.matches(point.coreHash(), point.stableCoreHash());
     }
@@ -1869,19 +1853,6 @@ public final class DungeonKnownRoomCatalog {
             return line.substring(1);
         }
         return line;
-    }
-
-    private static String toJsonLine(LearnedRoom room) {
-        return "{"
-            + "\"name\":" + jsonString(room.name()) + ","
-            + "\"type\":\"" + room.type().name() + "\","
-            + "\"secrets\":" + room.secrets() + ","
-            + (room.crypts() <= 0 ? "" : "\"crypts\":" + room.crypts() + ",")
-            + "\"coreHash\":" + room.coreHash() + ","
-            + (room.stableCoreHash() == 0 ? "" : "\"stableCoreHash\":" + room.stableCoreHash() + ",")
-            + "\"roomGridX\":" + room.roomGridX() + ","
-            + "\"roomGridZ\":" + room.roomGridZ()
-            + "}";
     }
 
     private static String jsonString(String value) {

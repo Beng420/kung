@@ -2,10 +2,9 @@ package com.github.beng420.kung.feature;
 
 import com.github.beng420.kung.config.KungConfig;
 import com.github.beng420.kung.runtime.AppServices;
-import com.github.beng420.kung.runtime.LifecycleComponent;
 import java.util.function.Function;
 
-public abstract class ConfigurableFeature<C> implements LifecycleComponent {
+public abstract class ConfigurableFeature<C> implements Feature {
     private final Function<KungConfig, C> configSelector;
     private AppServices services;
     private boolean initialized;
