@@ -34,6 +34,34 @@ public final class KungOneConfigTreeTest {
         long keybinds = tree.map.values().stream().filter(node -> node.getMetadata("visualizer") == Visualizer.KeybindVisualizer.class).count();
         assertEquals(12, keybinds);
         assertEquals(Property.Display.DISABLED, property(tree, "Crypts", "Enabled").getDisplay());
+        // Global OneConfig search reads searchTags, but ignores category/subcategory headings.
+        assertEquals(List.of("Kung", "Garden", "6th Visitor Alarm"),
+            property(tree, "6th Visitor Alarm", "Enabled").getMetadata("searchTags"));
+        assertEquals(List.of("Kung", "Garden", "6th Visitor Alarm"),
+            property(tree, "6th Visitor Alarm", "Volume (%)").getMetadata("searchTags"));
+    }
+
+    @Test
+    public void removableTickControlsUseNativeNumbersAndGuardBothEditsAndRemoval() {
+        var ticks = new AtomicInteger(3);
+        var removed = new AtomicInteger();
+        var allowed = new AtomicBoolean(true);
+        var row = SettingEntry.stepperRemove("Threshold 1", ticks::get, ticks::set, 1, 20, 1, removed::incrementAndGet);
+        var bridge = create(feature("Bow Draw Indicator", new AtomicBoolean(), () -> { }, List.of(row)), allowed);
+        var number = property(bridge.tree(), "Bow Draw Indicator", "Threshold 1 (ticks)");
+        assertEquals(Visualizer.NumberVisualizer.class, number.getMetadata("visualizer"));
+        number.setAs(99);
+        assertEquals(20, ticks.get());
+        var remove = property(bridge.tree(), "Bow Draw Indicator", "Threshold 1 / Remove");
+        Runnable action = remove.getMetadata("runnable");
+        allowed.set(false);
+        action.run();
+        number.setAs(7);
+        assertEquals(0, removed.get());
+        assertEquals(20, ticks.get());
+        allowed.set(true);
+        action.run();
+        assertEquals(1, removed.get());
     }
 
     @Test
@@ -164,7 +192,8 @@ public final class KungOneConfigTreeTest {
     }
 
     private static int countControls(List<SettingEntry> settings) {
-        return settings.stream().mapToInt(setting -> (setting.kind() == SettingKind.GROUP ? 0 : 1) + countControls(setting.children())).sum();
+        return settings.stream().mapToInt(setting -> (setting.kind() == SettingKind.GROUP ? 0
+            : setting.kind() == SettingKind.STEPPER_REMOVE ? 2 : 1) + countControls(setting.children())).sum();
     }
 
     private static KungOneConfigTree create(KungSettings.FeatureEntry feature, AtomicBoolean allowed) {

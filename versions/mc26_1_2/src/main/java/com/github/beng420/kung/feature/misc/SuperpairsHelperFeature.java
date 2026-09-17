@@ -25,7 +25,6 @@ public final class SuperpairsHelperFeature extends ConfigurableFeature<MiscConfi
     public static final SuperpairsHelperFeature INSTANCE = new SuperpairsHelperFeature();
     private static final int PLAYER_INVENTORY_SLOT_COUNT = 36;
     private static final int MAX_CARD_LINES = 14;
-    private static final int DEBUG_LINE_COUNT = 6;
     private static final int SAMPLE_WIDTH = 170;
     private static final int PADDING_X = 5;
     private static final int PADDING_Y = 4;
@@ -43,7 +42,6 @@ public final class SuperpairsHelperFeature extends ConfigurableFeature<MiscConfi
     private static int slotUpdatePackets;
     private static int observedSlotUpdates;
     private static long lastLoggedRevision = -1;
-    private static String lastObservedSlot = "none";
 
     private SuperpairsHelperFeature() {
         super(config -> config.misc);
@@ -81,7 +79,7 @@ public final class SuperpairsHelperFeature extends ConfigurableFeature<MiscConfi
         if (KungHudEditorState.externalEditing() || !INSTANCE.isEnabled() || screen != client.screen || !ensureSession(client)) {
             return;
         }
-        drawPanel(graphics, client, board.summary(), board.cards(), INSTANCE.config());
+        drawPanel(graphics, client, INSTANCE.config());
     }
 
     /** Called only from the applied ClientPacketListener slot hook, never Netty receipt. */
@@ -159,7 +157,6 @@ public final class SuperpairsHelperFeature extends ConfigurableFeature<MiscConfi
         }
         observedSlotUpdates++;
         if (board.revision() != previousRevision && kind != SuperpairsBoard.Kind.MARKER) {
-            lastObservedSlot = slot + " " + trimForDebug(label, 36);
             KungDebugRecorder.event("superpairs", "reveal container=" + activeMenu.containerId
                 + " slot=" + slot + " kind=" + kind + " item=" + itemId
                 + " name=\"" + label + "\" count=" + stack.getCount());
@@ -167,19 +164,10 @@ public final class SuperpairsHelperFeature extends ConfigurableFeature<MiscConfi
     }
 
     private static String cleanName(ItemStack stack) {
-        String name = cleanText(stack.getHoverName().getString());
-        if (BuiltInRegistries.ITEM.getKey(stack.getItem()).getPath().equals("enchanted_book")) {
-            var lore = stack.get(DataComponents.LORE);
-            if (lore != null) {
-                for (var line : lore.lines()) {
-                    String enchantment = cleanText(line.getString());
-                    if (!enchantment.isBlank()) {
-                        return enchantment;
-                    }
-                }
-            }
-        }
-        return name;
+        var lore = stack.get(DataComponents.LORE);
+        return SuperpairsBoard.rewardLabel(BuiltInRegistries.ITEM.getKey(stack.getItem()).getPath(),
+            stack.getHoverName().getString(), lore == null ? List.of()
+                : lore.lines().stream().map(line -> line.getString()).toList());
     }
 
     private static String cleanText(String value) {
@@ -196,12 +184,15 @@ public final class SuperpairsHelperFeature extends ConfigurableFeature<MiscConfi
         KungDebugRecorder.event("superpairs", "state container=" + activeMenu.containerId
             + " board=" + board.boardSlotCount() + " bonus=" + board.bonusSlotCount()
             + " pairs=" + stats.knownPairs() + " singles=" + stats.singleCards()
-            + " unseen=" + stats.unknownFields() + " maxPairs=" + stats.maximumTotalPairs());
+            + " unseen=" + stats.unknownFields() + " maxPairs=" + stats.maximumTotalPairs()
+            + " maxUnseenPairs=" + stats.maximumUnseenPairs()
+            + (INSTANCE.config().superpairsHelperDebugEnabled()
+                ? " packets=" + slotUpdatePackets + " observedSlots=" + observedSlotUpdates : ""));
     }
 
     public static OverlayBounds overlayBounds(MiscConfig config) {
         float scale = config.superpairsHelperScale() / 100.0F;
-        int sampleLines = 3 + MAX_CARD_LINES + (config.superpairsHelperDebugEnabled() ? DEBUG_LINE_COUNT : 0);
+        int sampleLines = 1 + MAX_CARD_LINES;
         int sampleHeight = PADDING_Y * 2 + sampleLines * ROW_HEIGHT;
         return new OverlayBounds(
             Math.round(config.superpairsHelperX() - scale),
@@ -211,40 +202,24 @@ public final class SuperpairsHelperFeature extends ConfigurableFeature<MiscConfi
         );
     }
 
-    private static void drawPanel(
-        GuiGraphicsExtractor graphics,
-        Minecraft client,
-        PairStats pairStats,
-        List<CardCount> cards,
-        MiscConfig config
-    ) {
+    static List<String> panelLines(SuperpairsBoard board) {
         List<String> lines = new ArrayList<>();
+        PairStats pairStats = board.summary();
         if (board.boardSlotCount() > 0) {
-            String total = pairStats.exactTotalPairs() >= 0
-                ? Integer.toString(pairStats.exactTotalPairs())
-                : "up to " + pairStats.maximumTotalPairs();
-            lines.add("Pairs: " + pairStats.knownPairs() + " found | " + total + " total");
-            lines.add("Unseen Cards: " + pairStats.unknownFields() + " | Singles: " + pairStats.singleCards());
+            int maximum = pairStats.maximumUnseenPairs();
+            lines.add("Unseen pairs: " + (maximum == 0 ? "0" : "up to " + maximum));
         } else {
-            lines.add("Superpairs (Scanning...)");
-            lines.add("Unseen Cards: ?");
+            lines.add("Unseen pairs: ?");
         }
 
-        int visibleCards = Math.min(cards.size(), MAX_CARD_LINES);
-        for (int index = 0; index < visibleCards; index++) {
-            CardCount card = cards.get(index);
-            String count = card.count() <= 2 ? card.count() + "/2" : card.count() + " seen, " + card.pairs() + " pairs";
-            lines.add((card.complete() ? "Known: " : "Need: ") + card.label() + " (" + count + ")");
+        for (CardCount card : board.cards().stream().filter(card -> !card.enchantingXp()).limit(MAX_CARD_LINES).toList()) {
+            lines.add(card.label() + "  " + card.count() + "/" + (card.count() + card.singles()));
         }
-        if (config.superpairsHelperDebugEnabled()) {
-            Screen screen = client.screen;
-            lines.add("title: " + trimForDebug(screen.getTitle().getString().trim(), 30));
-            lines.add("screen: " + screen.getClass().getSimpleName());
-            lines.add("slots: top " + topSlotCount + " board " + board.boardSlotCount());
-            lines.add("known: bonus " + board.bonusSlotCount() + " types " + cards.size());
-            lines.add("container: " + activeMenu.containerId + " revision " + board.revision());
-            lines.add("packets: " + slotUpdatePackets + " slots " + observedSlotUpdates + " last " + lastObservedSlot);
-        }
+        return lines;
+    }
+
+    private static void drawPanel(GuiGraphicsExtractor graphics, Minecraft client, MiscConfig config) {
+        List<String> lines = panelLines(board);
 
         int textWidth = 0;
         for (String line : lines) {
@@ -264,7 +239,8 @@ public final class SuperpairsHelperFeature extends ConfigurableFeature<MiscConfi
             graphics.fill(-PADDING_X - 1, -PADDING_Y - 1, textWidth + PADDING_X + 1, panelHeight + 1, BORDER);
             graphics.fill(-PADDING_X, -PADDING_Y, textWidth + PADDING_X, panelHeight, PANEL);
             for (int index = 0; index < lines.size(); index++) {
-                graphics.text(client.font, trimToWidth(client, lines.get(index), textWidth), 0, index * ROW_HEIGHT, TEXT, true);
+                graphics.text(client.font, trimToWidth(client, lines.get(index), textWidth), 0, index * ROW_HEIGHT,
+                    index == 0 ? 0xFFFFD76A : TEXT, true);
             }
         } finally {
             graphics.pose().popMatrix();
@@ -285,10 +261,6 @@ public final class SuperpairsHelperFeature extends ConfigurableFeature<MiscConfi
         return suffix;
     }
 
-    private static String trimForDebug(String value, int maxLength) {
-        return value.length() <= maxLength ? value : value.substring(0, Math.max(0, maxLength - 3)) + "...";
-    }
-
     private static void resetState(String reason) {
         if (activeMenu == null) {
             return;
@@ -301,7 +273,6 @@ public final class SuperpairsHelperFeature extends ConfigurableFeature<MiscConfi
         slotUpdatePackets = 0;
         observedSlotUpdates = 0;
         lastLoggedRevision = -1;
-        lastObservedSlot = "none";
     }
 
     public record OverlayBounds(int x, int y, int width, int height) {

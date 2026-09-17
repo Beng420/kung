@@ -138,6 +138,26 @@ or contributor attribution. Recognized party reports still do not trigger echoes
 The feature requests the shared statistics workload even with the map disabled,
 without enabling room scans. Settings are persisted in `DungeonConfig`.
 
+### Prince report punctuation — 2026-09-17
+
+`kung-trace-20260917-221608.log` records
+`Party > [VIP] gemothic: Prince Killed` at 22:11:02.054. The old pattern required
+an exclamation mark after `Killed`, leaving `prince=false`. At boss entry the
+estimate was 299: skill 100, exploration 91 (60 rooms + 31 secrets), speed 100,
+bonus 8 (five crypts, Mimic and Bat). The 45/57 secrets and 78.9% server value
+were consistent; no rounding correction is needed.
+
+`Killed` now accepts an optional `!` for Prince, Mimic and the existing Bat/
+BatScore/Bat Score aliases, as `dead` already did. Reports remain idempotent and
+do not trigger an outgoing announcement. A regression using the captured inputs
+reproduces 299 before the Prince report and 300 after it; the planned secret
+target changes from 46 to 45, leaving zero required secrets. The final server
+Team Score of 302 still overrides the estimate. Its other two points are not
+explained by this punctuation fix and must not be invented in the forecast.
+
+Focused score/message tests pass; verify the accepted report and map footer in
+the next live run. This change adds no scans or new chat output.
+
 ## Splits
 
 - `DungeonSplitTracker` transitions are ordered and idempotent. Late boss messages
@@ -153,6 +173,20 @@ without enabling room scans. Settings are persisted in `DungeonConfig`.
   `F6` → `Blood Open`). These are independent phase records across runs, not the
   phases of a single fastest run. Normal/master floors never share records.
   The existing game-profile config owns these values; there is no bundled PB data.
+- `/kung splits` opens **Split Personal Bests**, with Entrance/F1–F7 and M1–M7
+  selectors and that floor's canonical phase list. Each row shows the saved PB
+  (`--` when absent), a time field, **Save**, and **Clear**. Input uses `mm:ss.mmm`
+  (for example `01:23.456`); minutes may exceed two digits. Typing/paste rejects
+  letters and misplaced separators; Save requires complete digits, seconds 00–59,
+  a positive duration and no millisecond overflow. Save can replace faster or slower
+  times; Clear deletes the phase entry and removes an empty floor bucket.
+  Each action writes immediately through the existing config, even with the overlay
+  disabled. Esc simply closes; there is no final save step. Unsaved field text is
+  discarded on floor change/close. Tab switches fields and Enter saves the focused row.
+  Editing the current run's floor refreshes both prediction caches and discards an
+  already buffered sample for that phase, including a pending final-phase PB awaiting
+  victory. Frozen run clocks/results stay unchanged; newly completed phases and future
+  runs can still learn PBs normally.
 - Each enabled, accurately completed phase also posts a local Kung system message,
   for example `[Kung Splits] F6 Blood Open: 31.00s (PB: 30.00s)`. A first PB or strictly faster
   phase adds a separate message with bold pink `PERSONAL BEST!` and green result text, for example
@@ -200,7 +234,7 @@ without enabling room scans. Settings are persisted in `DungeonConfig`.
   Storm in F7: current Total + Terminals PB + Goldor PB + Necron PB; M7 also adds
   Relics, Wither King and Dragons. Live advances with Total, including banner wait,
   using the same clock sample as the displayed Total. Future PB sums are cached at
-  boundaries/floor changes; switching modes takes effect immediately mid-phase.
+  boundaries/floor changes/manual PB edits; switching modes takes effect immediately mid-phase.
 - Late floor metadata refreshes both forecasts. Skipped spans are already included
   in elapsed time and never counted twice. Missing required PBs or unknown floors
   show `--`; passed phases do not require PBs, and Live does not require the active

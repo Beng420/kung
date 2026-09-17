@@ -29,7 +29,14 @@ final class FeastStateStore {
     private CompletableFuture<Void> writer = CompletableFuture.completedFuture(null);
 
     record Saved(String profileId, String eventKey, FeastProgress.Snapshot progress, Long kernels,
-                 long pendingKernelGains) {}
+                 long pendingKernelGains, Double kernelRatePerHour) {
+        Saved {
+            // An invalid optional estimate must not discard valid progress or currency from older caches.
+            if (kernelRatePerHour != null && (!Double.isFinite(kernelRatePerHour) || kernelRatePerHour < 0)) {
+                kernelRatePerHour = null;
+            }
+        }
+    }
     private record Document(int version, Map<String, Saved> profiles) {}
 
     FeastStateStore(Path file, Executor executor) {

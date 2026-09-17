@@ -13,6 +13,8 @@ import java.util.regex.Pattern;
 public final class SuperpairsBoard {
     private static final Pattern FORMATTING = Pattern.compile("§[0-9a-fk-or]", Pattern.CASE_INSENSITIVE);
     private static final Pattern WHITESPACE = Pattern.compile("\\s+");
+    private static final Pattern ENCHANTMENT = Pattern.compile("[A-Za-z][A-Za-z '\\-]* [IVXLCDM]+");
+    private static final Pattern ENCHANTING_XP = Pattern.compile("[\\d,.]+[kKmM]? Enchanting Exp(?: x\\d+)?");
     private final Set<Integer> boardSlots = new HashSet<>();
     private final Map<Integer, Card> rewards = new LinkedHashMap<>();
     private final Set<Integer> bonuses = new HashSet<>();
@@ -57,7 +59,8 @@ public final class SuperpairsBoard {
         }
         if (item.equals("diamond") || prompt.equals("instant find") || prompt.equals("extra clicks")
             || prompt.equals("extra click") || prompt.equals("free click") || prompt.equals("free clicks")
-            || prompt.equals("bonus click") || prompt.equals("bonus clicks")) {
+            || prompt.equals("bonus click") || prompt.equals("bonus clicks")
+            || prompt.matches("gained \\+[1-3] clicks?")) {
             return Kind.BONUS;
         }
         if (name.contains("superpairs") || name.contains("remaining") || name.contains("timer")) {
@@ -133,7 +136,8 @@ public final class SuperpairsBoard {
             counts.put(card.key(), new CardCount(card.key(), card.label(), previous == null ? 1 : previous.count() + 1));
         }
         cachedCards = counts.values().stream()
-            .sorted(Comparator.comparingInt((CardCount card) -> card.complete() ? 1 : 0)
+            .sorted(Comparator.comparingInt((CardCount card) -> card.enchantment() ? 0 : 1)
+                .thenComparingInt(card -> card.complete() ? 1 : 0)
                 .thenComparing(CardCount::label, String.CASE_INSENSITIVE_ORDER))
             .toList();
         int pairs = 0;
@@ -169,14 +173,34 @@ public final class SuperpairsBoard {
         return value == null ? "" : WHITESPACE.matcher(FORMATTING.matcher(value).replaceAll("")).replaceAll(" ").trim();
     }
 
+    static String rewardLabel(String itemId, String displayName, List<String> lore) {
+        String name = clean(displayName);
+        // Hypixel also renders enchanted books as swords, bows and other equipment.
+        if (itemPath(itemId).equals("enchanted_book") || name.equalsIgnoreCase("Enchanted Book")) {
+            for (String line : lore) {
+                String enchantment = clean(line);
+                if (ENCHANTMENT.matcher(enchantment).matches()) return enchantment;
+            }
+        }
+        return name;
+    }
+
     private record Card(String key, String label) { }
 
     public record CardCount(String key, String label, int count) {
         public int pairs() { return count / 2; }
         public int singles() { return count % 2; }
         public boolean complete() { return count > 0 && singles() == 0; }
+        public boolean enchantment() {
+            return key.startsWith("enchanted_book|") || label.equalsIgnoreCase("Enchanted Book")
+                || ENCHANTMENT.matcher(label).matches();
+        }
+        public boolean enchantingXp() { return ENCHANTING_XP.matcher(label).matches(); }
     }
 
     /** Known pairs are identities seen twice, not a claim that Hypixel awarded their rewards. */
-    public record PairStats(int knownPairs, int singleCards, int unknownFields, int maximumTotalPairs, int exactTotalPairs) { }
+    public record PairStats(int knownPairs, int singleCards, int unknownFields, int maximumTotalPairs, int exactTotalPairs) {
+        /** Each known single needs one hidden partner; remaining fields may still be bonuses. */
+        public int maximumUnseenPairs() { return Math.max(0, (unknownFields - singleCards) / 2); }
+    }
 }

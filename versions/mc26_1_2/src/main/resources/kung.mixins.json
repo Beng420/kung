@@ -9,6 +9,7 @@
     "ClientPacketListenerMixin",
     "ConnectionMixin",
     "FontAccessor",
+    "LocalPlayerMixin",
     "MultiPlayerGameModeMixin"
   ],
   "injectors": {

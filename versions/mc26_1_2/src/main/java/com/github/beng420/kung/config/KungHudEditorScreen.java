@@ -185,6 +185,8 @@ public final class KungHudEditorScreen extends Screen {
             SafariOverlayFeature.drawPreview(graphics, KungConfig.get().safari);
         } else if (entry.id().equals("feast_progress")) {
             FeastOverlayFeature.drawPreview(graphics, KungConfig.get().feast);
+        } else if (entry.id().equals("dragon_debuff") || entry.id().equals("bow_draw_indicator")) {
+            KungHudPreviews.draw(graphics, entry, dungeonStateTracker);
         } else {
             drawCentered(graphics, entry.name(), bounds.x() + bounds.width() / 2, bounds.y() + bounds.height() / 2 - 4);
         }

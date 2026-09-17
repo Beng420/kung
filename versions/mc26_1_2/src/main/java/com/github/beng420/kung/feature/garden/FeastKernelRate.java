@@ -3,11 +3,9 @@ package com.github.beng420.kung.feature.garden;
 import com.github.beng420.kung.config.category.FeastConfig;
 import java.util.Locale;
 
-/** Client-thread exponentially weighted rate. Monotonic clocks advance weights only during farming. */
+/** Client-thread rate: blend completed farming blocks into a saved estimate; idle time never counts. */
 final class FeastKernelRate {
-    static final long HALF_LIFE_MILLIS = 5 * 60_000L;
-    static final long WARMUP_MILLIS = 60_000;
-    private static final double DECAY_PER_MILLI = Math.log(2.0) / HALF_LIFE_MILLIS;
+    static final long BLOCK_MILLIS = 5 * 60_000L;
     private String profile = "";
     private String profileId = "";
     private String eventKey = "";
@@ -17,8 +15,7 @@ final class FeastKernelRate {
     private long lastCrop = Long.MIN_VALUE;
     private long timeoutMillis = FeastConfig.DEFAULT_KERNEL_TIMEOUT_SECONDS * 1_000L;
     private long kernels;
-    private double weightedKernels;
-    private double weightedFarmingMillis;
+    private Double average;
     private boolean eligible;
 
     void selectProfile(String account, String name) {
@@ -31,7 +28,10 @@ final class FeastKernelRate {
 
     void identifyProfile(String id) {
         if (profile.isEmpty() || id == null || id.equals(profileId)) return;
-        if (!profileId.isEmpty()) clearMeasurement();
+        if (!profileId.isEmpty()) {
+            clearMeasurement();
+            average = null;
+        }
         profileId = id;
     }
 
@@ -70,7 +70,6 @@ final class FeastKernelRate {
         advance(now);
         if (!eligible || now > farmingUntil || !FeastKernels.donationMessage(message)) return false;
         kernels++;
-        weightedKernels++;
         return true;
     }
 
@@ -83,20 +82,28 @@ final class FeastKernelRate {
 
     Snapshot snapshot(long now) {
         advance(now);
-        return new Snapshot(kernels, farmingMillis, weightedKernels, weightedFarmingMillis,
-            !eligible || now >= farmingUntil);
+        return new Snapshot(kernels, farmingMillis, average, !eligible || now >= farmingUntil);
     }
+
+    Double value() { return average; }
+
+    void restore(Double saved) { average = saved; }
 
     private void advance(long now) {
         if (lastUpdate != Long.MIN_VALUE && now > lastUpdate && eligible && farmingUntil > lastUpdate) {
             long elapsed = Math.min(now, farmingUntil) - lastUpdate;
-            double exponent = -DECAY_PER_MILLI * elapsed;
-            double decay = Math.exp(exponent);
-            weightedKernels *= decay;
-            // Integrate exposure with the same decay as gains, independent of tick/render cadence.
-            // expm1 preserves precision for short intervals and normalizes startup from observed time.
-            weightedFarmingMillis = weightedFarmingMillis * decay - Math.expm1(exponent) / DECAY_PER_MILLI;
-            farmingMillis += elapsed;
+            while (elapsed > 0) {
+                long step = Math.min(elapsed, BLOCK_MILLIS - farmingMillis);
+                farmingMillis += step;
+                elapsed -= step;
+                if (farmingMillis == BLOCK_MILLIS) {
+                    double measured = kernels * 3_600_000.0 / BLOCK_MILLIS;
+                    // Whole blocks avoid per-drop spikes. Retain the full precision between updates/restarts.
+                    average = average == null ? measured : average + (measured - average) * 0.2;
+                    farmingMillis = 0;
+                    kernels = 0;
+                }
+            }
         }
         lastUpdate = Math.max(lastUpdate, now);
     }
@@ -107,22 +114,20 @@ final class FeastKernelRate {
         farmingUntil = Long.MIN_VALUE;
         lastCrop = Long.MIN_VALUE;
         kernels = 0;
-        weightedKernels = 0;
-        weightedFarmingMillis = 0;
         eligible = false;
     }
 
     void reset() {
         clearMeasurement();
+        average = null;
         profile = "";
         profileId = "";
         eventKey = "";
     }
 
-    record Snapshot(long kernels, long farmingMillis, double weightedKernels, double weightedFarmingMillis,
-                    boolean paused) {
+    record Snapshot(long kernels, long farmingMillis, Double average, boolean paused) {
         Long perHour() {
-            return farmingMillis < WARMUP_MILLIS ? null : Math.round(weightedKernels * 3_600_000.0 / weightedFarmingMillis);
+            return average == null ? null : Math.round(average);
         }
     }
 }

@@ -39,6 +39,36 @@ public class FeastPersistenceTest {
     }
 
     @Test
+    public void savedRateSurvivesRestartAndOfflineTimeThenBlendsWithoutAnotherWarmup() {
+        var original = new State(file());
+        original.select(ACCOUNT, "Coconut");
+        original.persistence.identify(PROFILE_ID);
+        farmBlock(original.rate, 6);
+        assertEquals(Double.valueOf(72), original.rate.value());
+        original.rate.pause(300_000);
+        original.persistence.save();
+        original.store.flush();
+
+        var restarted = new State(file());
+        restarted.select(ACCOUNT, "Coconut");
+        restarted.persistence.identify(PROFILE_ID);
+        assertEquals(Long.valueOf(72), restarted.rate.snapshot(0).perHour());
+        assertTrue(restarted.rate.snapshot(0).paused());
+        farmBlock(restarted.rate, 3);
+        assertEquals(64.8, restarted.rate.value(), 1e-10);
+        restarted.rate.pause(300_000);
+        assertEquals(Long.valueOf(65), restarted.rate.snapshot(86_400_000).perHour());
+        restarted.persistence.save();
+        restarted.store.flush();
+
+        var again = new State(file());
+        again.select(ACCOUNT, "Coconut");
+        assertEquals("Persist full precision, not the rounded HUD text", 64.8, again.rate.value(), 1e-10);
+        assertEquals(Long.valueOf(65), again.rate.snapshot(86_400_000).perHour());
+        assertEquals(0, again.rate.snapshot(86_400_000).farmingMillis());
+    }
+
+    @Test
     public void claimedMilestoneKernelsPersistWithoutAdvancingDonationsOrReplayingTheClaim() {
         Path file = file();
         var original = new State(file);
@@ -84,19 +114,25 @@ public class FeastPersistenceTest {
         var state = new State(file());
         state.select(ACCOUNT, "Coconut");
         state.sync(234, 123);
+        state.rate.restore(60.25);
         state.select(ACCOUNT, "Apple");
         assertNull(state.session.snapshot());
         assertNull(state.kernels.balance());
+        assertNull(state.rate.value());
         state.sync(27, 999);
+        state.rate.restore(90.75);
         state.select(ACCOUNT, "Coconut");
         assertEquals(234, state.session.snapshot().donations());
         assertEquals(Long.valueOf(123), state.kernels.balance());
+        assertEquals(Double.valueOf(60.25), state.rate.value());
         state.select(OTHER_ACCOUNT, "Coconut");
         assertNull(state.session.snapshot());
         assertNull(state.kernels.balance());
+        assertNull(state.rate.value());
         state.select(ACCOUNT, "Apple");
         assertEquals(27, state.session.snapshot().donations());
         assertEquals(Long.valueOf(999), state.kernels.balance());
+        assertEquals(Double.valueOf(90.75), state.rate.value());
     }
 
     @Test
@@ -105,14 +141,21 @@ public class FeastPersistenceTest {
         state.select(ACCOUNT, "Coconut");
         state.persistence.identify(PROFILE_ID);
         state.sync(234, 123);
+        state.rate.restore(42.5);
+        state.persistence.save();
+        state = new State(file());
+        state.select(ACCOUNT, "Coconut");
+        assertEquals(Double.valueOf(42.5), state.rate.value());
         state.persistence.identify(OTHER_ACCOUNT);
         state.persistence.restoreProgress();
         assertNull(state.session.snapshot());
         assertNull(state.kernels.balance());
+        assertNull(state.rate.value());
         var restarted = new State(file());
         restarted.select(ACCOUNT, "Coconut");
         assertNull(restarted.session.snapshot());
         assertNull(restarted.kernels.balance());
+        assertNull(restarted.rate.value());
     }
 
     @Test
@@ -200,6 +243,20 @@ public class FeastPersistenceTest {
         state.select(ACCOUNT, "Coconut");
         assertEquals(Long.valueOf(136), state.kernels.balance());
         assertEquals(0, state.kernels.pendingGains());
+        assertNull(state.rate.value());
+    }
+
+    @Test
+    public void invalidOptionalRateDoesNotDiscardValidCurrencyAndZeroIsKnown() throws Exception {
+        for (String rate : List.of("-1", "1e999", "0")) {
+            Files.writeString(file(), "{\"version\":1,\"profiles\":{\"" + ACCOUNT + ":coconut\":{"
+                + "\"profileId\":\"\",\"eventKey\":\"\",\"kernels\":136,\"kernelRatePerHour\":" + rate + "}}}");
+            var state = new State(file());
+            state.select(ACCOUNT, "Coconut");
+            assertEquals(Long.valueOf(136), state.kernels.balance());
+            if (rate.equals("0")) assertEquals(Long.valueOf(0), state.rate.snapshot(0).perHour());
+            else assertNull(state.rate.value());
+        }
     }
 
     @Test
@@ -253,15 +310,26 @@ public class FeastPersistenceTest {
 
     private Path file() { return temporary.getRoot().toPath().resolve("feast-progress.json"); }
 
+    private static void farmBlock(FeastKernelRate rate, int gains) {
+        rate.updateContext(true, EVENT, 0);
+        for (int second = 0; second < 300; second++) {
+            long now = second * 1_000L;
+            rate.crop(now);
+            if (second % (300 / gains) == 0) assertTrue(rate.observeMessage(TED, now));
+        }
+        rate.crop(300_000);
+    }
+
     private static final class State {
         final FeastSession session = new FeastSession();
         final FeastKernels kernels = new FeastKernels();
+        final FeastKernelRate rate = new FeastKernelRate();
         final FeastStateStore store;
         final FeastPersistence persistence;
         State(Path file) { this(file, Runnable::run); }
         State(Path file, Executor executor) {
             store = new FeastStateStore(file, executor);
-            persistence = new FeastPersistence(store, session, kernels);
+            persistence = new FeastPersistence(store, session, kernels, rate);
             session.select(EVENT, true);
         }
         void select(String account, String profile) { persistence.select(account, profile); }

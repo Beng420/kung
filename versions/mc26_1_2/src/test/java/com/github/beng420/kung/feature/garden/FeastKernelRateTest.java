@@ -11,7 +11,7 @@ public class FeastKernelRateTest {
     private static final String TED = "[NPC] Feast Chef Ted: Thanks for the donation! I've added a Kernel to your purse.";
 
     @Test
-    public void startsAtHarvestAndWarmsUpForOneMinuteOfFarming() {
+    public void firstEstimateWaitsForFiveFarmingMinutesAndDoesNotJumpOnDrops() {
         var rate = ready();
         assertFalse(rate.observeMessage(TED, 30_000));
         var idle = rate.snapshot(120_000);
@@ -20,58 +20,48 @@ public class FeastKernelRateTest {
         assertNull(idle.perHour());
         rate.crop(120_000);
         rate.observeMessage(TED, 120_000);
-        for (int second = 1; second < 60; second++) rate.crop(120_000 + second * 1_000L);
-        assertNull(rate.snapshot(179_999).perHour());
-        rate.crop(180_000);
-        assertEquals("A minute-old gain has slightly less weight than the recent zero-gain time",
-            Long.valueOf(56), rate.snapshot(180_000).perHour());
-        assertFalse(rate.snapshot(180_000).paused());
+        for (int second = 1; second < 300; second++) rate.crop(120_000 + second * 1_000L);
+        assertNull(rate.snapshot(419_999).perHour());
+        rate.crop(420_000);
+        assertEquals(Long.valueOf(12), rate.snapshot(420_000).perHour());
+        assertTrue(rate.observeMessage(TED, 420_000));
+        assertEquals(Long.valueOf(12), rate.snapshot(420_000).perHour());
+        assertFalse(rate.snapshot(420_000).paused());
     }
 
     @Test
-    public void olderGainsLoseHalfTheirWeightEveryFiveFarmingMinutesWithoutAHardCutoff() {
+    public void savedRateHoldsBetweenBlocksAndGentlyAdaptsToFasterAndSlowerFarming() {
         var rate = ready();
+        rate.restore(60.0);
         rate.crop(0);
-        rate.observeMessage(TED, 0);
-        for (int minute = 1; minute <= 25; minute++) {
-            long now = minute * 60_000L;
+        for (int second = 1; second < 300; second++) {
+            long now = second * 1_000L;
             rate.crop(now);
-            if (minute % 5 == 0) {
-                assertEquals(Math.pow(0.5, minute / 5), rate.snapshot(now).weightedKernels(), 1e-12);
-            }
-            if (minute == 5) {
-                assertEquals("Exposure is normalized over the time actually observed",
-                    216_404.256133, rate.snapshot(now).weightedFarmingMillis(), 1e-6);
-            }
+            if (second % 30 == 0 || second == 299) rate.observeMessage(TED, now);
+            assertEquals("Individual gains and empty seconds do not move the saved estimate",
+                Long.valueOf(60), rate.snapshot(now).perHour());
         }
-        assertEquals(1, rate.snapshot(1_500_000).kernels());
-        assertEquals(1_500_000, rate.snapshot(1_500_000).farmingMillis());
-        assertTrue(rate.snapshot(1_500_000).weightedKernels() > 0);
+        rate.crop(300_000);
+        assertEquals("Ten gains in five minutes measure 120/h, blended into the prior 60/h",
+            Double.valueOf(72), rate.value());
+        for (int second = 301; second <= 600; second++) rate.crop(second * 1_000L);
+        assertEquals("A full empty farming block still counts, but lowers the estimate gradually",
+            57.6, rate.value(), 1e-10);
     }
 
     @Test
-    public void recentPerformanceOutweighsAnEarlierSlowPhaseWithTheSameTotalGains() {
-        var improving = ready();
-        var slowing = ready();
-        improving.crop(0);
-        slowing.crop(0);
-        for (int second = 1; second <= 1_200; second++) {
-            long now = second * 1_000L;
-            improving.crop(now);
-            slowing.crop(now);
-            if (second % (second <= 900 ? 60 : 10) == 0) improving.observeMessage(TED, now);
-            if (second % (second <= 300 ? 10 : 60) == 0) slowing.observeMessage(TED, now);
-        }
-        var improved = improving.snapshot(1_200_000);
-        var slowed = slowing.snapshot(1_200_000);
-        assertEquals(45, improved.kernels());
-        assertEquals(improved.kernels(), slowed.kernels());
-        assertEquals(improved.farmingMillis(), slowed.farmingMillis());
-        assertEquals("The old flat average would show 135/h for either order",
-            135, improved.kernels() * 3_600_000 / improved.farmingMillis());
-        assertTrue("Five faster minutes must substantially outweigh the preceding slow phase", improved.perHour() > 200);
-        assertTrue(improved.perHour() < 360);
-        assertTrue(improved.perHour() > 2 * slowed.perHour());
+    public void delayedTickSplitsAnActiveIntervalAcrossBlockBoundaries() {
+        var rate = ready();
+        rate.restore(60.0);
+        rate.setTimeoutSeconds(300, 0);
+        rate.crop(0);
+        rate.observeMessage(TED, 1_000);
+        rate.crop(250_000);
+        var delayed = rate.snapshot(3_600_000);
+        assertEquals(Long.valueOf(50), delayed.perHour()); // 80% * 60 + 20% * 12 = 50.4
+        assertEquals(250_000, delayed.farmingMillis());
+        assertEquals(0, delayed.kernels());
+        assertEquals(delayed, rate.snapshot(7_200_000));
     }
 
     @Test
@@ -80,7 +70,7 @@ public class FeastKernelRateTest {
         var sparse = ready();
         frequent.crop(0);
         sparse.crop(0);
-        for (long now = 10; now <= 120_000; now += 10) {
+        for (long now = 10; now <= 600_000; now += 10) {
             if (now % 17_000 == 0) {
                 frequent.crop(now);
                 sparse.crop(now);
@@ -91,31 +81,26 @@ public class FeastKernelRateTest {
             }
             frequent.snapshot(now);
         }
-        var a = frequent.snapshot(120_000);
-        var b = sparse.snapshot(120_000);
-        assertEquals(9, a.kernels());
-        assertEquals(a.kernels(), b.kernels());
-        assertEquals(a.farmingMillis(), b.farmingMillis());
-        assertEquals(a.weightedKernels(), b.weightedKernels(), 1e-9);
-        assertEquals(a.weightedFarmingMillis(), b.weightedFarmingMillis(), 1e-6);
-        assertEquals(a.perHour(), b.perHour());
+        var a = frequent.snapshot(600_000);
+        var b = sparse.snapshot(600_000);
+        assertEquals(Long.valueOf(276), a.perHour());
+        assertEquals(a, b);
     }
 
     @Test
     public void farmingWithoutAnyGainsShowsZeroAfterWarmup() {
         var rate = ready();
         rate.crop(0);
-        assertNull(rate.snapshot(59_999).perHour());
-        rate.crop(60_000);
-        assertEquals(Long.valueOf(0), rate.snapshot(60_000).perHour());
-        rate.crop(120_000);
-        assertEquals(Long.valueOf(0), rate.snapshot(120_000).perHour());
-        assertTrue(rate.snapshot(120_000).weightedFarmingMillis() > 0);
+        for (int second = 1; second < 300; second++) rate.crop(second * 1_000L);
+        assertNull(rate.snapshot(299_999).perHour());
+        rate.crop(300_000);
+        assertEquals(Long.valueOf(0), rate.snapshot(300_000).perHour());
     }
 
     @Test
     public void defaultTimeoutKeepsTwentySecondsOfPestFarmingAndPausesAtOneMinute() {
         var rate = ready();
+        rate.restore(60.0);
         farmMinute(rate);
         assertFalse("Twenty seconds hunting pests is still part of farming", rate.snapshot(80_000).paused());
         assertEquals(80_000, rate.snapshot(80_000).farmingMillis());
@@ -151,7 +136,7 @@ public class FeastKernelRateTest {
             assertFalse(rate.snapshot(timeout - 1).paused());
             var paused = rate.snapshot(timeout);
             assertTrue(paused.paused());
-            assertEquals(timeout, paused.farmingMillis());
+            assertEquals(timeout % FeastKernelRate.BLOCK_MILLIS, paused.farmingMillis());
             assertEquals(paused, rate.snapshot(timeout + 60_000));
         }
     }
@@ -177,8 +162,9 @@ public class FeastKernelRateTest {
     }
 
     @Test
-    public void hubAndWorldTransfersPauseButKeepTheWeightedHistory() {
+    public void hubAndWorldTransfersKeepTheEstimateAndUnfinishedBlock() {
         var rate = ready();
+        rate.restore(72.5);
         farmMinute(rate);
         rate.pause(61_000);
         var paused = rate.snapshot(61_000);
@@ -236,13 +222,13 @@ public class FeastKernelRateTest {
         rate.selectProfile("other-account", "Apple");
         assertEquals(0, rate.snapshot(60_000).farmingMillis());
         assertEquals(0, rate.snapshot(60_000).kernels());
-        assertEquals(0, rate.snapshot(60_000).weightedKernels(), 0);
-        assertEquals(0, rate.snapshot(60_000).weightedFarmingMillis(), 0);
+        assertNull(rate.value());
     }
 
     @Test
-    public void missingEventEvidencePausesButDifferentFeastsAndResetClearTheRate() {
+    public void changedFeastsClearTheUnfinishedBlockButRetainTheEstimate() {
         var rate = ready();
+        rate.restore(60.0);
         farmMinute(rate);
         rate.updateContext(true, null, 60_000);
         rate.crop(90_000);
@@ -252,13 +238,16 @@ public class FeastKernelRateTest {
         assertEquals(6, rate.snapshot(90_000).kernels());
         rate.updateContext(true, new FeastContext.Event(FeastProgress.Kind.GRAND, "grand:514"), 90_000);
         assertEquals(0, rate.snapshot(90_000).kernels());
+        assertEquals(Long.valueOf(60), rate.snapshot(90_000).perHour());
         rate.crop(90_000);
         rate.observeMessage(TED, 90_000);
         rate.updateContext(true, new FeastContext.Event(FeastProgress.Kind.HARVEST, "harvest:514"), 90_000);
         rate.crop(90_000);
         assertFalse(rate.observeMessage(TED, 90_000));
         assertEquals(0, rate.snapshot(90_000).kernels());
+        assertEquals(Long.valueOf(60), rate.snapshot(90_000).perHour());
         rate.reset();
+        assertNull(rate.value());
         rate.updateContext(true, GRAND, 90_000);
         rate.crop(90_000);
         assertFalse("Wait for profile identity after disconnect/disable", rate.observeMessage(TED, 90_000));
@@ -274,12 +263,10 @@ public class FeastKernelRateTest {
             for (int gain = 0; gain < 3; gain++) rate.observeMessage(TED, now);
         }
         var steady = rate.snapshot(21_600_000);
-        assertEquals(64_800, steady.kernels());
-        assertEquals(21_600_000, steady.farmingMillis());
-        assertTrue(Double.isFinite(steady.weightedKernels()));
-        assertTrue(Double.isFinite(steady.weightedFarmingMillis()));
-        assertEquals("The three newest gains slightly raise a sample taken just after each second",
-            10_800.0, steady.perHour().doubleValue(), 15.0);
+        assertEquals("Boundary gains belong to the next block", 3, steady.kernels());
+        assertEquals(0, steady.farmingMillis());
+        assertTrue(Double.isFinite(steady.average()));
+        assertEquals(Long.valueOf(10_800), steady.perHour());
     }
 
     @Test
@@ -294,10 +281,10 @@ public class FeastKernelRateTest {
     @Test
     public void grandRateLineHasWarmupAndPauseStatesAndFitsTheExpandedHudBounds() {
         assertEquals("Avg Kernels/h: -- (warming up)", FeastOverlayFeature.rateLine(FeastProgress.Kind.GRAND,
-            new FeastKernelRate.Snapshot(1, 59_999, 1, 59_999, false)));
+            new FeastKernelRate.Snapshot(1, 59_999, null, false)));
         assertEquals("Avg Kernels/h: 1,234", FeastOverlayFeature.rateLine(FeastProgress.Kind.GRAND,
-            new FeastKernelRate.Snapshot(617, 1_800_000, 123.4, 360_000, false)));
-        var paused = new FeastKernelRate.Snapshot(40, 1_200_000, 10, 300_000, true);
+            new FeastKernelRate.Snapshot(0, 0, 1234.0, false)));
+        var paused = new FeastKernelRate.Snapshot(0, 0, 120.0, true);
         assertEquals("Avg Kernels/h: 120 (paused)", FeastOverlayFeature.rateLine(FeastProgress.Kind.GRAND, paused));
         assertEquals("", FeastOverlayFeature.rateLine(FeastProgress.Kind.HARVEST, paused));
         var config = new FeastConfig();

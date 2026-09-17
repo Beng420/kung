@@ -21,6 +21,7 @@ final class UserCommandGroup {
                         StringArgumentType.getString(context, "username")
                     ))))
             .then(literal("settings").executes(KungCommandActions::openSettings))
+            .then(literal("splits").executes(context -> KungCommandActions.openSplitPersonalBests(context, tracker)))
             .then(literal("updates").executes(KungCommandActions::openUpdates))
             .then(literal("changelog").executes(KungCommandActions::openChangelog))
             .then(literal("visitors")

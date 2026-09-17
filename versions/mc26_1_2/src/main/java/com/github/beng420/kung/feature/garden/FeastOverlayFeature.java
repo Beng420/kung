@@ -76,7 +76,7 @@ public final class FeastOverlayFeature extends ConfigurableFeature<FeastConfig> 
                 thread.setDaemon(true);
                 return thread;
             }));
-        persistence = new FeastPersistence(store, session, kernels);
+        persistence = new FeastPersistence(store, session, kernels, kernelRate);
         ClientTickEvents.END_CLIENT_TICK.register(this::tick);
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> reset());
         registerMessageObserver(this::observeMessage);
@@ -99,7 +99,6 @@ public final class FeastOverlayFeature extends ConfigurableFeature<FeastConfig> 
             selectProfile();
         } else if (FeastContext.profileId(text) != null) {
             persistence.identify(FeastContext.profileId(text));
-            kernelRate.identifyProfile(FeastContext.profileId(text));
         } else if (text.contains("Seasoning") || text.contains("Kernel")) {
             updateContext();
             if (text.contains("Seasoning")) {
@@ -124,7 +123,11 @@ public final class FeastOverlayFeature extends ConfigurableFeature<FeastConfig> 
 
     @Override
     protected void onReset() {
-        if (persistence != null) persistence.reset();
+        kernelRate.pause(now());
+        if (persistence != null) {
+            persistence.save();
+            persistence.reset();
+        }
         session.reset();
         kernels.reset();
         kernelRate.reset();
@@ -144,8 +147,8 @@ public final class FeastOverlayFeature extends ConfigurableFeature<FeastConfig> 
 
     @Override
     protected void onShutdown() {
-        if (store != null) store.flush();
         onReset();
+        if (store != null) store.flush();
     }
 
     private void tick(Minecraft client) {
@@ -169,6 +172,7 @@ public final class FeastOverlayFeature extends ConfigurableFeature<FeastConfig> 
         if (++menuTicks >= 5) {
             menuTicks = 0;
             observeMenu(client);
+            persistence.save(); // Completed rate blocks also save when no donation or menu update arrives.
         }
     }
 
@@ -349,7 +353,6 @@ public final class FeastOverlayFeature extends ConfigurableFeature<FeastConfig> 
 
     private void selectProfile() {
         var player = Minecraft.getInstance().player;
-        if (player != null) kernelRate.selectProfile(player.getUUID().toString(), context.profile());
         if (persistence != null && player != null
             && persistence.select(player.getUUID().toString(), context.profile())) {
             KungDebugRecorder.event("feast", "profile=" + context.profile() + " cache-selected");
@@ -357,13 +360,12 @@ public final class FeastOverlayFeature extends ConfigurableFeature<FeastConfig> 
     }
 
     private void recordKernels(String source) {
-        if (persistence != null) persistence.save();
         var rate = kernelRate.snapshot(now());
+        if (persistence != null) persistence.save();
         KungDebugRecorder.event("feast-kernels", "source=" + source + " balance=" + kernels.balance()
             + " sidebar=" + kernels.sidebarBalance() + " pendingGains=" + kernels.pendingGains()
-            + " rateKernels=" + rate.kernels() + " farmingMs=" + rate.farmingMillis()
-            + String.format(Locale.US, " weightedKernels=%.4f weightedFarmingMs=%.1f", rate.weightedKernels(), rate.weightedFarmingMillis())
-            + " ratePerHour=" + rate.perHour() + " ratePaused=" + rate.paused());
+            + " rateBlockKernels=" + rate.kernels() + " rateBlockFarmingMs=" + rate.farmingMillis()
+            + " rateEstimate=" + rate.average() + " ratePerHour=" + rate.perHour() + " ratePaused=" + rate.paused());
     }
 
     private void recordProgress(String source) {
@@ -394,7 +396,7 @@ public final class FeastOverlayFeature extends ConfigurableFeature<FeastConfig> 
 
     public static void drawPreview(GuiGraphicsExtractor graphics, FeastConfig config) {
         draw(graphics, config, FeastProgress.Kind.GRAND, EXAMPLE, 1_234L,
-            new FeastKernelRate.Snapshot(40, 1_200_000, 10, 300_000, false));
+            new FeastKernelRate.Snapshot(0, 0, 120.0, false));
     }
 
     private static void draw(GuiGraphicsExtractor graphics, FeastConfig config,

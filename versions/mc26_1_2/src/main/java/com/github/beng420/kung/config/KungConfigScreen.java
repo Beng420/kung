@@ -97,6 +97,12 @@ public final class KungConfigScreen extends Screen {
         return new KungConfigScreen(parent, null);
     }
 
+    public static KungConfigScreen fromParent(Screen parent, String expandedFeature) {
+        KungConfigScreen screen = new KungConfigScreen(parent, expandedFeature);
+        screen.search = expandedFeature;
+        return screen;
+    }
+
     public static KungConfigScreen updates() {
         KungConfigScreen screen = new KungConfigScreen();
         screen.search = "Updates:";
@@ -355,7 +361,7 @@ public final class KungConfigScreen extends Screen {
         UiShapes.shadow(graphics, x, TOP, COLUMN_WIDTH, panelHeight, PANEL_RADIUS);
         UiShapes.rounded(graphics, x, TOP, COLUMN_WIDTH, panelHeight, PANEL_RADIUS, THEME.panel());
         var heading = Component.literal(trimToWidth(category.name(), COLUMN_WIDTH - 8)).withStyle(ChatFormatting.BOLD);
-        graphics.text(menuFont, heading, x + COLUMN_WIDTH / 2 - menuFont.width(heading) / 2, TOP + 4, THEME.text(), false);
+        graphics.text(menuFont, heading, x + COLUMN_WIDTH / 2 - menuFont.width(heading) / 2, TOP + 4, THEME.accent(), false);
 
         int viewportTop = TOP + HEADER_HEIGHT;
         int panelBottom = TOP + panelHeight;
@@ -446,7 +452,7 @@ public final class KungConfigScreen extends Screen {
         }
         int controlWidth = controlWidthFor(setting);
         int labelWidth = COLUMN_WIDTH - controlWidth - indent - 20;
-        graphics.text(menuFont, trimToWidth(setting.label(), labelWidth), labelX, rowY + 4, THEME.text(), true);
+        graphics.text(menuFont, trimToWidth(setting.label(), labelWidth), labelX, rowY + 4, THEME.muted(), true);
         if (hovered && (!setting.tooltip().isEmpty() || menuFont.width(setting.label()) > labelWidth)) {
             requestTooltip(setting, setting.label(), setting.tooltip(), mouseX, mouseY);
         }
@@ -474,6 +480,7 @@ public final class KungConfigScreen extends Screen {
     }
 
     private int controlWidthFor(SettingEntry setting) {
+        if (setting.kind() == SettingKind.STEPPER_REMOVE) return 82;
         if (setting.kind() == SettingKind.GROUP) {
             return 16;
         }

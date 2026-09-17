@@ -83,13 +83,13 @@ final class KungOneConfigTree {
                 case TOGGLE -> property(key, label, description, setting.booleanSupplier()::getAsBoolean,
                     value -> { if (value != setting.booleanSupplier().getAsBoolean()) setting.toggle().run(); },
                     Boolean.class, Visualizer.SwitchVisualizer.class);
-                case STEPPER, SLIDER -> number(key, label, description, setting, feature);
+                case STEPPER, STEPPER_REMOVE, SLIDER -> number(key, label, description, setting, feature);
                 case CHOICE -> property(key, label, description, setting.intSupplier()::getAsInt,
                     setting.intConsumer()::accept, Integer.class, Visualizer.DropdownVisualizer.class);
                 case TEXT -> property(key, label, description, setting.textSupplier(),
                     value -> setting.setText(value == null ? "" : value), String.class, Visualizer.TextVisualizer.class);
                 case KEYBIND -> keybind(key, label, description, setting);
-                case BUTTON -> button(key, label, description, setting.choiceSupplier().get(), setting.toggle());
+                case BUTTON, COLOR_REMOVE -> button(key, label, description, setting.choiceSupplier().get(), setting.toggle());
                 case LABEL -> property(key, "Information", description, setting.labelSupplier(),
                     value -> { }, String.class, null);
                 case GROUP -> null;
@@ -100,6 +100,9 @@ final class KungOneConfigTree {
                 }
                 property.addDisplayCondition(() -> available.getAsBoolean() ? Property.Display.SHOWN : Property.Display.DISABLED);
                 put(property, category, feature);
+            }
+            if (setting.kind() == SettingKind.STEPPER_REMOVE) {
+                put(button(key + "__remove", label + " / Remove", description, "Remove", setting.cycleChoice()), category, feature);
             }
             if (!setting.children().isEmpty()) {
                 BooleanSupplier childAvailable = setting.kind() == SettingKind.TOGGLE
@@ -113,7 +116,7 @@ final class KungOneConfigTree {
         double divisor = feature.equals("Custom Sounds")
             ? setting.label().contains("Pitch") ? 100.0 : setting.label().contains("Volume") ? 10.0 : 1.0
             : setting.label().equals("Title Time") ? 10.0 : 1.0;
-        String unit = setting.label().equals("Title Time") ? "s"
+        String unit = setting.kind() == SettingKind.STEPPER_REMOVE ? "ticks" : setting.label().equals("Title Time") ? "s"
             : divisor > 1.0 ? "x"
             : setting.label().contains("Alpha") || feature.equals("6th Visitor Alarm") && setting.label().equals("Volume")
                 ? "%" : "";
@@ -175,6 +178,7 @@ final class KungOneConfigTree {
     private void put(Property<?> property, String category, String feature) {
         property.addMetadata("category", category);
         property.addMetadata("subcategory", feature);
+        property.addMetadata("searchTags", List.of("Kung", category, feature));
         if (tree.map.containsKey(property.getID())) throw new IllegalArgumentException("Duplicate Kung setting: " + property.getID());
         tree.put(property);
     }

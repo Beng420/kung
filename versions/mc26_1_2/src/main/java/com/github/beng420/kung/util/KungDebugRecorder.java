@@ -240,6 +240,7 @@ public final class KungDebugRecorder {
             case "chat-filter", "chat-command", "chat-name" ->
                 new AreaPolicy(20, 60_000L, DEFAULT_DEDUPE_MILLIS, false, important);
             case "loadouts-auto-close" -> new AreaPolicy(40, 60_000L, DEFAULT_DEDUPE_MILLIS, true, important);
+            case "bow-draw" -> new AreaPolicy(80, 60_000L, 0L, false, false);
             case "map-change" -> new AreaPolicy(120, 60_000L, 3_000L, false, important);
             case "map-check" -> new AreaPolicy(30, 60_000L, DEFAULT_DEDUPE_MILLIS, false, important);
             case "mimic-esp" -> new AreaPolicy(40, 60_000L, DEFAULT_DEDUPE_MILLIS, true, important);

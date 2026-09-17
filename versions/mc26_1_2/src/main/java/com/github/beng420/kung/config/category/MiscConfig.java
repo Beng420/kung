@@ -1,10 +1,18 @@
 package com.github.beng420.kung.config.category;
 
 import java.util.HashMap;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 
 public final class MiscConfig extends ConfigCategory {
     private boolean lobbyHopHelperEnabled = false;
+    private boolean bowDrawIndicatorEnabled = false;
+    private int bowDrawIndicatorX = 6;
+    private int bowDrawIndicatorY = 160;
+    private int bowDrawIndicatorScale = 100;
+    private List<BowDrawThreshold> bowDrawThresholds = defaultBowDrawThresholds();
     private boolean hypixelApiEnabled = false;
     private String hypixelApiKey = "";
 
@@ -51,6 +59,47 @@ public final class MiscConfig extends ConfigCategory {
     private Map<String, Integer> customWitherShieldExpireSoundPitchHundredths = new HashMap<>();
 
     public boolean lobbyHopHelperEnabled() { return lobbyHopHelperEnabled; }
+    public boolean bowDrawIndicatorEnabled() { return bowDrawIndicatorEnabled; }
+    public void setBowDrawIndicatorEnabled(boolean value) { bowDrawIndicatorEnabled = value; save(); }
+    public int bowDrawIndicatorX() { return bowDrawIndicatorX; }
+    public void setBowDrawIndicatorX(int value) { bowDrawIndicatorX = value; save(); }
+    public int bowDrawIndicatorY() { return bowDrawIndicatorY; }
+    public void setBowDrawIndicatorY(int value) { bowDrawIndicatorY = value; save(); }
+    public int bowDrawIndicatorScale() { return bowDrawIndicatorScale; }
+    public void setBowDrawIndicatorScale(int value) { bowDrawIndicatorScale = Math.clamp(value, 25, 300); save(); }
+    public List<BowDrawThreshold> bowDrawThresholds() { return Collections.unmodifiableList(bowDrawThresholds); }
+
+    public void addBowDrawThreshold() {
+        if (bowDrawThresholds.size() >= 20) return;
+        var used = bowDrawThresholds.stream().map(BowDrawThreshold::ticks).toList();
+        int ticks = 10;
+        for (int candidate = 1; used.contains(ticks); candidate++) {
+            ticks = candidate;
+        }
+        bowDrawThresholds.add(new BowDrawThreshold(ticks));
+        save();
+    }
+
+    public void setBowDrawThreshold(BowDrawThreshold entry, int ticks) {
+        if (!bowDrawThresholds.contains(entry)) return;
+        entry.ticks = Math.clamp(ticks, 1, 20);
+        save();
+    }
+
+    public void removeBowDrawThreshold(BowDrawThreshold entry) {
+        if (bowDrawThresholds.remove(entry)) save();
+    }
+
+    private static List<BowDrawThreshold> defaultBowDrawThresholds() {
+        return new ArrayList<>(List.of(new BowDrawThreshold(3), new BowDrawThreshold(20)));
+    }
+
+    /** Identity stays stable while editing a value, so list/native controls keep their row ownership. */
+    public static final class BowDrawThreshold {
+        private int ticks;
+        private BowDrawThreshold(int ticks) { this.ticks = ticks; }
+        public int ticks() { return ticks; }
+    }
     public void setLobbyHopHelperEnabled(boolean value) { lobbyHopHelperEnabled = value; save(); }
     public boolean hypixelApiEnabled() { return hypixelApiEnabled; }
     public void setHypixelApiEnabled(boolean value) { hypixelApiEnabled = value; save(); }
@@ -205,6 +254,10 @@ public final class MiscConfig extends ConfigCategory {
     }
 
     public void normalize() {
+        bowDrawIndicatorScale = Math.clamp(bowDrawIndicatorScale, 25, 300);
+        if (bowDrawThresholds == null) bowDrawThresholds = defaultBowDrawThresholds();
+        bowDrawThresholds = new ArrayList<>(bowDrawThresholds.stream().filter(java.util.Objects::nonNull).limit(20).toList());
+        for (var threshold : bowDrawThresholds) threshold.ticks = Math.clamp(threshold.ticks, 1, 20);
         if (loadoutKeybinds == null) {
             loadoutKeybinds = defaultLoadoutKeybinds();
         } else {

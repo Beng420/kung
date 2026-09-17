@@ -2,6 +2,8 @@ package com.github.beng420.kung.message;
 
 import com.github.beng420.kung.mixin.ChatComponentAccessor;
 import java.util.List;
+import java.util.Locale;
+import java.util.regex.Pattern;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.chat.GuiMessage;
@@ -10,6 +12,12 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
 
 public final class KungMessages {
+    private static final Pattern HIGHLIGHTS = Pattern.compile(
+        "(?i)\\b(?:red|orange|green|blue|purple)(?: dragon\\b|(?=:))"
+            + "|\\b(?:ice spray|sprayed)\\b"
+            + "|\\b(?:enabled|disabled|connected|disconnected|true|false|yes|no)\\b"
+            + "|(?<![\\w])[-+]?\\d+(?:[.,:]\\d+)*(?:ms|s|t|%|x)?(?![\\w])"
+            + "|\\s\\|\\s");
     public enum Type {
         INFO(ChatFormatting.WHITE),
         SUCCESS(ChatFormatting.GREEN),
@@ -52,7 +60,35 @@ public final class KungMessages {
     }
 
     public static Component detail(String message) {
-        return Component.literal(message == null ? "" : message).withStyle(ChatFormatting.WHITE);
+        return highlight(message);
+    }
+
+    /** Shared semantic colors for local informational text; never modifies the actual text. */
+    public static MutableComponent highlight(String message) {
+        String text = message == null ? "" : message;
+        MutableComponent result = Component.empty().withStyle(ChatFormatting.GRAY);
+        var matcher = HIGHLIGHTS.matcher(text);
+        int start = 0;
+        while (matcher.find()) {
+            result.append(Component.literal(text.substring(start, matcher.start())));
+            result.append(Component.literal(matcher.group()).withColor(highlightColor(matcher.group())));
+            start = matcher.end();
+        }
+        return result.append(Component.literal(text.substring(start)));
+    }
+
+    private static int highlightColor(String token) {
+        String word = token.toLowerCase(Locale.ROOT).replace(" dragon", "");
+        return switch (word) {
+            case "red", "disabled", "disconnected", "false", "no" -> 0xFF5555;
+            case "orange" -> 0xFFAA00;
+            case "green", "enabled", "connected", "true", "yes" -> 0x55FF55;
+            case "blue" -> 0x5599FF;
+            case "purple" -> 0xAA55FF;
+            case "ice spray", "sprayed" -> 0x99DDFF;
+            case " | " -> 0x555555;
+            default -> 0xFFCC55;
+        };
     }
 
     public static Component component(Type type, String area, String message) {
@@ -61,11 +97,12 @@ public final class KungMessages {
             .withStyle(ChatFormatting.DARK_GRAY)
             .append(Component.literal("Kung").withStyle(ChatFormatting.AQUA, ChatFormatting.BOLD));
         if (area != null && !area.isBlank()) {
-            component.append(Component.literal(" " + area.trim()).withStyle(ChatFormatting.GRAY));
+            component.append(Component.literal(" " + area.trim()).withColor(0x5599FF));
         }
         return component
             .append(Component.literal("] ").withStyle(ChatFormatting.DARK_GRAY))
-            .append(Component.literal(message == null ? "" : message).withStyle(resolvedType.bodyColor));
+            .append(resolvedType == Type.INFO ? highlight(message)
+                : Component.literal(message == null ? "" : message).withStyle(resolvedType.bodyColor));
     }
 
     public static void send(Minecraft client, Type type, String area, String message) {

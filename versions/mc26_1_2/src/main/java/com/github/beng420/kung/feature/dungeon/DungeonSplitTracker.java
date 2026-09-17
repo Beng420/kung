@@ -45,7 +45,7 @@ public final class DungeonSplitTracker {
     private final Map<String, Long> personalBestCandidates = new HashMap<>();
     private boolean manualRun;
     private long predictedFinishMillis = -1L;
-    /** PB sum after the active phase; refreshed only at boundaries or floor changes. */
+    /** PB sum after the active phase; refreshed at boundaries, floor changes or manual PB edits. */
     private long futurePhaseBestsMillis = -1L;
     private final List<CompletedSplit> completed = new ArrayList<>();
     private List<CompletedSplit> completedView = List.of();
@@ -311,6 +311,16 @@ public final class DungeonSplitTracker {
         return namesFor(7, true);
     }
 
+    public void personalBestEdited(int floor, boolean masterMode, String phase) {
+        if (this.floor != floor || this.masterMode != (floor != 0 && masterMode)) return;
+        // Already measured samples must not undo an explicit edit when this run is flushed.
+        personalBestCandidates.remove(phase);
+        if (pendingVictory != null && pendingVictory.split().name().equals(phase)) {
+            pendingVictory = new PendingVictory(pendingVictory.split(), false, pendingVictory.scoreAtMillis());
+        }
+        if (running) refreshPrediction();
+    }
+
     private void completeCurrentAndStart(String next, boolean timingKnown, String boundary) {
         long elapsed = currentTotalDurationMillis();
         if (hasCurrentSplit()) completeCurrent(elapsed, timingKnown, boundary, true);
@@ -518,7 +528,7 @@ public final class DungeonSplitTracker {
         return trimmed;
     }
 
-    private static String[] namesFor(int floor, boolean masterMode) {
+    public static String[] namesFor(int floor, boolean masterMode) {
         String[] boss = floor == 7 && masterMode ? MASTER_7_BOSS_SPLITS : FLOOR_SPLITS[Math.clamp(floor, 0, 7)];
         String[] names = Arrays.copyOf(DEFAULT_SPLITS, DEFAULT_SPLITS.length + boss.length);
         System.arraycopy(boss, 0, names, DEFAULT_SPLITS.length, boss.length);

@@ -5,9 +5,81 @@ Read the [code map](CODE_MAP.md), then only the topic needed for the task.
 
 ## Current state — 2026-09-17
 
+- `/kung splits` opens the Split Personal Bests editor with Entrance/F1–F7 and
+  M1–M7 selectors. Each canonical phase has a saved value, constrained `mm:ss.mmm`
+  input, Save and Clear. Actions persist immediately; Save permits slower corrections,
+  Clear removes the entry, and Esc closes without a second save. The overlay need not
+  be enabled. Current-floor edits refresh prediction caches and discard already buffered
+  samples for that phase, including pending score-before-victory PBs, while preserving
+  frozen clocks and future learning. Validation: 35 focused cases and the full Java 25
+  active-module build pass (669 cases, 668 passed, one Windows symlink skip, no failures
+  or errors). The 0.3.5 JAR contains the screen and was not installed. Live floor selection,
+  mouse/Tab input, Save/Clear and Esc/reopen checks remain open.
+  See [split PB editing](RUN_STATISTICS.md#splits).
+- Util > Bow Draw Indicator is default off and shows estimated bow strength on
+  Hypixel using the existing filtered server tick stream and vanilla power curve.
+  The user confirms it works but reports missing rapid draws; the 21:25:45 UTC
+  trace has no bow events and cannot establish a particular missed start. The
+  observer now follows actual LocalPlayer use transitions, tolerates same-bow
+  inventory stack replacements and holds stopped charge as Last Draw for 200 ms.
+  New draws immediately start at zero; held displays never accumulate charge.
+  A dynamic threshold list supports add/edit/remove at 1–20 ticks, defaulting to
+  the gameplay boundaries 3t/20t instead of the old animation markers. Settings,
+  `/kung hud` and OneConfig share the list/placement/previews. Bounded `bow-draw`
+  trace events record starts/stops/resets for follow-up. Shortbows remain excluded.
+  Validation: 38 focused cases and the full Java 25 build pass (661 cases,
+  660 passed, one Windows symlink skip, no failures/errors); `git diff --check`
+  passes. The 0.3.5 JAR includes the new LocalPlayer hook and was not installed.
+  Live spam/timing, inventory updates and list/HUD interaction remain open.
+  See [Bow Draw Indicator](BOW_DRAW_INDICATOR.md).
 - Active module: Minecraft **26.1.2**, version **0.3.5**, Java **25**.
   The version source is [gradle.properties](../gradle.properties).
   The user's existing version change to 0.3.5 is preserved.
+- The 22:16:08 trace explains the 299-versus-300 map score at boss entry:
+  `Prince Killed` from party chat lacked the previously required `!`, so the
+  Prince bonus stayed false. Optional punctuation now works for Prince, Mimic
+  and Bat aliases. A trace-derived regression verifies 299 -> 300 and the secret
+  target 46 -> 45, with no duplicate credit or echoed announcement. Final server
+  Team Score 302 remains authoritative; the additional two points are not
+  explained by this fix. See [bonus report parsing](RUN_STATISTICS.md#prince-report-punctuation--2026-09-17).
+- Dungeon now has independent default-off Ice Spray Highlight and M7 Dragon Debuff
+  switches. Spray markers produce light-blue boxes with 20% fill and a shared
+  100–200% Box Size slider. M7's Track setting selects All Dragons or the nearest
+  statue among each spawn wave's dragons, using the player's first-spawn position.
+  The initial pair is grouped across two following server ticks; the choice stays
+  fixed until the next wave and filters both HUD and chat. M7 has a live HUD
+  (shared `/kung hud`/OneConfig placement) and local chat reports with hit timing in
+  hover details. The HUD now stays hidden until the first recognized dragon
+  observation (and nearest-statue selection when applicable); there is no empty
+  waiting panel during clear/earlier boss phases. Editor previews still work.
+  The 20:33:36 live trace exposed lifetime hit-sound accumulation
+  and duplication across dragons. Counting now accepts player-local shooter
+  feedback only during the first 40 ticks, assigned once to the selected statue;
+  other dragons show `--`. Damage-source requirements and separate hit-sound/spray
+  announcements are removed. Chat/HUD use compact colored Time/Arrows/Sprayed
+  rows; a matched ice marker gives ticks, otherwise `Sprayed: no`. New UUIDs reset
+  all attempt state on respawn; the trace contains repeated Orange/Green spawns.
+  Hover retains hit intervals and limitations: feedback has no target/bow ID,
+  so exact LB-only attribution is not established. The 21:45:12 live trace now
+  confirms Blue/Red/Purple spray offsets of 4t/6t/6t, initial-pair selection of
+  Blue without duplicating its count onto Orange, and acceptance of all 19
+  retained feedback records at 0.14–1.56 blocks from the player. Blue's 28 early
+  hits include feedback while Terminator is held; do not call them LB-only.
+  The user reports improved spray accuracy. This capture has no respawns or
+  remote rejected feedback; normal-mob geometry and those edge cases remain
+  live checks. Validation findings were documented without gameplay changes.
+  See [Dungeon debuffs](DUNGEON_DEBUFFS.md).
+- Shared local info/detail messages now highlight numbers, states, dragon names
+  and Ice Spray, preserving text and warning/error severity. Kung's menu uses
+  accent headings, muted labels and gold numeric values without layout changes.
+  Menu feature names remain uniformly white, including Ice Spray Highlight,
+  as requested after the user's visual check.
+  The native OneConfig renderer retains its own styling.
+  Validation: the full Java 25 active-module build passes 650 cases (649 passed,
+  one Windows symlink skip, zero failures/errors), including trace-derived debuff
+  and Prince-score regressions, shared message colors and independent dragon-box
+  settings. `git diff --check` passes. The artifact
+  is `versions/mc26_1_2/build/libs/kung-26.1.2-0.3.5.jar`; no profile was installed.
 - Behavior-preserving cleanup was developed on `codex/beta`, based on the complete 0.3.5
   checkpoint `d1b3fc5`. It removes **535 production lines and nine Java files net**:
   fixed chat commands share one enum, profile providers share their request/retry
@@ -21,19 +93,18 @@ Read the [code map](CODE_MAP.md), then only the topic needed for the task.
   The full build passes and all 33 packaged non-class resources match the baseline
   byte-for-byte. On 2026-09-17 the user reported the beta working in live play and
   requested merging it into `main`, including the subsequent Safari correction below.
-  The Safari correction still needs live verification; the broader beta report does
-  not establish results for that later fix.
+  The user subsequently confirmed that Safari works in live play.
 - The canonical mod icon is the user's supplied `KUNG.png` (167 x 167), copied
   unchanged to `versions/mc26_1_2/src/main/resources/assets/kung/icon.png`.
   Fabric metadata already references that resource, including the icon exposed
   to Mod Menu/OneConfig. Future builds and branding should use this artwork.
   The active-module build passed; the packaged PNG's SHA-256 matches the original.
 - Last code validation: full shared-root active-module build with Java 25,
-  **613 test cases: 612 passed, zero failures/errors, one skipped** because Windows
+  **643 test cases: 642 passed, zero failures/errors, one skipped** because Windows
   denies test symlink creation. Includes 71 update-package cases covering verified
   downloads, launcher ownership, atomic replacement, interruption/retry and a real
   separate helper waiting for a live parent JVM, plus local phase-time/PERSONAL BEST messages and score-before-victory final split PB confirmation,
-  delayed menu help tooltips and the exponentially weighted Kernel rate over active farming time with its configurable idle timeout,
+  delayed menu help tooltips and the persisted Kernel rate with five-minute measurement blocks and configurable idle timeout,
   Wild Rose/flower/pumpkin visitor-timer reductions,
   Kernel milestone claims, per-floor split PB persistence, prediction toggle and both update modes,
   Visitor Alarm reminder replacement/chat mute and immediate offer-click acknowledgement,
@@ -55,7 +126,7 @@ Read the [code map](CODE_MAP.md), then only the topic needed for the task.
   its separate Gradle 9 parallel-import failure; the active module has no processors.
   Gradle test compilation and all 14 focused OneConfig tests pass independently.
   Artifact: `versions/mc26_1_2/build/libs/kung-26.1.2-0.3.5.jar`
-  (optional native OneConfig settings and HUD editor, new canonical Kung icon, verified atomic updates and Modrinth ownership guard, exponentially weighted Kernel farming rate with configurable idle pause, per-floor split PBs and finish prediction, 6th Visitor Alarm with Wild Rose/flower/pumpkin timing, 30-second update polling and lobby reminders, Kernel donation/sidebar ordering and persisted pending gains,
+  (optional native OneConfig settings and HUD editor, new canonical Kung icon, verified atomic updates and Modrinth ownership guard, persisted Kernel farming rate with gradual block updates and configurable idle pause, per-floor split PBs and finish prediction, 6th Visitor Alarm with Wild Rose/flower/pumpkin timing, 30-second update polling and lobby reminders, Kernel donation/sidebar ordering and persisted pending gains,
   Safari Uniques, Feast Hub farm option and profile persistence, Grand Feast Kernel balance, donation format/filter fix, yellow active tier and progress marker, Roman-tier parsing/diagnostics, menu-font resource fix, Feast Progress, menu redesign, dismissal fix, changelog history/command, chat-emote alias,
   realistic update preview, patch notes, update popup, Mimic discovery/diagnostics
   and unfinished-room score correction).
@@ -108,8 +179,23 @@ Read the [code map](CODE_MAP.md), then only the topic needed for the task.
   Hideyho reward spelling (`the Hideyho` / `it gave you`). Both regressions fail
   before the fix and pass afterward; 17 focused tests and the full Java 25 build
   pass. The supplied message replay counts 16 uniques (Icy 9/9, Haunted 7/10).
-  Corrected live visibility/catches, next-instance reset and HUD readability/scaling
-  remain open. See [Critter Safari](CRITTER_SAFARI.md).
+  On 2026-09-17 the user confirms Safari works in live play. Detailed next-instance
+  reset and HUD readability/scaling checks remain open. See [Critter Safari](CRITTER_SAFARI.md).
+- Superpairs now prioritizes enchantments and hides individual Enchanting XP rows,
+  retaining XP identities in every counter and keeping item rewards visible.
+  The 00:34 UTC trace exposes a false zero: feather `Gained +3 Clicks` was counted
+  as a single reward and invented a hidden partner. Gained-click messages now count
+  as bonuses; the unchanged trace regression fails before the fix and passes after.
+  Before the first orange XP reveal the upper bound stays one, then reaches zero.
+  The compact HUD has one gold `Unseen pairs: up to N`/`0` counter and short reward
+  rows, with no extra statistics or `Known`/`Need` prefixes. Debug now adds packet
+  details to the trace, never overlay rows (the user's saved switch was enabled).
+  No fixed bonus total or favored hidden position is assumed. Books also read lore
+  with equipment icons. Both full 28-reveal traces are regression-covered.
+  All 23 focused model/HUD/settings tests and the full Java 25 build pass.
+  Compact live rendering, actual enchantment names/levels and the corrected gained-click
+  counter transition remain open.
+  See [Superpairs](SUPERPAIRS_FIXES.md).
 - Garden > Feast Progress (default off) shows cumulative donations, a segmented
   milestone bar and donations to the next tier during a Feast in the Garden and
   Hub farm area. Show in Hub Farm defaults on; turning it off retains Garden visibility.
@@ -124,28 +210,32 @@ Read the [code map](CODE_MAP.md), then only the topic needed for the task.
   and future tiers gray. The marker advances within the current tier's interval;
   full completion is entirely green with no marker. The HUD editor uses the same drawing.
   Grand appends the Kernel currency balance, e.g. `16 to next - 1,234 Kernels`.
-  A line below it shows `Avg Kernels/h` with exponential weighting and a five-minute
-  farming-time half-life, replacing the flat 20-minute window. Gains and elapsed
-  farming time decay equally; recent performance matters more without an abrupt
-  cutoff or tick/render cadence dependence. Startup uses observed weighted time
-  after a 60-second warmup. The feature's hover tooltip explains the weighting.
+  `Avg Kernels/h` now retains the last estimate per account/profile across pauses,
+  restarts, disabling and Feast changes. Complete five-minute farming blocks
+  contribute 20% of their measured rate, retaining 80% of the prior estimate;
+  individual drops/unfinished blocks do not change the displayed value. Without
+  a saved estimate the first block provides it after five farming minutes, including
+  the first upgrade from versions that never saved rates. The hover tooltip explains
+  this. This replaces the five-minute decay method after the user reported frequent
+  30–90/h swings. `kernelRatePerHour` stores full precision in the existing profile
+  cache; missing/invalid optional estimates do not discard currency or progress.
   Mature crop input starts/resumes; `Kernel Timeout (s)` is now a saved seconds
   text field (default 60, range 10–300). A 20-second pest hunt keeps the clock
   running by default. Live edits update the current deadline without clearing
   the rate or backfilling past pauses. Invalid text retains the previous value;
-  numeric inputs and loaded values are clamped. Hub/world travel pauses immediately, freezing the weighted history
-  within the connection. Only Ted-confirmed Seasoning gains count, even without
+  numeric inputs and loaded values are clamped. Hub/world travel pauses immediately,
+  retaining the estimate and unfinished block within the connection. Only Ted-confirmed Seasoning gains count, even without
   a balance baseline or beyond the milestone cap; claims, balance sync and spending
-  do not affect it. Rate history is session-only and resets on disconnect/disable,
-  profile/account change or a different Feast. HUD bounds extend downward by 12
-  units while position, width and scale stay unchanged. Rate/config tests and
-  the existing chat-routing test cover these paths; the focused rate/message/
-  config/control run passes 28 tests, including 16 rate cases for half-life decay,
-  changing performance, cadence independence and a six-hour steady stream.
-  Live rate adaptation, timeout editing, pest gaps, rate idle/resume and new-line
-  rendering remain open. The user's reported 14 Kernels/h has no supplied trace
-  establishing a counting error. `feast-kernels` includes raw measurement totals,
-  weighted gains/time, calculated rate and pause state for future diagnosis.
+  do not affect it. Only unfinished blocks reset on disconnect/disable, profile
+  selection or a different Feast. Recreated Profile IDs also clear their estimate.
+  Periodic unchanged-save checks capture completed empty blocks; disconnect/disable
+  save before clearing live state, and shutdown flushes afterward. HUD geometry
+  stays unchanged. The focused Feast/settings/config run passes 108 tests, including
+  16 rate cases plus restart/full-precision/profile-isolation/legacy-cache checks.
+  Live restart restoration, calmer adaptation, timeout editing, pest gaps and rate
+  idle/resume remain open. No new trace establishes a donation-counting error.
+  `feast-kernels` includes current block gains/time, precise estimate, rounded rate
+  and pause state for future diagnosis.
   Exact `Kernels:` or `123 (+3) Kernels` server sidebar rows sync automatically;
   `Your Kernels:` lore in Grand Bakery is a confirmed second source. The user's
   Scott screenshot shows 123 and they report correct live sync after opening it.
@@ -234,6 +324,14 @@ Read the [code map](CODE_MAP.md), then only the topic needed for the task.
   External editing requires a loaded world in OneConfig 1.2.0. Live native HUD
   drawing, drag/resize, visibility, text scale and returning to `/kung hud` remain open.
   See [menu integration](DEVELOPMENT.md#optional-oneconfig--mod-menu-integration).
+  On 2026-09-17, global search for `visitor` omitted Kung: OneConfig 1.2.0 searches
+  property titles/descriptions/tags, but not the `6th Visitor Alarm` subcategory
+  heading. The installed 0.3.5 JAR had no `searchTags`. The shared property registration
+  now tags every control with Kung/category/feature without changing layouts or values.
+  The regression on both the alarm switch and volume fails before this fix and
+  passes afterward; all seven focused tests and the full Java 25 build pass
+  (619 cases: 618 passed, one skipped).
+  Live global-search results after replacing the JAR and restarting remain to be checked.
 - Kung settings now render at 80% size, with feature columns another 10% narrower
   (171 logical units; 28% narrower overall). Search, title, tooltips and menu modals
   use the same transform; input and scrolling use the matching menu coordinates.
@@ -329,6 +427,24 @@ Read the [code map](CODE_MAP.md), then only the topic needed for the task.
   original input history for Up-arrow recall. Event/config tests pass; live recall
   and compatibility with the user's other chat mods remain open.
   See [chat emotes](CHAT_EMOTES.md).
+- Util > Lobby Hop Helper now adds `mini123 - 1m5s ago` below `Swap Lobbies`
+  and a local `[Kung]` warning with the lobby ID and the same elapsed time.
+  Time measures the last observed presence; idle ticks stay silent. The existing
+  128-ID memory limit and default-off toggle remain. Three new lobby regressions,
+  focused config tests and the full Java 25 build pass. Live subtitle/chat appearance
+  and a timed return remain open. See [Lobby Hop Helper](LOBBY_HOP_HELPER.md).
+- Util > Hitboxes (default off) adds a searchable seven-row entity picker and
+  selected-type rows with color swatches and red removal buttons. The color popup
+  has a hue/saturation wheel, brightness, hex input and Save/Cancel. Selected IDs
+  and individual colors persist in the existing config. Fabric extraction produces
+  per-frame interpolated bounding boxes; the depth-tested draw includes selected
+  dragon parts and excludes the first-person camera entity. The Ender Dragon row
+  now has independent Overall Box and Body Part Boxes switches (both default on),
+  retaining their values across save/reload and removing/re-adding the entity type.
+  Native OneConfig exposes the same nested switches; Add/Edit uses the complete
+  Kung editor. Model/config/search/color and switch persistence tests pass.
+  Live checks remain for all four dragon-box combinations, popup input/scaling, native-menu return
+  and moving/projectile/dragon rendering remain open. See [Hitboxes](HITBOXES.md).
 - Run statistics use the five-player dungeon roster, excluding stale
   global party members. Shared `Secrets Found: n` no longer credits all party secrets
   to self. Missing personal sources are explained; API preparation and typed sync

@@ -1,6 +1,7 @@
 package com.github.beng420.kung.feature;
 
 import com.github.beng420.kung.feature.dungeon.DungeonChatFilterFeature;
+import com.github.beng420.kung.feature.dungeon.DungeonDebuffFeature;
 import com.github.beng420.kung.feature.dungeon.DungeonMapFeature;
 import com.github.beng420.kung.feature.dungeon.DungeonMimicEspFeature;
 import com.github.beng420.kung.feature.dungeon.DungeonSplitsOverlayFeature;
@@ -8,10 +9,12 @@ import com.github.beng420.kung.feature.dungeon.DungeonStateTracker;
 import com.github.beng420.kung.feature.garden.FeastOverlayFeature;
 import com.github.beng420.kung.feature.garden.VisitorAlarmFeature;
 import com.github.beng420.kung.feature.misc.ChatCommandsFeature;
+import com.github.beng420.kung.feature.misc.BowDrawIndicatorFeature;
 import com.github.beng420.kung.feature.misc.ChatEmotesFeature;
 import com.github.beng420.kung.feature.misc.CustomSoundsFeature;
 import com.github.beng420.kung.feature.misc.LoadoutsAutoCloseFeature;
 import com.github.beng420.kung.feature.misc.LobbyHopHelperFeature;
+import com.github.beng420.kung.feature.misc.HitboxesFeature;
 import com.github.beng420.kung.feature.misc.SuperpairsHelperFeature;
 import com.github.beng420.kung.feature.slayer.TarantulaHelperFeature;
 import com.github.beng420.kung.feature.safari.SafariOverlayFeature;
@@ -37,12 +40,15 @@ public final class FeatureRegistry {
         register(new DungeonMimicEspFeature(tracker));
         register(new DungeonChatFilterFeature(tracker));
         register(new DungeonSplitsOverlayFeature(tracker));
+        register(DungeonDebuffFeature.INSTANCE);
         register(ChatCommandsFeature.INSTANCE);
         register(new ChatEmotesFeature());
         register(CustomSoundsFeature.INSTANCE);
         register(LoadoutsAutoCloseFeature.INSTANCE);
         register(LobbyHopHelperFeature.INSTANCE);
+        register(new HitboxesFeature());
         register(SuperpairsHelperFeature.INSTANCE);
+        register(BowDrawIndicatorFeature.INSTANCE);
         register(TarantulaHelperFeature.INSTANCE);
         register(new SafariOverlayFeature());
         register(FeastOverlayFeature.INSTANCE);

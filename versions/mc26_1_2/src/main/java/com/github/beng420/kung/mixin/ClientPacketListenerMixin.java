@@ -1,6 +1,7 @@
 package com.github.beng420.kung.mixin;
 
 import com.github.beng420.kung.feature.dungeon.DungeonEventRouter;
+import com.github.beng420.kung.feature.dungeon.DungeonDebuffFeature;
 import com.github.beng420.kung.feature.garden.FeastOverlayFeature;
 import com.github.beng420.kung.feature.misc.CustomSoundsFeature;
 import com.github.beng420.kung.feature.misc.SuperpairsHelperFeature;
@@ -21,6 +22,9 @@ import net.minecraft.network.protocol.game.ClientboundPlayerInfoUpdatePacket;
 import net.minecraft.network.protocol.game.ClientboundPlayerInfoRemovePacket;
 import net.minecraft.network.protocol.game.ClientboundSoundPacket;
 import net.minecraft.network.protocol.game.ClientboundSoundEntityPacket;
+import net.minecraft.network.protocol.game.ClientboundAddEntityPacket;
+import net.minecraft.network.protocol.game.ClientboundSetEntityDataPacket;
+import net.minecraft.network.protocol.game.ClientboundSetEquipmentPacket;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityEvent;
 import org.spongepowered.asm.mixin.Mixin;
@@ -38,11 +42,29 @@ public abstract class ClientPacketListenerMixin {
     @Inject(method = "handleSoundEvent", at = @At("TAIL"))
     private void kung$onSound(ClientboundSoundPacket packet, CallbackInfo callbackInfo) {
         CustomSoundsFeature.observeSoundEvent(packet.getSound().value());
+        DungeonDebuffFeature.INSTANCE.observeSound(packet);
     }
 
     @Inject(method = "handleSoundEntityEvent", at = @At("TAIL"))
     private void kung$onEntitySound(ClientboundSoundEntityPacket packet, CallbackInfo callbackInfo) {
         CustomSoundsFeature.observeSoundEvent(packet.getSound().value());
+    }
+
+    @Inject(method = "handleAddEntity", at = @At("TAIL"))
+    private void kung$onEntityAdded(ClientboundAddEntityPacket packet, CallbackInfo callbackInfo) {
+        var level = Minecraft.getInstance().level;
+        if (level != null) DungeonDebuffFeature.INSTANCE.observeSpawn(level.getEntity(packet.getId()));
+    }
+
+    @Inject(method = "handleSetEquipment", at = @At("TAIL"))
+    private void kung$onEquipment(ClientboundSetEquipmentPacket packet, CallbackInfo callbackInfo) {
+        DungeonDebuffFeature.INSTANCE.observeEquipment(packet);
+    }
+
+    @Inject(method = "handleSetEntityData", at = @At("TAIL"))
+    private void kung$onEntityData(ClientboundSetEntityDataPacket packet, CallbackInfo callbackInfo) {
+        var level = Minecraft.getInstance().level;
+        if (level != null) DungeonDebuffFeature.INSTANCE.observeData(level.getEntity(packet.id()));
     }
 
     @Inject(method = "handleContainerSetSlot", at = @At("TAIL"))
@@ -109,5 +131,6 @@ public abstract class ClientPacketListenerMixin {
         }
         Entity entity = packet.getEntity(client.level);
         DungeonEventRouter.observeEntityDeath(entity);
+        DungeonDebuffFeature.INSTANCE.observeDeath(entity);
     }
 }

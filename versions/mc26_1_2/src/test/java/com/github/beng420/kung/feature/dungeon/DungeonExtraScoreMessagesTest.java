@@ -10,6 +10,53 @@ import org.junit.Test;
 
 public final class DungeonExtraScoreMessagesTest {
     @Test
+    public void livePrinceReportWithoutExclamationRestoresMissingPointAndSecretTarget() throws Exception {
+        var stats = new DungeonRunStats();
+        stats.configureForFloor(7, true);
+        stats.observeTabLine(null, "Completed Rooms: 35/36", null);
+        stats.observeScoreboardLine(null, "Cleared: 97%");
+        stats.observeTabLine(null, "Crypts: 9", null);
+        stats.observeStatLine(null, "Secrets: 45/57");
+        stats.observeTabLine(null, "Secrets Found: 78.9%", null);
+        stats.observeMessage(null, "[BOSS] The Watcher: You have proven yourself. You may pass.", 1L);
+        stats.observeMessage(null, "Party > [VIP] gemothic: Mimic dead!", 2L);
+        stats.observeMessage(null, "A Bat has been slain. +1 Bonus Score", 3L);
+        assertEquals(299, stats.score(null, 57));
+        assertEquals(46, stats.sPlusSecretTarget(null, 57));
+
+        // 22:11:02.054 in kung-trace-20260917-221608.log: no trailing exclamation mark.
+        stats.observeMessage(null, "Party > [VIP] gemothic: Prince Killed", 4L);
+        assertTrue(stats.princeKilled());
+        assertEquals(300, stats.score(null, 57));
+        assertEquals(45, stats.sPlusSecretTarget(null, 57));
+        assertEquals(0, stats.sPlusSecretsRemaining(null, 57));
+        assertFalse(requested(stats, "princeMessageSent"));
+        stats.observeMessage(null, "Party > [VIP] gemothic: Prince Killed!", 5L);
+        assertEquals(300, stats.score(null, 57));
+        stats.observeStatLine(null, "Team Score: 302 (S+)");
+        assertEquals(302, stats.score(null, 57));
+    }
+
+    @Test
+    public void allBonusKilledSpellingsAllowOptionalExclamationWithoutDoubleCounting() throws Exception {
+        for (String bat : new String[] {"Bat", "BatScore", "Bat Score"}) {
+            var stats = new DungeonRunStats();
+            stats.configureForFloor(7, true);
+            for (String suffix : new String[] {"", "!"}) {
+                stats.observeMessage(null, "Party > [MVP+] Alice: Mimic Killed" + suffix, 1L);
+                stats.observeMessage(null, "Party > [MVP+] Alice: Prince Killed" + suffix, 2L);
+                stats.observeMessage(null, "Party > [MVP+] Alice: " + bat + " Killed" + suffix, 3L);
+                assertTrue(stats.mimicKilled());
+                assertTrue(stats.princeKilled());
+                assertTrue(stats.batScoreKilled());
+            }
+            assertFalse(requested(stats, "mimicMessageSent"));
+            assertFalse(requested(stats, "princeMessageSent"));
+            assertFalse(requested(stats, "batMessageSent"));
+        }
+    }
+
+    @Test
     public void mimicTraceSeparatesDisabledOwnDetectionFromPartyEvidenceWithoutEchoes() throws Exception {
         var previous = KungConfig.get().dungeon;
         var config = new DungeonConfig();

@@ -93,8 +93,8 @@ positives, hidden chat, action bars, deduplication, Sparkling/Hideyho, world/ser
 changes, early start messages, biome transitions, summaries, styles, HUD bounds,
 Hypixel host checks and persisted settings with Feast positions preserved.
 
-Live checks remain: enable before entering with the corrected build, compare all
-four region counts with own/shared catches (including Hideyho), confirm reset in
-the next instance and entrance exclusion, and inspect readability/dragging/scaling
-alongside the other HUDs. The server's `Safari` location spelling is confirmed by
-the trace; unit tests and a build do not establish live rendering results.
+On 2026-09-17 the user confirms that Safari works in live play. Detailed checks
+remain for all four counts (including Hideyho), next-instance reset, entrance
+exclusion and readability/dragging/scaling alongside the other HUDs. The server's
+`Safari` location spelling is confirmed by the trace; the user's general live
+confirmation does not separately establish every remaining edge case.

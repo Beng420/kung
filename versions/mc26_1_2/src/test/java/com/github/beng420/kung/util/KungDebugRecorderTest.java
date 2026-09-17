@@ -9,6 +9,13 @@ public final class KungDebugRecorderTest {
     @After public void clearRecorder() { KungDebugRecorder.clear(); }
 
     @Test
+    public void bowSpamDiagnosticsStayBounded() {
+        KungDebugRecorder.clear();
+        for (int index = 0; index < 120; index++) KungDebugRecorder.event("bow-draw", "stop heldMs=" + index);
+        assertTrue(KungDebugRecorder.dump().contains("bow-draw seen=120 kept=80 suppressed=40"));
+    }
+
+    @Test
     public void packetNoiseIsRateLimitedAndSummarized() {
         KungDebugRecorder.clear();
         for (int index = 0; index < 30; index++) {

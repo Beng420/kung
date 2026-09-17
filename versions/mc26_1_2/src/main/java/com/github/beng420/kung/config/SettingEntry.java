@@ -63,6 +63,12 @@ public record SettingEntry(
         return create(label, SettingKind.SLIDER, null, null, supplier, consumer, min, max, step, null, null, null, null);
     }
 
+    public static SettingEntry stepperRemove(String label, IntSupplier supplier, IntConsumer consumer,
+                                             int min, int max, int step, Runnable remove) {
+        return create(label, SettingKind.STEPPER_REMOVE, null, null, supplier, consumer,
+            min, max, step, null, remove, null, null);
+    }
+
     public static SettingEntry choice(String label, Supplier<String> supplier, Runnable cycle) {
         return create(label, SettingKind.CHOICE, null, null, null, null, 0, 0, 0, supplier, cycle, null, null);
     }
@@ -109,6 +115,10 @@ public record SettingEntry(
         return create(label, SettingKind.BUTTON, null, action, null, null, 0, 0, 0, () -> text, null, null, null);
     }
 
+    public static SettingEntry colorRemove(String label, IntSupplier color, Runnable edit, Runnable remove) {
+        return create(label, SettingKind.COLOR_REMOVE, null, edit, color, null, 0, 0, 0, () -> "Edit", remove, null, null);
+    }
+
     public SettingEntry withChildren(List<SettingEntry> children) {
         return new SettingEntry(labelSupplier, kind, booleanSupplier, toggle, intSupplier, intConsumer,
             min, max, step, choiceSupplier, cycleChoice, textSupplier, textConsumer, List.copyOf(children), tooltip,
@@ -147,8 +157,16 @@ public record SettingEntry(
                 theme
             );
             case STEPPER -> drawStepper(graphics, font, theme, x, y, width, height);
+            case STEPPER_REMOVE -> {
+                drawStepper(graphics, font, theme, x, y, width - 19, height);
+                drawRemoveButton(graphics, font, theme, x, y, width, height);
+            }
             case SLIDER -> drawSlider(graphics, font, theme, x, y, width, height);
             case CHOICE, BUTTON -> drawButton(graphics, font, theme, x, y, width, height, choiceSupplier.get());
+            case COLOR_REMOVE -> {
+                UiShapes.rounded(graphics, x + 1, y + 3, width - 19, height - 6, 2, intSupplier.getAsInt());
+                drawRemoveButton(graphics, font, theme, x, y, width, height);
+            }
             case LABEL -> graphics.text(font, label(), x + width - font.width(label()), y + 4, theme.muted(), true);
             case TEXT -> {
                 graphics.fill(x + 1, y + 3, x + width - 1, y + height - 3, theme.accentDark());
@@ -168,11 +186,24 @@ public record SettingEntry(
     public void click(int mouseX, int x, int width) {
         switch (kind) {
             case TOGGLE, BUTTON -> toggle.run();
+            case COLOR_REMOVE -> {
+                if (mouseX >= x + width - 16) cycleChoice.run();
+                else if (mouseX >= x) toggle.run();
+            }
             case STEPPER -> {
                 UiNumberField number = numberField();
                 intConsumer.accept(mouseX < x + width / 2
                     ? number.decrement(intSupplier.getAsInt())
                     : number.increment(intSupplier.getAsInt()));
+            }
+            case STEPPER_REMOVE -> {
+                if (mouseX < x || mouseX >= x + width) return;
+                if (mouseX >= x + width - 16) cycleChoice.run();
+                else if (mouseX < x + width - 19) {
+                    intConsumer.accept(mouseX < x + (width - 19) / 2
+                        ? numberField().decrement(intSupplier.getAsInt())
+                        : numberField().increment(intSupplier.getAsInt()));
+                }
             }
             case SLIDER -> {
                 int trackLeft = x + 2;
@@ -208,8 +239,15 @@ public record SettingEntry(
         graphics.fill(x + width - 13, y + 3, x + width - 1, y + height - 3, theme.accentDark());
         graphics.text(font, "-", x + 5, y + 4, theme.text(), true);
         graphics.text(font, "+", x + width - 10, y + 4, theme.text(), true);
-        String suffix = label().toLowerCase(Locale.ROOT).matches(".*(scale|alpha).*") ? "%" : "";
-        centered(graphics, font, intSupplier.getAsInt() + suffix, x, y, width, theme.text());
+        String suffix = kind == SettingKind.STEPPER_REMOVE ? "t"
+            : label().toLowerCase(Locale.ROOT).matches(".*(scale|alpha).*") ? "%" : "";
+        centered(graphics, font, intSupplier.getAsInt() + suffix, x, y, width, theme.warning());
+    }
+
+    private static void drawRemoveButton(GuiGraphicsExtractor graphics, Font font, UiTheme theme,
+                                         int x, int y, int width, int height) {
+        UiShapes.rounded(graphics, x + width - 15, y + 2, 14, height - 4, 2, theme.panelDark());
+        graphics.text(font, "-", x + width - 11, y + 4, theme.error(), false);
     }
 
     private void drawSlider(GuiGraphicsExtractor graphics, Font font, UiTheme theme, int x, int y, int width, int height) {
@@ -228,7 +266,7 @@ public record SettingEntry(
             : lower.contains("pitch")
                 ? String.format(Locale.ROOT, "x%.2f", intSupplier.getAsInt() / 100.0)
                 : String.format(Locale.ROOT, "%.1fs", intSupplier.getAsInt() / 10.0);
-        centered(graphics, font, value, x, y, width, theme.text());
+        centered(graphics, font, value, x, y, width, theme.warning());
     }
 
     private static void drawButton(

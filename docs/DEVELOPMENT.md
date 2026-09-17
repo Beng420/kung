@@ -98,11 +98,27 @@ Use typed config categories, feature/service registries, command groups and shar
 message/UI controls. Keep player-visible text English. Preserve existing config
 migrations, master toggles and HUD layout unless the task changes their behavior.
 
+Local informational text uses `KungMessages.highlight` through `info`/`detail`:
+gray prose, gold numbers, green/red states, colored dragon names and light-blue
+Ice Spray/Sprayed labels. Text, commands and paths are preserved. Warning/error/
+success messages retain their severity color. Components that already have rich
+styles should remain components; do not flatten them through the string helper.
+Kung's menu uses accent category headings, muted setting labels and gold numeric
+values. Feature names remain uniformly white, including Ice Spray Highlight;
+do not apply chat/HUD semantic highlighting to menu feature rows.
+Native OneConfig owns its own text rendering and colors.
+
 ### Optional OneConfig / Mod Menu integration
 
 `config/KungSettings` is the shared catalog for the existing `KungConfigScreen`
-and native OneConfig controls. It exposes six categories and 22 feature entries,
+and native OneConfig controls. It exposes six categories and 26 feature entries,
 including enum choices, nested settings, actions, help and raw loadout bindings.
+Hitboxes uses dynamic entity rows and shared color/removal
+controls. Its native Add/Edit buttons open the complete Kung search/color editor;
+see [Hitboxes](HITBOXES.md).
+Bow Draw Indicator uses the same dynamic list pattern with tick steppers and
+removal controls. OneConfig supplies native numbers; membership edits open the
+updated Kung list. See [Bow Draw Indicator](BOW_DRAW_INDICATOR.md).
 Keep new settings in this catalog so both menus reach the same validated setters.
 
 `compat/KungModMenu` retains the standard `modmenu` screen factory. When OneConfig
@@ -110,9 +126,12 @@ is present, that factory lazily registers `KungOneConfigTree` under `kung` befor
 returning. OneConfig **1.2.0** recognizes the native tree and opens its own settings
 page instead of the Kung screen; its published standalone Mod Menu API shim does
 this too, without a separate Mod Menu install. The native tree has no `on_click`
-screen redirect or `ui_only` flag. Flat property IDs contain no path separators;
-category/subcategory metadata and ancestor labels retain nested settings in both
-the native page and global search (OneConfig only renders one tree nesting level).
+screen redirect or `ui_only` flag. Flat property IDs contain no path separators.
+Category/subcategory metadata groups the native page, and ancestor labels retain
+nested settings (OneConfig only renders one tree nesting level). Each property also
+has `searchTags` for Kung, its category and feature: OneConfig 1.2.0's global search
+does not match category/subcategory headings, so those labels alone cannot make
+generic controls such as `Enabled` or `Volume` discoverable by feature name.
 
 Both APIs are compile-only and are not bundled or required by Kung. All OneConfig
 class references stay behind optional-mod checks. `KungOneConfigBridge` also registers
@@ -132,13 +151,13 @@ refresh after edits. Loadout keybinds use native single-input capture, but opt o
 of OneConfig global binding/Minecraft-control registration; Kung retains execution
 ownership in the loadout menu. Existing scan codes survive unchanged-key edits.
 
-Custom audio file-list changes rebuild a fresh native tree after leaving OneConfig,
+Custom audio file-list, hitbox and bow-threshold membership changes rebuild a fresh native tree after leaving OneConfig,
 at most once per second, refreshing search and file-specific controls without
 interrupting text entry. HUD panels retain and refresh their own linked controls
 across that rebuild. Dynamic status text may need reopening the page because
 OneConfig caches its UI values.
 
-`KungHudLayout` supplies the same five HUD bounds and config setters to `/kung hud`
+`KungHudLayout` supplies the same seven HUD bounds and config setters to `/kung hud`
 and the optional OneConfig HUD editor. Native wrappers use GUI coordinates, subtract
 the map/Superpairs border offset when moving, and convert scale multipliers to
 Kung's 25–300% range. Map text scale remains independent (50–200%) in its native HUD
@@ -158,7 +177,7 @@ edit external HUD placement in a loaded world, not from the title screen.
 
 Live validation still needs native opening/search, all control kinds, persistence,
 profile switches, audio-list refresh, title-screen settings access, optional-mod absence,
-and all five HUDs' drag/resize/visibility, map text scale and switching between editors.
+and all seven HUDs' drag/resize/visibility, map text scale and switching between editors.
 
 `KungSettingsTest` checks catalog coverage and persistence shared with the original
 menu. `KungOneConfigTreeTest` exercises the released OneConfig API for native

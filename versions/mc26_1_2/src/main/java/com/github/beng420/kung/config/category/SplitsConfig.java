@@ -97,6 +97,26 @@ public final class SplitsConfig extends ConfigCategory {
         return best != null && best > 0L ? best : -1L;
     }
 
+    /** Explicit edits may replace a best with a slower time as well as a faster one. */
+    public void setPersonalBestMillis(int floor, boolean masterMode, String phase, long millis) {
+        String key = floorKey(floor, masterMode);
+        if (key == null || phase == null || phase.isBlank() || millis <= 0L) return;
+        if (personalBestMillis(floor, masterMode, phase) == millis) return;
+        if (personalBests == null) personalBests = new TreeMap<>();
+        personalBests.computeIfAbsent(key, ignored -> new TreeMap<>()).put(phase, millis);
+        save();
+    }
+
+    public void clearPersonalBest(int floor, boolean masterMode, String phase) {
+        String key = floorKey(floor, masterMode);
+        if (key == null || phase == null || personalBests == null) return;
+        Map<String, Long> phases = personalBests.get(key);
+        if (phases == null || !phases.containsKey(phase)) return;
+        phases.remove(phase);
+        if (phases.isEmpty()) personalBests.remove(key);
+        save();
+    }
+
     /** Coalesce a batch of measured phases into one save, only when a best improves. */
     public void recordPersonalBests(int floor, boolean masterMode, Map<String, Long> measurements) {
         String key = floorKey(floor, masterMode);

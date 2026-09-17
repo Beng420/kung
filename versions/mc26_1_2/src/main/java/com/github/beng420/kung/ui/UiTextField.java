@@ -1,5 +1,7 @@
 package com.github.beng420.kung.ui;
 
+import java.util.function.BooleanSupplier;
+import java.util.function.Predicate;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.EditBox;
@@ -10,6 +12,7 @@ import net.minecraft.network.chat.Component;
 
 public final class UiTextField {
     private final EditBox control;
+    private Predicate<String> filter;
 
     public UiTextField(Font font, Component narration) {
         control = new EditBox(font, 0, 0, narration);
@@ -17,6 +20,16 @@ public final class UiTextField {
 
     public UiTextField maxLength(int maxLength) {
         control.setMaxLength(maxLength);
+        return this;
+    }
+
+    public UiTextField filter(Predicate<String> filter) {
+        this.filter = filter;
+        return this;
+    }
+
+    public UiTextField hint(String text) {
+        control.setHint(Component.literal(text));
         return this;
     }
 
@@ -95,10 +108,23 @@ public final class UiTextField {
     }
 
     public boolean keyPressed(KeyEvent event) {
-        return control.keyPressed(event);
+        return edit(() -> control.keyPressed(event));
     }
 
     public boolean charTyped(CharacterEvent event) {
-        return control.charTyped(event);
+        return edit(() -> control.charTyped(event));
+    }
+
+    private boolean edit(BooleanSupplier action) {
+        if (filter == null) return action.getAsBoolean();
+        String previous = control.getValue();
+        int cursor = control.getCursorPosition();
+        boolean handled = action.getAsBoolean();
+        // Includes paste and deletion; 26.1.2's EditBox no longer exposes an input filter.
+        if (!filter.test(control.getValue())) {
+            control.setValue(previous);
+            control.moveCursorTo(cursor, false);
+        }
+        return handled;
     }
 }

@@ -14,7 +14,7 @@ import org.polyfrost.oneconfig.api.config.v1.Property;
 final class KungOneConfig {
     private static KungOneConfigTree bindings;
     private static final List<Property<?>> hudControls = new ArrayList<>();
-    private static String soundLists;
+    private static String dynamicSettings;
     private static int ticks;
 
     private KungOneConfig() { }
@@ -37,11 +37,10 @@ final class KungOneConfig {
             bindings.refresh();
             // HUD panels retain their controls when an audio-list edit replaces the main settings tree.
             for (var property : hudControls) property.revaluateDisplay();
-            // File-specific sound settings change with the list. Rebuild after closing the editor,
-            // avoiding destruction of its text input while the user types a file name.
+            // Rebuild changing row lists outside the native editor to preserve active text input.
             boolean oneConfigOpen = client.screen != null
                 && client.screen.getClass().getName().startsWith("org.polyfrost.oneconfig.");
-            if (!oneConfigOpen && !soundLists.equals(soundLists())) rebuild();
+            if (!oneConfigOpen && !dynamicSettings.equals(dynamicSettings())) rebuild();
         });
     }
 
@@ -55,11 +54,12 @@ final class KungOneConfig {
         if (bindings != null) ConfigManager.active().unregister("kung");
         ConfigManager.active().register(next.tree());
         bindings = next;
-        soundLists = soundLists();
+        dynamicSettings = dynamicSettings();
     }
 
-    private static String soundLists() {
+    private static String dynamicSettings() {
         var config = KungConfig.get().misc;
-        return config.customArrowHitSounds() + "\n" + config.customWitherShieldExpireSounds();
+        return config.customArrowHitSounds() + "\n" + config.customWitherShieldExpireSounds()
+            + "\n" + KungConfig.get().hitboxes.entities().keySet() + "\n" + config.bowDrawThresholds();
     }
 }

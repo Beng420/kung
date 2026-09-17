@@ -5,6 +5,7 @@ import com.github.beng420.kung.config.KungConfig;
 import com.github.beng420.kung.feature.dungeon.DungeonStateTracker;
 import com.github.beng420.kung.config.KungHudEditorScreen;
 import com.github.beng420.kung.config.KungConfigScreen;
+import com.github.beng420.kung.config.SplitPersonalBestsScreen;
 import com.github.beng420.kung.feature.dungeon.CatacombsCalculatorScreen;
 import com.github.beng420.kung.feature.dungeon.DungeonDoorKind;
 import com.github.beng420.kung.feature.dungeon.DungeonKnownRoomCatalog;
@@ -717,6 +718,12 @@ final class KungCommandActions {
     static int openSettings(CommandContext<FabricClientCommandSource> context) {
         Minecraft client = context.getSource().getClient();
         client.execute(() -> client.setScreen(new KungConfigScreen()));
+        return 1;
+    }
+
+    static int openSplitPersonalBests(CommandContext<FabricClientCommandSource> context, DungeonStateTracker tracker) {
+        Minecraft client = context.getSource().getClient();
+        client.schedule(() -> client.setScreen(new SplitPersonalBestsScreen(tracker.splitTracker())));
         return 1;
     }
 

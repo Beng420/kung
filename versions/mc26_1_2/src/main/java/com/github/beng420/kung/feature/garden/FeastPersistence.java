@@ -7,19 +7,23 @@ final class FeastPersistence {
     private final FeastStateStore store;
     private final FeastSession session;
     private final FeastKernels kernels;
+    private final FeastKernelRate kernelRate;
     private String profile = "";
     private String profileId = "";
 
-    FeastPersistence(FeastStateStore store, FeastSession session, FeastKernels kernels) {
+    FeastPersistence(FeastStateStore store, FeastSession session, FeastKernels kernels, FeastKernelRate kernelRate) {
         this.store = store;
         this.session = session;
         this.kernels = kernels;
+        this.kernelRate = kernelRate;
     }
 
     boolean select(String account, String name) {
         if (name == null || name.isBlank()) return false;
         String next = account + ":" + name.toLowerCase(Locale.ROOT);
         if (next.equals(profile)) return false;
+        save();
+        kernelRate.selectProfile(account, name);
         if (!profile.isEmpty()) {
             session.invalidate();
             kernels.invalidate();
@@ -27,7 +31,11 @@ final class FeastPersistence {
         profile = next;
         var saved = store.get(profile);
         profileId = saved == null ? "" : saved.profileId();
-        if (saved != null) kernels.restore(saved.kernels(), saved.pendingKernelGains());
+        if (saved != null) {
+            kernels.restore(saved.kernels(), saved.pendingKernelGains());
+            kernelRate.restore(saved.kernelRatePerHour());
+            kernelRate.identifyProfile(profileId);
+        }
         restoreProgress();
         save(); // A late first profile row may follow an already observed menu or donation.
         return true;
@@ -39,8 +47,9 @@ final class FeastPersistence {
             // A deleted/recreated profile can reuse its fruit name, but not its server UUID.
             session.invalidate();
             kernels.invalidate();
-            store.put(profile, new FeastStateStore.Saved(id, "", null, null, 0));
+            store.put(profile, new FeastStateStore.Saved(id, "", null, null, 0, null));
         }
+        kernelRate.identifyProfile(id);
         profileId = id;
         save();
     }
@@ -66,7 +75,7 @@ final class FeastPersistence {
             balance = previous.kernels();
             pendingGains = previous.pendingKernelGains();
         }
-        store.put(profile, new FeastStateStore.Saved(profileId, event, progress, balance, pendingGains));
+        store.put(profile, new FeastStateStore.Saved(profileId, event, progress, balance, pendingGains, kernelRate.value()));
     }
 
     void reset() {

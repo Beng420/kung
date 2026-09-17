@@ -15,6 +15,13 @@ public final class DungeonConfig extends ConfigCategory {
     private boolean showInBoss = true;
     private boolean princeIconsEnabled = true;
     private boolean mimicEspEnabled = false;
+    private boolean iceSprayHighlightEnabled = false;
+    private int iceSprayBoxSize = 100;
+    private boolean dragonDebuffEnabled = false;
+    private DragonDebuffScope dragonDebuffScope = DragonDebuffScope.ALL_DRAGONS;
+    private int dragonDebuffX = 8;
+    private int dragonDebuffY = 230;
+    private int dragonDebuffScale = 85;
     private boolean forcePaulScoreEnabled = false;
     private boolean playerTrackingEnabled = false;
     private boolean deathMessagesEnabled = false;
@@ -57,6 +64,20 @@ public final class DungeonConfig extends ConfigCategory {
     public void setPrinceIconsEnabled(boolean value) { princeIconsEnabled = value; save(); }
     public boolean mimicEspEnabled() { return mimicEspEnabled; }
     public void setMimicEspEnabled(boolean value) { mimicEspEnabled = value; save(); }
+    public boolean iceSprayHighlightEnabled() { return iceSprayHighlightEnabled; }
+    public void setIceSprayHighlightEnabled(boolean value) { iceSprayHighlightEnabled = value; save(); }
+    public int iceSprayBoxSize() { return Math.clamp(iceSprayBoxSize, 100, 200); }
+    public void setIceSprayBoxSize(int value) { iceSprayBoxSize = Math.clamp(value, 100, 200); save(); }
+    public boolean dragonDebuffEnabled() { return dragonDebuffEnabled; }
+    public void setDragonDebuffEnabled(boolean value) { dragonDebuffEnabled = value; save(); }
+    public DragonDebuffScope dragonDebuffScope() { return dragonDebuffScope == null ? DragonDebuffScope.ALL_DRAGONS : dragonDebuffScope; }
+    public void setDragonDebuffScope(DragonDebuffScope value) { dragonDebuffScope = value == null ? DragonDebuffScope.ALL_DRAGONS : value; save(); }
+    public int dragonDebuffX() { return dragonDebuffX; }
+    public int dragonDebuffY() { return dragonDebuffY; }
+    public int dragonDebuffScale() { return Math.clamp(dragonDebuffScale, 25, 300); }
+    public void setDragonDebuffX(int value) { dragonDebuffX = value; save(); }
+    public void setDragonDebuffY(int value) { dragonDebuffY = value; save(); }
+    public void setDragonDebuffScale(int value) { dragonDebuffScale = Math.clamp(value, 25, 300); save(); }
     public boolean forcePaulScoreEnabled() { return forcePaulScoreEnabled; }
     public void setForcePaulScoreEnabled(boolean value) { forcePaulScoreEnabled = value; save(); }
     public boolean playerTrackingEnabled() { return playerTrackingEnabled; }
@@ -133,6 +154,14 @@ public final class DungeonConfig extends ConfigCategory {
     public void setRoomSyncToken(String token) {
         this.roomSyncToken = token == null ? "" : token.trim();
         save();
+    }
+
+    public enum DragonDebuffScope {
+        ALL_DRAGONS("All Dragons"), NEAREST_STATUE("Nearest Statue");
+
+        private final String label;
+        DragonDebuffScope(String label) { this.label = label; }
+        public String label() { return label; }
     }
 
     public static String normalizeRoomSyncServerUrl(String value) {

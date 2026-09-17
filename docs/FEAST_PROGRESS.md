@@ -45,16 +45,20 @@ During **Grand Feast** the same line appends the player's Kernel balance, e.g.
 down to the bar width, preserving the HUD bounds and the player's position/scale.
 Unknown currency displays `-- Kernels`; zero is displayed only after a real balance.
 
-Grand Feast adds one more centered line: **Avg Kernels/h**. It uses an exponentially
-weighted average of confirmed Seasoning-related Kernel gains, with a **five-minute
-half-life in farming time**. A gain and the farming time around it retain half
-their weight after five farming minutes, a quarter after ten, and 6.25% after
-twenty. Recent performance therefore matters more; older observations fade
-continuously without a hard cutoff. Milestone claims, sidebar/menu balance
-changes and spending do not affect this rate. The denominator is weighted time
-actually observed, so startup does not assume a full history of zero gains. The
-first 60 farming seconds show `-- (warming up)`; afterward, no gains show zero.
-The rate is still an estimate and can fluctuate with sparse/random drops.
+Grand Feast adds one more centered line: **Avg Kernels/h**. The last estimate is
+saved per Minecraft account/SkyBlock profile and shown immediately after that
+profile is recognized, including after restarts and pauses. New measurements use
+complete **five-minute blocks of farming time**. Each completed block contributes
+20% of its measured Kernels/h; the saved estimate retains 80%. For example, a
+saved 60/h and a new block measuring 120/h produce 72/h. Individual drops and
+unfinished blocks do not change the displayed value. Milestone claims,
+sidebar/menu balance changes and spending do not affect this rate.
+
+Without a saved estimate, the first block establishes the value after five farming
+minutes; until then it shows `-- (warming up)`. An empty completed block measures
+zero. Older versions did not save a rate, so the first upgrade needs this initial
+measurement. The estimate can still vary with drops, but changes only at completed
+blocks instead of jumping on each gain or decaying between gains.
 
 Mature crop clicks start/resume measurement. **Kernel Timeout (s)** is a seconds
 text field under Garden > Feast Progress, defaulting to **60** (also for existing
@@ -64,17 +68,19 @@ the selected timeout, the rate shows `(paused)`. The timeout grace is included
 in farming time; later idle time is excluded. Long gaps cannot slip into the denominator if a tick is
 delayed. Outside the Garden, during transfers or without Grand Feast evidence,
 the clock pauses immediately. Returning requires another harvest. The Hub farm
-overlay displays the paused value. Both weights freeze during pauses. The weighted history survives ordinary warps
-within the same connection but starts fresh after disconnect/restart, disable,
-an account/profile change or a different Feast. Currency and milestone progress
-retain their existing persistence. HUD width, top position and scale stay the
+overlay displays the paused value. Pauses and ordinary warps retain the unfinished
+block. Disconnect/restart, disable, account/profile selection or a different Feast
+discard only that unfinished block; the saved estimate survives for that profile,
+including across Feast changes. A changed server Profile ID clears a recreated
+profile's estimate. Offline and paused time never lowers the saved value.
+Currency and milestone progress retain their existing persistence. HUD width, top position and scale stay the
 same; editor bounds grow from 40 to 52 units to include the new line. Harvest
 keeps its previous text and bar.
 
 The timeout persists as `feast.kernelTimeoutSeconds` in the existing settings.
 Integer input is clamped to 10–300; blank, non-integer and overflowing text retains
 the previous value. Loading also normalizes the range. Edits apply immediately to
-the deadline measured from the last crop without clearing the weighted rate.
+the deadline measured from the last crop without clearing the saved rate or block.
 Already measured time stays intact and past pauses are not backfilled. Editing
 after a world/location pause still requires a new crop to resume measurement.
 
@@ -90,7 +96,7 @@ target resets have model-test coverage; live hover/rendering remains to check.
 ## Sources and ownership
 
 `feature/garden/FeastOverlayFeature` owns Fabric callbacks and HUD drawing.
-`FeastKernelRate` owns the independent in-memory rate and monotonic farming clock.
+`FeastKernelRate` owns the rate estimate, current block and monotonic farming clock.
 `GardenCropTracker`, shared with the visitor alarm through separate position
 guards, recognizes the actual Garden crops including Wild Rose and
 Sunflower/Moonflower. The existing mining hook observes initial/continued input
@@ -98,16 +104,16 @@ without altering gameplay. Only the anchored Ted Kernel confirmation counts for
 the rate, and only during a currently eligible farming interval. It is counted
 once through the existing pre-filter message observer, without also counting the
 Seasoning message. This works before the balance/menu baseline is known and after
-the final milestone cap. Two weighted totals use constant memory. For each active
-interval `dt` in milliseconds, let `lambda = ln(2) / 300000` and
-`decay = exp(-lambda * dt)`: multiply weighted gains by `decay`, and update weighted
-time to `oldTime * decay + (1 - decay) / lambda`. Each confirmed gain adds one to
-the weighted gains. Their ratio times 3,600,000 gives Kernels/h. The integral uses
-`expm1` for short-interval precision and is independent of tick/render cadence.
-Raw gain/time totals only serve diagnostics and the 60-second warmup; they are
-not the currency balance or the rate numerator/denominator. Missing event evidence
-pauses without discarding the known history; a changed event key resets it.
-Account/profile names and a subsequently changed Profile ID also isolate rates.
+the final milestone cap. A block stores only confirmed gains and active elapsed
+milliseconds. At 300,000 ms it measures `gains * 3600000 / 300000`, then blends
+`previous + 0.2 * (measured - previous)` or uses the measurement directly when no
+previous estimate exists. The counters reset for the next block. Delayed ticks
+split elapsed active time at block boundaries; a gain exactly on a boundary belongs
+to the new block, independent of render/tick cadence. Paused gaps are excluded.
+The estimate retains full floating-point precision; only the HUD rounds to an integer.
+Missing event evidence pauses the block; a changed event key starts a new block
+while retaining the estimate. `FeastPersistence` coordinates profile selection
+and Profile ID validation with both currency and rate restoration.
 
 `FeastContext` consumes the existing packet-confirmed instance/sidebar/tab cache.
 Garden recognition uses the location or `Area: Garden` field, never chat mentions;
@@ -208,17 +214,25 @@ UUID, when available, also invalidates a deleted/recreated profile with the same
 fruit name. Social messages cannot select profiles; fresh profile announcements
 take precedence over stale tab rows within the current instance.
 
-`FeastStateStore` saves donations, goals, event identity and Kernels under
+`FeastStateStore` saves donations, goals, event identity, Kernels and the rate estimate under
 `config/kung/feast-progress.json`, resolved through `KungPaths`. The bounded cache
 holds at most 32 account/profile entries and reads at most 128 KiB. Invalid data
 does not become a baseline. One background writer coalesces updates and replaces
 the file through a temporary sibling; shutdown waits up to three seconds for it.
 Every accepted menu/sidebar/chat change updates the cache. Disconnect/disable
-clear only live state. Settings remain in the existing `kung.json` `feast` section.
+save the latest estimate before clearing live state; shutdown then flushes the writer.
+The existing five-tick menu cadence also checks for changed values, so completed
+empty blocks save without a subsequent donation. Unchanged snapshots do not write.
+The old profile is saved before switching to another account/profile. Settings
+remain in the existing `kung.json` `feast` section.
 The same version-1 file now includes `pendingKernelGains`; missing fields in older
 files mean zero, and values outside zero through the known balance are rejected.
 This retains confirmed donation and milestone-gain evidence across restart/profile selection. Sidebar/menu
 acknowledgements also save when they clear pending gains without changing the total.
+The optional `kernelRatePerHour` field holds the full-precision estimate independently
+of event identity. Missing values remain unknown; zero is a valid saved estimate.
+Negative/non-finite estimates are ignored without discarding valid progress/currency.
+No timestamps or unfinished blocks are persisted, so offline time is not farming time.
 
 Restoring donations requires matching Feast kind and event identity. Grand uses
 the elected mayor's election year, so consecutive Finnegan terms cannot reuse
@@ -307,17 +321,17 @@ Evidence checked on 2026-09-14/15:
 
 ## Validation and live checks
 
-The 2026-09-16 Java 25 full build completes **578 test cases: 577 passed, zero
+The 2026-09-17 Java 25 full build completes **621 test cases: 620 passed, zero
 failures/errors, one skipped** because Windows cannot create the updater test's
-symlink fixture. The built 0.3.4 JAR contains the exponentially weighted rate,
+symlink fixture. The built 0.3.5 JAR contains the persisted rate with gradual block updates,
 configurable idle timeout and shared crop tracker;
 `git diff --check` passes. No JAR was installed into a game profile.
 The focused UI/config selection passes 12 tests, including the two-second hover
 boundary and resetting the delay on target changes, leaving and interactions.
-The focused rate/message/config/control selection passes **28 tests**, with no failures,
-errors or skips. The 16 rate tests cover warmup, exact half-life decay without a
-hard cutoff, response to improving/slowing farming with equal total gains,
-tick/render cadence independence, zero gains, a six-hour steady stream, actual
+The focused Feast/settings/config selection passes **108 tests**, with no failures,
+errors or skips. The 16 rate tests cover first-block warmup, holding the saved
+estimate between blocks, 80/20 updates after faster/empty farming blocks,
+tick/render cadence independence, delayed boundary crossings, zero gains, a six-hour steady stream, actual
 farming time, idle grace and delayed ticks, pause/resume across worlds and missing
 evidence, independent sources, clock regression and profile/event
 resets. The pre-filter message test also covers rate gains under chat cancellation
@@ -348,7 +362,10 @@ changing donation progress.
 Persistence tests exercise file round-trips, continued donations after restart,
 repeated lobby announcements, account/profile isolation, recreated profiles,
 changed Feasts, API recovery, late identity/event evidence, downward corrections,
-coalesced replacement and malformed/oversized caches. Context/config tests cover
+coalesced replacement and malformed/oversized caches. Rate persistence checks cover
+immediate display after restart, full-precision reuse, offline pauses, continued
+blending, account/profile isolation, recreated Profile IDs, legacy files and invalid
+optional estimates without currency loss. Context/config tests cover
 the Hub regions/toggle and restart-stable Harvest years.
 Kernel regressions cover changed delayed sidebar rows, a directly applied sidebar
 ahead of the shared tick cache, menu-free baseline discovery at a confirmed donation,
@@ -356,8 +373,10 @@ world changes, no guessed offsets, spending/menu corrections, pending-gain round
 legacy caches and invalid pending counts. The event-order cases are controlled
 regressions, not a replay of a newly captured live packet trace.
 
-Live checks remain: compare the weighted rate through slower/faster farming phases;
-no new live trace establishes whether the reported 14 Kernels/h was incorrect.
+Live checks remain: confirm the saved estimate immediately after reconnect/restart
+and compare the calmer five-minute updates through slower/faster farming phases.
+The user reported the former decay method frequently jumping between 30 and 90/h;
+no new live trace establishes a donation-counting error.
 Verify the updated hover help, seconds field, a 20-second pest hunt, a pause past
 the configured timeout and return from the Hub, including Wild Rose/flower harvests, chat filters
 and HUD editor scaling. These rate paths have unit coverage, not a live play result.
@@ -377,8 +396,7 @@ parsed amount, active event, baseline availability and whether it counted, separ
 from high-volume action-bar/message logs. Shared trace limits still apply. No
 repeated chat messages are emitted.
 `feast-kernels` records balance, last sidebar value, pending confirmed gains,
-raw measured Kernels/farming milliseconds since the current measurement began,
-weighted Kernels/farming milliseconds, calculated rate and pause state
+current block Kernels/farming milliseconds, full-precision estimate, rounded rate and pause state
 for changed source observations, including ignored late rows, plus bounded Grand-menu
 observations of the balance and Grand Bakery item lore for diagnosing missing totals.
 `feast-claim` records accepted click intentions with container/slot, tier, reward

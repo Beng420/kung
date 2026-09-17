@@ -62,9 +62,9 @@ public final class DungeonRunStats {
     );
     private static final Pattern PLAYER_TAB_PATTERN = Pattern.compile("(?:\\[\\d+]\\s+)?(?:\\[[^\\]]+]\\s*)*(?<name>[A-Za-z0-9_]{3,16})\\b.*\\((?:Archer|Berserk(?:er)?|Mage|Healer|Tank)\\b.*\\)", Pattern.CASE_INSENSITIVE);
     private static final Pattern PLAYER_NAME_PATTERN = Pattern.compile("\\b[A-Za-z0-9_]{3,16}\\b");
-    private static final Pattern MIMIC_KILL_PATTERN = Pattern.compile(".*?(?:Mimic dead!?|Mimic Killed!|\\$SKYTILS-DUNGEON-SCORE-MIMIC\\$)$", Pattern.CASE_INSENSITIVE);
-    private static final Pattern PRINCE_KILL_PATTERN = Pattern.compile(".*?(?:Prince dead!?|Prince Killed!)$", Pattern.CASE_INSENSITIVE);
-    private static final Pattern BAT_KILL_PATTERN = Pattern.compile(".*?(?:Bat dead!?|Bat Killed!|BatScore Killed!|Bat Score Killed!?)$", Pattern.CASE_INSENSITIVE);
+    private static final Pattern MIMIC_KILL_PATTERN = Pattern.compile(".*?(?:Mimic dead!?|Mimic Killed!?|\\$SKYTILS-DUNGEON-SCORE-MIMIC\\$)$", Pattern.CASE_INSENSITIVE);
+    private static final Pattern PRINCE_KILL_PATTERN = Pattern.compile(".*?(?:Prince dead!?|Prince Killed!?)$", Pattern.CASE_INSENSITIVE);
+    private static final Pattern BAT_KILL_PATTERN = Pattern.compile(".*?(?:Bat dead!?|Bat Killed!?|BatScore Killed!?|Bat Score Killed!?)$", Pattern.CASE_INSENSITIVE);
     private static final String HYPIXEL_PRINCE_KILL_MESSAGE = "A Prince falls. +1 Bonus Score";
     private static final String HYPIXEL_BAT_KILL_MESSAGE = "A Bat has been slain. +1 Bonus Score";
     private static final Pattern PLAYER_CLASS_PATTERN =

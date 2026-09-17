@@ -6,6 +6,7 @@ import com.github.beng420.kung.config.category.DebugConfig;
 import com.github.beng420.kung.config.category.DungeonChatFilterConfig;
 import com.github.beng420.kung.config.category.DungeonConfig;
 import com.github.beng420.kung.config.category.FeastConfig;
+import com.github.beng420.kung.config.category.HitboxesConfig;
 import com.github.beng420.kung.config.category.MiscConfig;
 import com.github.beng420.kung.config.category.SlayerConfig;
 import com.github.beng420.kung.config.category.SafariConfig;
@@ -44,6 +45,7 @@ public final class KungConfig {
     public SafariConfig safari = new SafariConfig();
     public FeastConfig feast = new FeastConfig();
     public VisitorAlarmConfig visitorAlarm = new VisitorAlarmConfig();
+    public HitboxesConfig hitboxes = new HitboxesConfig();
 
     private transient Path explicitConfigFile;
     private transient boolean loading;
@@ -86,6 +88,7 @@ public final class KungConfig {
                     safari = loaded.safari;
                     feast = loaded.feast;
                     visitorAlarm = loaded.visitorAlarm;
+                    hitboxes = loaded.hitboxes;
                     loadedSuccessfully = true;
                 }
             }
@@ -149,6 +152,7 @@ public final class KungConfig {
         if (safari == null) safari = new SafariConfig();
         if (feast == null) feast = new FeastConfig();
         if (visitorAlarm == null) visitorAlarm = new VisitorAlarmConfig();
+        if (hitboxes == null) hitboxes = new HitboxesConfig();
     }
 
     private void bindCategories() {
@@ -162,6 +166,7 @@ public final class KungConfig {
         safari.onChange(this::save);
         feast.onChange(this::save);
         visitorAlarm.onChange(this::save);
+        hitboxes.onChange(this::save);
     }
 
     private void normalize() {
@@ -188,6 +193,7 @@ public final class KungConfig {
         misc.setCustomWitherShieldExpireVolumeTenths(misc.customWitherShieldExpireVolumeTenths());
         misc.setCustomWitherShieldExpirePitchHundredths(misc.customWitherShieldExpirePitchHundredths());
         misc.normalize();
+        hitboxes.normalize();
         slayer.setEggSacPredictionRenderMode(slayer.eggSacPredictionRenderMode());
     }
 

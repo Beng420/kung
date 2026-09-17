@@ -58,6 +58,51 @@ public final class SplitPersonalBestsConfigTest {
         assertEquals(20_000L, config.personalBestMillis(6, false, "Blood Clear"));
     }
 
+    @Test public void manualSaveAndClearPersistImmediatelyWithoutAClosingSave() throws Exception {
+        var path = temporary.getRoot().toPath().resolve("edited-pbs.json");
+        KungConfig config = new KungConfig(path);
+        config.load();
+        config.splits.recordPersonalBests(7, false, Map.of("Blood Open", 1_234L, "Necron", 12_345L));
+        config.splits.recordPersonalBests(7, true, Map.of("Blood Open", 2_345L));
+        config.splits.setPersonalBestMillis(7, false, "Blood Open", 83_456L);
+        KungConfig restored = new KungConfig(path);
+        restored.load();
+        assertEquals(83_456L, restored.splits.personalBestMillis(7, false, "Blood Open"));
+        assertEquals(2_345L, restored.splits.personalBestMillis(7, true, "Blood Open"));
+        config.splits.clearPersonalBest(7, false, "Blood Open");
+        restored.load();
+        assertEquals(-1L, restored.splits.personalBestMillis(7, false, "Blood Open"));
+        assertEquals(12_345L, restored.splits.personalBestMillis(7, false, "Necron"));
+        config.splits.clearPersonalBest(7, false, "Necron");
+        assertFalse(Files.readString(path).contains("\"F7\""));
+        assertTrue(Files.readString(path).contains("\"M7\""));
+        config.splits.setPersonalBestMillis(7, false, "Blood Open", 1L);
+        restored.load();
+        assertEquals(1L, restored.splits.personalBestMillis(7, false, "Blood Open"));
+        assertFalse(restored.splits.enabled());
+    }
+
+    @Test public void invalidEditsAndRepeatedClearsCannotWriteOrCreateZeroRecords() {
+        SplitsConfig config = new SplitsConfig();
+        AtomicInteger writes = new AtomicInteger();
+        config.onChange(writes::incrementAndGet);
+        config.setPersonalBestMillis(-1, false, "Blood Open", 1L);
+        config.setPersonalBestMillis(8, true, "Blood Open", 1L);
+        config.setPersonalBestMillis(0, false, "Blood Open", 0L);
+        config.setPersonalBestMillis(0, false, "Blood Open", -1L);
+        config.setPersonalBestMillis(0, false, null, 1L);
+        config.setPersonalBestMillis(0, false, " ", 1L);
+        config.clearPersonalBest(0, false, "Blood Open");
+        assertEquals(0, writes.get());
+        config.setPersonalBestMillis(0, false, "Blood Open", 1L);
+        config.setPersonalBestMillis(0, false, "Blood Open", 1L);
+        assertEquals(1, writes.get());
+        config.clearPersonalBest(0, false, "Blood Open");
+        config.clearPersonalBest(0, false, "Blood Open");
+        assertEquals(2, writes.get());
+        assertEquals(-1L, config.personalBestMillis(0, false, "Blood Open"));
+    }
+
     @Test public void missingOrUnknownPredictionSettingsPreservePhaseEndDefaults() {
         for (String json : new String[] {"{}", "{\"splitsOverlay\":{\"predictionMode\":null}}",
             "{\"splitsOverlay\":{\"predictionMode\":\"unknown\"}}"}) {

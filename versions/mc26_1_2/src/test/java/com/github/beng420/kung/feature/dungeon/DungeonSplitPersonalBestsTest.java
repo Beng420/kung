@@ -300,4 +300,66 @@ public final class DungeonSplitPersonalBestsTest {
         config.setPredictionMode(SplitsConfig.PredictionMode.LIVE);
         assertEquals(-1L, tracker.predictedFinishMillis());
     }
+
+    @Test public void manualEditsRefreshBothPredictionModesWithoutMovingTheRunClocks() {
+        seed(6, false, 10_000L);
+        tracker.startRun(0L, 6, false);
+        clock.set(5_000L);
+        var timings = tracker.currentTimings();
+        config.setPersonalBestMillis(6, false, "Sadan", 20_000L);
+        tracker.personalBestEdited(6, false, "Sadan");
+        assertEquals(70_000L, tracker.predictedFinishMillis());
+        config.setPredictionMode(SplitsConfig.PredictionMode.LIVE);
+        assertEquals(65_000L, tracker.predictedFinishMillis());
+        config.clearPersonalBest(6, false, "Sadan");
+        tracker.personalBestEdited(6, false, "Sadan");
+        assertEquals(-1L, tracker.predictedFinishMillis());
+        config.setPredictionMode(SplitsConfig.PredictionMode.PHASE_END);
+        assertEquals(-1L, tracker.predictedFinishMillis());
+        assertEquals(timings, tracker.currentTimings());
+    }
+
+    @Test public void explicitEditsWinOverBufferedMeasurementsButFutureRunsStillLearn() {
+        config.setEnabled(true);
+        tracker.startRun(0L, 6, false);
+        event(20_000L, BLOOD);
+        event(30_000L, CLEAR);
+        config.setPersonalBestMillis(6, false, "Blood Open", 40_000L);
+        tracker.personalBestEdited(6, false, "Blood Open");
+        config.setPersonalBestMillis(6, false, "Blood Clear", 50_000L);
+        config.clearPersonalBest(6, false, "Blood Clear");
+        tracker.personalBestEdited(6, false, "Blood Clear");
+        tracker.stopRun();
+        assertEquals(40_000L, config.personalBestMillis(6, false, "Blood Open"));
+        assertEquals(-1L, config.personalBestMillis(6, false, "Blood Clear"));
+        tracker.startRun(0L, 6, false);
+        event(35_000L, BLOOD);
+        event(37_000L, CLEAR);
+        // Editing another floor must not discard this run's measurements.
+        config.setPersonalBestMillis(6, true, "Blood Open", 50_000L);
+        tracker.personalBestEdited(6, true, "Blood Open");
+        tracker.stopRun();
+        assertEquals(5_000L, config.personalBestMillis(6, false, "Blood Open"));
+        assertEquals(2_000L, config.personalBestMillis(6, false, "Blood Clear"));
+        assertEquals(50_000L, config.personalBestMillis(6, true, "Blood Open"));
+    }
+
+    @Test public void editsBetweenScoreAndVictoryCannotBeUndoneByThePendingFinalSample() {
+        for (boolean clear : new boolean[] {false, true}) {
+            tracker.reset();
+            clock.set(0L);
+            config.setEnabled(true);
+            tracker.startRun(0L, 1, false);
+            event(5_000L, "[BOSS] Bonzo: Oh I'm dead!");
+            event(8_000L, "Team Score: 177 (B)");
+            config.setPersonalBestMillis(1, false, "Bonzo Phase 2", 20_000L);
+            if (clear) config.clearPersonalBest(1, false, "Bonzo Phase 2");
+            tracker.personalBestEdited(1, false, "Bonzo Phase 2");
+            var timings = tracker.currentTimings();
+            event(8_003L, "Defeated Bonzo in 8s");
+            assertEquals(clear ? -1L : 20_000L, config.personalBestMillis(1, false, "Bonzo Phase 2"));
+            assertEquals(8_000L, tracker.predictedFinishMillis());
+            assertEquals(timings, tracker.currentTimings());
+        }
+    }
 }

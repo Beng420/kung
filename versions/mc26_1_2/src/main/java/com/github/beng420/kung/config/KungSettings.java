@@ -1,5 +1,6 @@
 package com.github.beng420.kung.config;
 
+import com.github.beng420.kung.config.category.DungeonConfig.DragonDebuffScope;
 import com.github.beng420.kung.config.category.SlayerConfig.EggSacPredictionRenderMode;
 import com.github.beng420.kung.config.category.SplitsConfig.PredictionMode;
 import com.github.beng420.kung.config.category.SplitsConfig.TimeFormat;
@@ -55,6 +56,28 @@ public final class KungSettings {
                             () -> toggleLocalRoomData(config))
                     )
                 ),
+                new FeatureEntry("Ice Spray Highlight", config.dungeon::iceSprayHighlightEnabled,
+                    () -> config.dungeon.setIceSprayHighlightEnabled(!config.dungeon.iceSprayHighlightEnabled()), List.of(
+                        SettingEntry.slider("Box Size (%)", config.dungeon::iceSprayBoxSize,
+                            config.dungeon::setIceSprayBoxSize, 100, 200, 5)
+                            .withTooltip("100% = normal size; 200% = twice the width, height and depth.",
+                                "Expands the highlight around the mob's center.")
+                    ))
+                    .withTooltip("Light-blue mob boxes with 20% fill for observed Ice Spray effects.",
+                        "Includes other players' sprays. Overlapping or missing ice markers stay unknown."),
+                new FeatureEntry("M7 Dragon Debuff", config.dungeon::dragonDebuffEnabled,
+                    () -> config.dungeon.setDragonDebuffEnabled(!config.dungeon.dragonDebuffEnabled()), List.of(
+                        SettingEntry.choice("Track", DragonDebuffScope.values(), config.dungeon::dragonDebuffScope,
+                            config.dungeon::setDragonDebuffScope, DragonDebuffScope::label)
+                            .withTooltip("All Dragons: show every dragon in the HUD and chat.",
+                                "Nearest Statue: choose the closest statue among each wave's spawning dragons.",
+                                "Uses your position at the first spawn and keeps that target until the next wave.")
+                    ))
+                    .withTooltip("Compact dragon times, early arrows and Ice Spray hits in the HUD and local chat.",
+                        "Move and scale the HUD with /kung hud.",
+                        "Hover the chat report for first/fifth hits, rate and hit ticks.",
+                        "Arrow feedback counts for the first 40 server ticks at your nearest spawning statue.",
+                        "Other dragons show -- for arrows. Each respawn starts fresh."),
                 new FeatureEntry("Player Stats", config.dungeon::playerTrackingEnabled,
                     () -> config.dungeon.setPlayerTrackingEnabled(!config.dungeon.playerTrackingEnabled()),
                     List.of()
@@ -182,8 +205,9 @@ public final class KungSettings {
                     )
                 ).withTooltip("Open the Feast menu to sync milestone progress.",
                     "Kernels sync from the scoreboard or Grand Bakery.",
-                    "Avg Kernels/h gives recent farming more weight.",
-                    "Older gains and farming time lose half their weight every 5 farming minutes.")
+                    "Avg Kernels/h is saved per profile and stays visible after pauses or restarts.",
+                    "Every 5 farming minutes: 80% previous rate + 20% measured rate.",
+                    "Without a saved rate, the first estimate takes 5 farming minutes.")
             )),
             new CategoryEntry("Hunting", List.of(
                 new FeatureEntry("Safari Uniques", config.safari::enabled,
@@ -210,6 +234,16 @@ public final class KungSettings {
                 )
             )),
             new CategoryEntry("Util", List.of(
+                new FeatureEntry("Bow Draw Indicator", config.misc::bowDrawIndicatorEnabled,
+                    () -> config.misc.setBowDrawIndicatorEnabled(!config.misc.bowDrawIndicatorEnabled()), new BowDrawThresholdSettings(config.misc))
+                    .withTooltip("Shows estimated bow power while drawing on Hypixel, paced by server ticks.",
+                        "Add or remove custom tick markers below. 3t: minimum shot. 20t: full power.",
+                        "Last Draw keeps the stopped value visible for 0.2 seconds between shots.",
+                        "Power rises between markers; network delay can shift the estimate.",
+                        "Move and resize in /kung hud. Shortbows do not charge."),
+                new FeatureEntry("Hitboxes", config.hitboxes::enabled,
+                    () -> config.hitboxes.setEnabled(!config.hitboxes.enabled()), new HitboxSettings(config.hitboxes))
+                    .withTooltip("Show colored hitboxes for selected entity types.", "Right-click to add entities and edit their colors."),
                 new FeatureEntry("Lobby Hop Helper", config.misc::lobbyHopHelperEnabled,
                     () -> config.misc.setLobbyHopHelperEnabled(!config.misc.lobbyHopHelperEnabled()),
                     List.of()
@@ -280,8 +314,12 @@ public final class KungSettings {
                     List.of(
                         SettingEntry.toggle("Debug", config.misc::superpairsHelperDebugEnabled,
                             () -> config.misc.setSuperpairsHelperDebugEnabled(!config.misc.superpairsHelperDebugEnabled()))
+                            .withTooltip("Adds packet details to /kung log, without extra overlay text.")
                     )
-                )
+                ).withTooltip("Lists enchantments first; individual Enchanting XP rewards are hidden.",
+                    "Unseen pairs have neither card revealed. Known singles are excluded.",
+                    "Up to marks an upper bound because hidden fields may contain bonuses.",
+                    "1/2 and 2/2 mean cards seen, not confirmed claimed rewards.")
             )),
             new CategoryEntry("Debug", List.of(
                 new FeatureEntry(
@@ -421,11 +459,16 @@ public final class KungSettings {
         BooleanSupplier enabledSupplier,
         BooleanSupplier clickableSupplier,
         Runnable toggle,
-        List<SettingEntry> settings,
+        Supplier<List<SettingEntry>> settingsSupplier,
         boolean alwaysExpanded,
         List<String> tooltip,
         boolean actionOnly
     ) {
+        public FeatureEntry(Supplier<String> name, BooleanSupplier enabled, BooleanSupplier clickable, Runnable action,
+                            List<SettingEntry> settings, boolean alwaysExpanded, List<String> tooltip, boolean actionOnly) {
+            this(name, enabled, clickable, action, () -> settings, alwaysExpanded, tooltip, actionOnly);
+        }
+
         FeatureEntry(Supplier<String> name, BooleanSupplier enabled, BooleanSupplier clickable, Runnable action,
                      List<SettingEntry> settings) {
             this(name, enabled, clickable, action, settings, false, List.of(), true);
@@ -435,13 +478,19 @@ public final class KungSettings {
             this(() -> name, enabled, () -> toggle != null, toggle, settings, false, List.of(), false);
         }
 
+        FeatureEntry(String name, BooleanSupplier enabled, Runnable toggle, Supplier<List<SettingEntry>> settings) {
+            this(() -> name, enabled, () -> toggle != null, toggle, settings, false, List.of(), false);
+        }
+
         FeatureEntry pinnedOpen() {
-            return new FeatureEntry(nameSupplier, enabledSupplier, clickableSupplier, toggle, settings, true, tooltip, actionOnly);
+            return new FeatureEntry(nameSupplier, enabledSupplier, clickableSupplier, toggle, settingsSupplier, true, tooltip, actionOnly);
         }
 
         FeatureEntry withTooltip(String... lines) {
-            return new FeatureEntry(nameSupplier, enabledSupplier, clickableSupplier, toggle, settings, alwaysExpanded, List.of(lines), actionOnly);
+            return new FeatureEntry(nameSupplier, enabledSupplier, clickableSupplier, toggle, settingsSupplier, alwaysExpanded, List.of(lines), actionOnly);
         }
+
+        public List<SettingEntry> settings() { return settingsSupplier.get(); }
 
         public String name() {
             return nameSupplier.get();
