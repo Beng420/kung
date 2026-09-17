@@ -3,12 +3,12 @@
 Entry point for Kung maintenance. Project rules: [AGENTS.md](../AGENTS.md).
 Read the [code map](CODE_MAP.md), then only the topic needed for the task.
 
-## Current state — 2026-09-16
+## Current state — 2026-09-17
 
 - Active module: Minecraft **26.1.2**, version **0.3.5**, Java **25**.
   The version source is [gradle.properties](../gradle.properties).
   The user's existing version change to 0.3.5 is preserved.
-- Behavior-preserving cleanup lives on `codex/beta`, based on the complete 0.3.5
+- Behavior-preserving cleanup was developed on `codex/beta`, based on the complete 0.3.5
   checkpoint `d1b3fc5`. It removes **535 production lines and nine Java files net**:
   fixed chat commands share one enum, profile providers share their request/retry
   pipeline, party/guild membership each uses one name map, and feature lifecycle
@@ -19,15 +19,17 @@ Read the [code map](CODE_MAP.md), then only the topic needed for the task.
   are preserved. Nine added regressions cover command gates/matching, provider
   requests/retries, member names/UUIDs and prepared dungeon start/countdown/reset.
   The full build passes and all 33 packaged non-class resources match the baseline
-  byte-for-byte; live beta checks remain for HUD/settings rendering,
-  dungeon entry/countdown/exit and chat-command replies on Hypixel.
+  byte-for-byte. On 2026-09-17 the user reported the beta working in live play and
+  requested merging it into `main`, including the subsequent Safari correction below.
+  The Safari correction still needs live verification; the broader beta report does
+  not establish results for that later fix.
 - The canonical mod icon is the user's supplied `KUNG.png` (167 x 167), copied
   unchanged to `versions/mc26_1_2/src/main/resources/assets/kung/icon.png`.
   Fabric metadata already references that resource, including the icon exposed
   to Mod Menu/OneConfig. Future builds and branding should use this artwork.
   The active-module build passed; the packaged PNG's SHA-256 matches the original.
 - Last code validation: full shared-root active-module build with Java 25,
-  **612 test cases: 611 passed, zero failures/errors, one skipped** because Windows
+  **613 test cases: 612 passed, zero failures/errors, one skipped** because Windows
   denies test symlink creation. Includes 71 update-package cases covering verified
   downloads, launcher ownership, atomic replacement, interruption/retry and a real
   separate helper waiting for a live parent JVM, plus local phase-time/PERSONAL BEST messages and score-before-victory final split PB confirmation,
@@ -100,9 +102,14 @@ Read the [code map](CODE_MAP.md), then only the topic needed for the task.
   Sparkling variants. Floor drops/attempts/player quotes do not count. The shared
   instance epoch clears captures on world/server changes; biome movement and
   other players joining preserve them. `/kung hud` moves/scales the full preview.
-  Sixteen new tests and the full build pass; no Feast implementation files were
-  changed by the Safari work. Live location gating, catches, next-instance reset
-  and HUD readability/scaling remain open. See [Critter Safari](CRITTER_SAFARI.md).
+  The 2026-09-16 23:48 UTC trace identifies the missing HUD: shared context correctly
+  reports `Safari`, but the feature accepted only `Critter Safari`/biomes, blocking
+  both drawing and counting. It now accepts the exact tab-list alias and the live
+  Hideyho reward spelling (`the Hideyho` / `it gave you`). Both regressions fail
+  before the fix and pass afterward; 17 focused tests and the full Java 25 build
+  pass. The supplied message replay counts 16 uniques (Icy 9/9, Haunted 7/10).
+  Corrected live visibility/catches, next-instance reset and HUD readability/scaling
+  remain open. See [Critter Safari](CRITTER_SAFARI.md).
 - Garden > Feast Progress (default off) shows cumulative donations, a segmented
   milestone bar and donations to the next tier during a Feast in the Garden and
   Hub farm area. Show in Hub Farm defaults on; turning it off retains Garden visibility.

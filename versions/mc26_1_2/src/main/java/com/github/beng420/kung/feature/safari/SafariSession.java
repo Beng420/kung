@@ -13,7 +13,7 @@ public final class SafariSession {
     private static final Pattern CAPTURE = Pattern.compile(
         "^CAPTURE! You caught (?:a|an) (.+?) and gained .+ Shards?!$");
     private static final Pattern HIDEYHO = Pattern.compile(
-        "^CAPTURE! You found (?:SPARKLING )?Hideyho, and as a reward he gave you .+ Hideyho Shards?!$");
+        "^CAPTURE! You found (?:the )?(?:SPARKLING )?Hideyho, and as a reward (?:he|it) gave you .+ Hideyho Shards?!$");
     private static final Pattern SHARE = Pattern.compile(
         "^LOOT SHARE! You received .+ Shards? from [A-Za-z0-9_]{1,16} (?:catching|finding) (?:(?:an?|the) )?(.+)!$");
     private static final Pattern ENTRY = Pattern.compile(
@@ -73,7 +73,7 @@ public final class SafariSession {
     }
 
     static boolean safariLocation(String name) {
-        if (name.equalsIgnoreCase("Critter Safari")) return true;
+        if (name.equalsIgnoreCase("Safari") || name.equalsIgnoreCase("Critter Safari")) return true;
         for (SafariCritters.Region region : SafariCritters.Region.values()) {
             if (name.equalsIgnoreCase(region.title() + " Biome")) return true;
         }
