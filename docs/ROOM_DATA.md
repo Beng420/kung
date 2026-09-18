@@ -100,29 +100,31 @@ Canonical metadata rules:
 - During a run, Kung remembers the first non-empty hash per room cell and stores it together with later manual learns when it differs.
 - Pre-run observations survive the countdown. Matching refreshes when either the raw or stable hash changes. Same-cell transitions into directly known rooms also create session-only preload hints keyed by both hashes; conflicting pairs are rejected. These hints do not change bundled data or bypass the Local Data setting for profile files.
 - Matching is core-first: once a room cell has a known `core` or `stable` hash, Kung can label that cell even when the full multi-cell shape is incomplete.
-- Adjacent known cells are only grouped when they have the same room metadata and no visible door between them. Once visible, hint-only grouping additionally requires a broad map connection; groups over 4 cells are split into one-cell matches instead of drawing a huge fake room.
+- Adjacent known cells are grouped when they have the same room metadata and no blocking room boundary. Visibility alone does not disable those connections. Catalog matching is conservative around world doors; render grouping can reconnect fragments such as Layers unless an explicit narrow map door or special door separates them. Both render union passes retain the four-cell limit.
 
 ## Prediction stops at observed visibility — 2026-09-18
 
-The user requested both map and world visibility to stop room predictions. Each
-room cell stops accepting bundled/session preload aliases, soft template completion
-and name-only owner joins when it is visible on the server map **or** all chunks
-intersecting its 32-block world footprint have loaded. Applying this per cell also
-protects the visible portion of a partially revealed multi-cell room. World evidence
-checks chunk presence (at most nine checks per scanned cell), not completion of
-server-side block generation. Evidence persists through chunk unloads until reset.
+The first implementation incorrectly disabled room connections as soon as one
+cell became visible. The user clarified that obvious partial multi-cell shapes must
+still connect and be completed early. Visibility now gates only bundled/session
+preload identity aliases, not connections between observed cells. A cell is visible
+when the server map reveals it or all chunks intersecting its 32-block footprint
+have loaded. World evidence checks chunk presence (at most nine checks per scanned
+cell), not server-side block-generation completion; it persists until instance reset.
 
 Direct catalog core/stable hashes still identify rooms, with direct hashes taking
-priority over preload aliases. A current nonempty scan replaces stale recognition
-after visibility; an unknown current hash stays unknown instead of retaining an old
-prediction. The render fallback uses the same hint resolver. Remote reports start
+priority over preload aliases. A current nonempty scan replaces stale predictions
+after visibility. A previously direct known observation survives later unknown
+block states; a new direct known observation can replace it. This retains confirmed
+room identity during puzzles without restoring preload guesses. The render fallback
+uses the same hint resolver. Remote reports start
 with separate cell owners so a shared name cannot bypass the connection rules.
 
-Two map-visible adjacent cells without a broad internal connector form a boundary,
-including when the only connector is a narrow door. Even strict templates may not
-cross it. Broad observed connectors still join compatible fragments, subject to the
-four-cell limit. Newly observed visibility and connectors invalidate cached matches;
-repeated map observations, player movement and clear-state updates do not.
+An explicit narrow map connector forms a boundary that even strict templates may
+not cross. Missing connector pixels alone are insufficient, including between two
+visible cells. Broad observed connectors join compatible fragments, subject to the
+four-cell limit. New visibility/connectors invalidate cached matches and predictions;
+repeated observations, player movement and clear-state updates do not.
 
 Regression coverage exercises bundled and session predictions before/after both
 visibility signals, unchanged-hash invalidation, current unknown scans, reset,
@@ -130,6 +132,68 @@ missing edge chunks, strict-template/map conflicts, name-only and remote groupin
 and confirmed connector recovery. The stored upper L-room name from the Bridges
 trace remains unverified; this change does not rename catalog entries. Live play
 with the rebuilt JAR remains to check.
+
+## Unique partial room completion — 2026-09-18
+
+Two direct matching cells of an L or three of a 1x4 can reveal the remaining cell
+before the room is fully visible. `DungeonRoomPrediction` compares compatible
+template placements, including rotations/mirrors, complete alternatives and larger
+variants. It requires at least two exact observed cells and draws one unseen cell
+only when exactly one placement remains. Two possible L sides or line ends stay
+unpredicted. Existing room cores, narrow map doors, physical doors, map-visible cells,
+fully loaded empty cells and the dungeon grid bounds rule out conflicting placements.
+A fully observed room needs no synthetic extension.
+
+Predictions are cached separately alongside catalog matching and used only by the
+render layout and its viewport. They never become scan evidence, learning records,
+logical owners, score/clear credit or synchronized room data. Rendering rejects a
+prediction that would cut up an existing logical room or overwrite remote cells or
+doors. Real scans replace/remove predictions through the normal matching revision.
+This restores early connections while retaining the Bridges four-cell safeguard.
+Regression tests cover unique L/1x4 completion, ambiguity, larger/complete variants,
+conflicts, unchanged factual state, real bundled Museum data and cache invalidation.
+
+## Ice Fill first-scan variant — 2026-09-19, 00:10:01
+
+The user identified the top-row `?` as Ice Fill. In
+`kung-trace-20260919-001001.log`, cell `3,0` first changes from an empty column
+to core `1904169381` / stable `578676452` at 00:08:56.515 and remains unknown.
+Neither hash was bundled, and the trace contains no earlier Ice Fill match to
+retain. This is a missing observed variant rather than loss of a recognized room.
+
+The exact pair is appended to Ice Fill's existing one-cell variant, retaining
+PUZZLE/0 secrets/0 crypts and all prior hashes. No prediction or retention logic
+changes. The actual empty-to-visible sequence fails before the data addition and
+passes afterward; it also checks direct raw/stable recognition and retention
+through a later unknown puzzle-state change. Live recognition remains to verify.
+
+## Blaze recognition and rescan — 2026-09-18, 23:26:08
+
+The trace recognizes Blaze at cell `0,5` from core/stable
+`1256805352/-1281477207`, then `-1595482137/994913400` at 23:25:41.672.
+At 23:25:43.181 its match disappears and the door targets UNKNOWN. The next
+hash pair was suppressed from the trace. `latest.log` reports the puzzle solved
+at 23:25:50, then the user's explicit Blaze rescan at 23:26:05 with core
+`-1229535227`. The visibility fix had allowed an unknown changed hash to replace
+even a direct known observation. Snapshot replacement now distinguishes direct
+catalog evidence from preload hints: unknown puzzle/block updates cannot erase
+the former, while new direct evidence and instance reset still replace it.
+Visibility gates and map boundaries remain in force.
+
+The newly scanned core is bundled under Blaze, PUZZLE, one secret. Its stable hash
+was not retained, so the added record uses `stable: 0` rather than inventing one.
+This also recognizes the room when first scanned after the puzzle changes.
+
+The profile JSON's 23:26:05 update contained only the initial known hash, despite
+the success message naming the new core. With Local Data off, each append loaded
+only runtime-enabled sources; appending the initial observation overwrote the
+just-saved current one. Learning, crypt edits and deletion now read existing local
+JSON for write preservation regardless of that recognition toggle. Local Data
+remains off for matching until explicitly enabled. No profile files were changed
+by this repair. Two regressions failed before the fixes and passed afterward;
+coverage also checks the new bundled core, fresh direct evidence, completion,
+reset and continued rejection of visible preload guesses. Live play remains to
+verify; the exact first unknown hash and block responsible are not in the trace.
 
 ## Bridges owner merge — 2026-09-18, 22:23:34
 

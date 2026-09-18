@@ -44,6 +44,11 @@ Dungeon messages are observed once through Fabric's `ALLOW_GAME` / `ALLOW_CHAT`
 events before display cancellation or modification. Kung's own chat filter only
 controls visibility; it no longer forwards hidden messages separately. The shared
 tracker retains instance/workload gates and game/chat/actionbar source distinctions.
+An optional `SkyblockerDungeonScoreMixin` forwards accepted bonus-kill events that
+may arrive through Skyblocker's internal sync instead of chat. Existing dungeon,
+started-run and statistics-workload gates apply; per-run bonus flags deduplicate
+the reports without announcements or contributor credit. No polling, new sync
+connection or cross-instance retained state is introduced.
 
 Boss teleports within the instance retain clear-map and run state. Boss-map
 selection is presentation only; see [boss maps](BOSS_MAPS.md). Completion signals
@@ -76,12 +81,15 @@ applies. See [split PB ordering](RUN_STATISTICS.md#score-before-victory-pb-corre
 - Match strict templates first, then known cell hints. Soft matches cannot absorb
   unknown neighboring cores. Pre-run observations survive countdown and can become
   aliases of a later known room; see [room data](ROOM_DATA.md).
-  Preload aliases, soft shape completion and name-only joins stop for each cell
-  once the server map reveals it or all chunks intersecting its 32-block footprint
-  have loaded. This evidence lasts until instance reset. Exact hashes remain usable;
-  visible map boundaries override even strict templates. Check at most nine chunk
-  presences per scanned room cell within the existing batch budget, without loading
-  chunks or adding block scans. Render fallback hints use the same visibility gate.
+  Preload identity aliases stop for each visible/fully loaded cell, but that gate
+  must not disable connections between observed cells. Missing map connector pixels
+  do not prove a wall; explicit narrow map doors still constrain even strict matches.
+  Full-world evidence checks at most nine chunk presences per scanned room cell in
+  the existing batch budget, without loading chunks or adding block scans.
+  Render fallback identity hints use the same preload gate.
+  Preserve a directly recognized observation when puzzle/block changes produce
+  unknown hashes. A new direct known hash can replace it; preload-only observations
+  receive no such protection. Instance reset clears both kinds of evidence.
 - Render logical `roomOwners` joined by `internalDoors`, not each raw match as an
   independent shape. This keeps Layers connected. Cache the layout by render-plan
   identity, keep groups at most four cells and respect boundaries. Render-only
@@ -90,6 +98,14 @@ applies. See [split PB ordering](RUN_STATISTICS.md#score-before-victory-pb-corre
   cleared/completed state. Narrow map connectors are external doors even when
   both sides have identical room metadata; broad connectors can still join
   fragments of one room. See [Bridges merge](ROOM_DATA.md#bridges-owner-merge--2026-09-18-222334).
+- `DungeonRoomPrediction` supplies a separate cached render-only list: at least two
+  exact cell hashes may imply one unseen cell only when all compatible template
+  rotations/mirrors leave one placement. Complete and larger compatible variants
+  count as alternatives. Conflicting cores, explicit doors, visible cells and fully
+  loaded empty cells constrain candidates. Reuse predictions across player/checkmark
+  updates; invalidate with matching inputs. `DungeonRoomRenderLayout` alone adds
+  their cells/connectors and the viewport includes them. Predicted cells never enter
+  scan points, learning matches, logical owners, score/clear credit or live room sync.
 - `DungeonMapItems` caches the last real map data per client level. Checkmark
   anchoring accepts PLAYER/BLUE_MARKER when FRAME is absent. Inspect `map-check`
   and `map-change` before assuming a drawing defect.

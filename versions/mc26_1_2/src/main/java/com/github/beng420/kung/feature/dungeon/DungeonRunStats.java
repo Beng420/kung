@@ -2158,6 +2158,23 @@ public final class DungeonRunStats {
             || message.contains(": Attributed Rooms ");
     }
 
+    void observeSkyblockerBonus(DungeonBonusContribution bonus) {
+        // Skyblocker's validated sync reports bypass chat; they do not identify the killer.
+        boolean alreadyKnown = switch (bonus) {
+            case MIMIC -> mimicKilled;
+            case PRINCE -> princeKilled;
+            case BAT -> batScoreKilled;
+        };
+        if (alreadyKnown) return;
+        switch (bonus) {
+            case MIMIC -> markMimicKilled(null, false, "skyblocker");
+            case PRINCE -> markPrinceKilled(null, false);
+            case BAT -> markBatScoreKilled(null, false);
+        }
+        KungDebugRecorder.event("score-bonus", "source=skyblocker bonus=" + bonus);
+        updateEstimatedScore();
+    }
+
     private void observeScoreKillMessage(Minecraft client, String message) {
         boolean hadPrince = princeKilled;
         boolean hadBat = batScoreKilled;

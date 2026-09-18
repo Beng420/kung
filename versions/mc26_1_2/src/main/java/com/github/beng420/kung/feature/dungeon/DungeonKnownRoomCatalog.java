@@ -720,7 +720,7 @@ public final class DungeonKnownRoomCatalog {
             invalidateTemplateCache();
             return;
         }
-        RoomDatabase database = loadRoomDatabase(file);
+        RoomDatabase database = loadRoomDatabaseForWrite(file);
         if (!database.updateCrypts(new TemplateKey(name, type, secrets), crypts)) {
             throw new IllegalArgumentException("Unknown room: " + name);
         }
@@ -742,7 +742,7 @@ public final class DungeonKnownRoomCatalog {
         throws IOException {
         Path file = knownRoomsFile();
         JsonObject project = DungeonRoomProject.enabled() ? readProjectRooms() : null;
-        RoomDatabase database = project == null ? loadRoomDatabase(file) : projectDatabase(project);
+        RoomDatabase database = project == null ? loadRoomDatabaseForWrite(file) : projectDatabase(project);
         DeleteRoomResult result = database.deleteRoom(name, type, secrets, explicitMetadata);
         if (!result.deleted()) {
             return result;
@@ -882,10 +882,19 @@ public final class DungeonKnownRoomCatalog {
         return order;
     }
 
+    private static RoomDatabase loadRoomDatabaseForWrite(Path file) throws IOException {
+        RoomDatabase database = loadRoomDatabase(file);
+        // Local Data controls recognition, not whether a later edit may discard saved observations.
+        if (!KungConfig.get().dungeon.localRoomDataEnabled() && Files.exists(file)) {
+            readRoomDatabase(Files.readString(file, StandardCharsets.UTF_8), database);
+        }
+        return database;
+    }
+
     private static void upsertAll(List<LearnedRoom> rooms) throws IOException {
         Path file = knownRoomsFile();
         JsonObject project = DungeonRoomProject.enabled() ? readProjectRooms() : null;
-        RoomDatabase database = project == null ? loadRoomDatabase(file) : new RoomDatabase();
+        RoomDatabase database = project == null ? loadRoomDatabaseForWrite(file) : new RoomDatabase();
         Map<TemplateKey, List<LearnedRoom>> roomsByKey = new LinkedHashMap<>();
         for (LearnedRoom room : rooms) {
             LearnedRoom normalizedRoom = canonicalLearnedRoom(room);
@@ -1353,8 +1362,6 @@ public final class DungeonKnownRoomCatalog {
                 return null;
             }
 
-            if (!snapshot.allowsRoomPrediction(roomGridX, roomGridZ)) return null;
-
             int observedCoreHash = observedPoint.point().coreHash();
             if (matchesComponent(observedPoint.point(), component)) {
                 exactComponentCount++;
@@ -1482,8 +1489,7 @@ public final class DungeonKnownRoomCatalog {
                 if (visitedCells.contains(neighbor)
                     || occupiedCells.contains(neighbor)
                     || !isValidRoomGrid(neighbor.x(), neighbor.z())
-                    || hasVisibleDoorBetween(snapshot, cell, neighbor)
-                    || !snapshot.allowsInferredRoomConnection(cell.x() + neighbor.x(), cell.z() + neighbor.z())) {
+                    || hasVisibleDoorBetween(snapshot, cell, neighbor)) {
                     continue;
                 }
 
@@ -1650,8 +1656,6 @@ public final class DungeonKnownRoomCatalog {
             CellKey cell = new CellKey(component.roomGridX(), component.roomGridZ());
             for (CellKey neighbor : cell.neighbors()) {
                 if (occupiedCells.contains(neighbor) || !isValidRoomGrid(neighbor.x(), neighbor.z())
-                    || !snapshot.allowsRoomPrediction(cell.x(), cell.z())
-                    || !snapshot.allowsRoomPrediction(neighbor.x(), neighbor.z())
                     || hasVisibleDoorBetween(snapshot, cell, neighbor)) {
                     continue;
                 }

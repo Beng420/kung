@@ -147,6 +147,38 @@ Exact server Prince/Bat bonus lines and recognized party assists may set global
 flags; arbitrary bat despawns may not. Outgoing Kung messages keep the `[Kung]`
 prefix; configurable announcement text stores the body only.
 
+When Skyblocker is installed, an optional event hook also accepts its confirmed
+Mimic/Prince/Bat kill callbacks, including validated Secret Sync reports that never
+pass through chat. The bridge requires Kung's active, started dungeon and statistics
+workload. It sets the existing per-run flags without guessing a contributor or
+echoing party announcements. It does not poll another mod's retained state or open
+a new network connection; Skyblocker remains optional.
+
+### Missing synchronized bonuses — 2026-09-19, 00:02 result
+
+The user's `kung-trace-20260918-235726.log` and
+`kung-trace-20260919-000225.log` cover one M7 run. At 23:57:06 Kung has
+43/52 secrets, full projected room credit, three crypts, Bat, no Mimic and no
+Prince: 100 Skill + 93 Explorer + 100 Speed + 4 Bonus = 297. Noamm announces
+300 at the same second. The first actual death at 23:57:28 lowers Kung to 296;
+five total deaths eventually yield 91 + 93 + 100 + 4 = 288. The server result
+and supplied score-map screenshot agree on 91 + 93 + 100 + 7 = 291.
+
+Archived Minecraft logs `2026-09-18-6.log.gz` and `2026-09-19-1.log.gz`
+provide the missing input: Skyblocker Secret Sync logs Mimic at 23:55:48 and
+Prince at 23:55:58, with no corresponding chat reports. Those are exactly the
+missing three bonus points. The installed Skyblocker 6.10.4+26.1.2 bytecode
+checks the sync sender before calling `DungeonScore.onMimicKill()` /
+`onPrinceKill(false)` on the render thread. The optional mixin observes these
+accepted callbacks and the equivalent Bat callback; changed/missing optional
+methods do not prevent Kung from loading.
+
+The captured-count replay now gives 300 before deaths and 291 afterward, without
+waiting for final Team Score. Regressions cover duplicate/chat overlap, silent
+receipt with announcements enabled, absent contributor attribution and countdown
+reset. No score formula, crypt count or death penalty changes. Live callback
+delivery with Skyblocker remains to verify after restarting with the rebuilt JAR.
+
 `Dungeon > Extra Score Messages` controls Kung's Mimic, Prince and Bat kill
 announcements with a master switch and independent per-bonus switches. The master
 defaults off, including when loading older configs; the three subsettings default
@@ -300,7 +332,13 @@ the client cannot infer it from a Prince room or an ordinary entity death.
   toggle. At the first completion/Team Score message it posts one local summary:
   floor/mode, every canonical phase in order, Boss Entry (cumulative Portal Entry),
   Total, and Time Lost when enabled. Rows use the selected Minutes/Seconds format
-  and show server time in parentheses. Missing measurements remain `--`; a phase
+  and show server time in parentheses. Phase labels share the overlay palette,
+  measured real times are light, server times are muted, and losses are red.
+  With Time Lost enabled, each phase, Boss Entry and Total appends its own
+  `max(0, real - server)` loss using the overlay's tenth-second rounding; unknown
+  and rounding-zero suffixes stay hidden. Explicit row styles bypass generic chat
+  number highlighting while retaining the shared Kung prefix.
+  Missing measurements remain `--`; a phase
   interrupted by a wipe is marked `unfinished`. A missing boss-entry boundary
   stays unknown. The summary snapshots the frozen times and does not announce PBs.
   Repeated completion messages and score-before-victory confirmation cannot print

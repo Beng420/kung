@@ -4,7 +4,7 @@ import java.util.Locale;
 import java.util.regex.Pattern;
 
 /** Named evidence only: a generic kill announcement identifies an observer, not the killer. */
-enum DungeonBonusContribution {
+public enum DungeonBonusContribution {
     PRINCE("P"), MIMIC("M"), BAT("B");
 
     private static final String NAME = "[A-Za-z0-9_]{3,16}";

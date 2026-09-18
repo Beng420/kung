@@ -116,7 +116,7 @@ public final class DungeonRoomRenderLayoutTest {
     }
 
     @Test
-    public void visibleRoomsCannotBeJoinedByNameButConfirmedMapConnectionsStillJoinThem() {
+    public void visibleCellsStayConnectedBeforeMapConnectionsArrive() {
         for (boolean mapVisible : List.of(true, false)) {
             var snapshot = layersSnapshot(DungeonDoorKind.OPEN);
             for (var cell : LAYERS_CELLS) {
@@ -128,9 +128,9 @@ public final class DungeonRoomRenderLayoutTest {
                         point.stableCoreHash(), point.doorBlockId(), point.doorKind(), true)));
                 }
             }
-            var separated = DungeonLiveMapWriter.MatchRenderPlan.from(snapshot, repository(true));
-            assertEquals(3, DungeonRoomRenderLayout.from(separated).rooms().size());
-            assertTrue(separated.internalDoors().isEmpty());
+            var early = DungeonLiveMapWriter.MatchRenderPlan.from(snapshot, repository(true));
+            assertEquals(1, DungeonRoomRenderLayout.from(early).rooms().size());
+            assertEquals(LAYERS_CELLS, DungeonRoomRenderLayout.from(early).cells());
 
             snapshot.observeMapRoomConnection(1, 0);
             snapshot.observeMapRoomConnection(2, 1);
@@ -193,6 +193,7 @@ public final class DungeonRoomRenderLayoutTest {
 
         snapshot.observeMapVisibleRoom(0, 0);
         snapshot.observeMapVisibleRoom(1, 0);
+        snapshot.observeMapOpenDoor(1, 0);
         var separated = DungeonLiveMapWriter.MatchRenderPlan.from(snapshot, repository(false));
         assertEquals("Remote room names must not bypass the observed map boundary", 2,
             DungeonRoomRenderLayout.from(separated).rooms().size());

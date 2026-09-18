@@ -146,7 +146,7 @@ public final class DungeonScoreReadinessTest {
         var base = plan(RoomType.NORMAL, true, false);
         var owners = new HashMap<>(base.roomOwners());
         for (int x = 0; x < 4; x++) owners.put(new CellKey(x, 1), "large-room");
-        var large = new MatchRenderPlan(base.matches(), base.matchedRoomCells(), base.internalDoors(),
+        var large = new MatchRenderPlan(base.matches(), base.predictedRooms(), base.matchedRoomCells(), base.internalDoors(),
             base.externalDoors(), base.roomTypes(), Map.copyOf(owners), base.hints(), base.remoteRoomCells(),
             base.remoteRoomProgress(), base.visitedRooms(), base.clearedRooms(), base.completedRooms(),
             base.openedSpecialDoorCells(), base.fairyEntranceDoor(), base.bloodRushPath());
@@ -176,7 +176,7 @@ public final class DungeonScoreReadinessTest {
         types.put(SPECIAL, specialType);
         if (!specialCleared) cleared.remove(SPECIAL);
         if (specialCompleted) completed.add(SPECIAL);
-        return new MatchRenderPlan(List.of(), Set.of(), Set.of(), Map.of(), Map.copyOf(types), Map.copyOf(owners),
+        return new MatchRenderPlan(List.of(), List.of(), Set.of(), Set.of(), Map.of(), Map.copyOf(types), Map.copyOf(owners),
             Map.of(), Set.of(), Map.of(), Set.copyOf(owners.keySet()), Set.copyOf(cleared), Set.copyOf(completed),
             Set.of(), null, List.of());
     }

@@ -242,16 +242,8 @@ public final class DungeonMapSnapshot {
     }
 
     boolean hasMapRoomBoundary(int scanGridX, int scanGridZ) {
-        if (mapRoomConnections.contains(new GridKey(scanGridX, scanGridZ))) return false;
-        return isMapExternalDoor(scanGridX, scanGridZ)
-            || (mapVisibleRooms.contains(new GridKey(scanGridX / 2, scanGridZ / 2))
-                && mapVisibleRooms.contains(new GridKey((scanGridX + 1) / 2, (scanGridZ + 1) / 2)));
-    }
-
-    boolean allowsInferredRoomConnection(int scanGridX, int scanGridZ) {
-        return mapRoomConnections.contains(new GridKey(scanGridX, scanGridZ))
-            || (allowsRoomPrediction(scanGridX / 2, scanGridZ / 2)
-                && allowsRoomPrediction((scanGridX + 1) / 2, (scanGridZ + 1) / 2));
+        // Missing connector pixels are not evidence of a wall during partial map updates.
+        return isMapExternalDoor(scanGridX, scanGridZ);
     }
 
     public void observeMimicRoom(int roomGridX, int roomGridZ, String source) {
@@ -715,16 +707,14 @@ public final class DungeonMapSnapshot {
             return true;
         }
 
-        // Once visible, a current nonempty scan must replace stale preload/identity guesses.
+        boolean previousKnownRoom = DungeonKnownRoomCatalog.isStableKnownCoreHash(previousCoreHash)
+            || DungeonKnownRoomCatalog.isStableKnownCoreHash(previous.stableCoreHash());
+        boolean nextKnownRoom = DungeonKnownRoomCatalog.isStableKnownCoreHash(nextCoreHash)
+            || DungeonKnownRoomCatalog.isStableKnownCoreHash(next.stableCoreHash());
+        // Puzzle/block updates can change both hashes. Keep direct evidence, never a preload guess.
+        if (nextKnownRoom) return true;
+        if (previousKnownRoom) return false;
         if (!allowsRoomPrediction(next.gridX() / 2, next.gridZ() / 2)) return true;
-
-        boolean previousKnownRoom = DungeonKnownRoomCatalog.isKnownCoreHash(previousCoreHash)
-            || DungeonKnownRoomCatalog.isKnownCoreHash(previous.stableCoreHash());
-        boolean nextKnownRoom = DungeonKnownRoomCatalog.isKnownCoreHash(nextCoreHash)
-            || DungeonKnownRoomCatalog.isKnownCoreHash(next.stableCoreHash());
-        if (previousKnownRoom != nextKnownRoom) {
-            return !previousKnownRoom;
-        }
 
         RoomType previousType = DungeonRoomClassifier.classifyRoom(previousCoreHash);
         RoomType nextType = DungeonRoomClassifier.classifyRoom(nextCoreHash);

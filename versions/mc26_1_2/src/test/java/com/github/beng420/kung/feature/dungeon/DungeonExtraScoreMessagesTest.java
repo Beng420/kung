@@ -10,6 +10,69 @@ import org.junit.Test;
 
 public final class DungeonExtraScoreMessagesTest {
     @Test
+    public void september19SkyblockerSyncRestoresTheThreeMissingBonusPoints() throws Exception {
+        var stats = new DungeonRunStats();
+        stats.configureForFloor(7, true);
+        stats.observeTabLine(null, "Completed Rooms: 35/36", null);
+        stats.observeScoreboardLine(null, "Cleared: 97%");
+        stats.observeTabLine(null, "Crypts: 3", null);
+        stats.observeStatLine(null, "Secrets: 43/52");
+        stats.observeTabLine(null, "Secrets Found: 82.7%", null);
+        stats.observeMessage(null, "[BOSS] The Watcher: You have proven yourself. You may pass.", 1L);
+        stats.observeMessage(null, "A Bat has been slain. +1 Bonus Score", 2L);
+        assertEquals(297, stats.score(null, 52));
+
+        // Archived Minecraft log: sync received Mimic at 23:55:48, Prince at 23:55:58.
+        stats.observeSkyblockerBonus(DungeonBonusContribution.MIMIC);
+        assertEquals(299, stats.score(null, 52));
+        stats.observeSkyblockerBonus(DungeonBonusContribution.PRINCE);
+        assertEquals(300, stats.score(null, 52));
+        assertEquals(43, stats.sPlusSecretTarget(null, 52));
+        assertFalse(requested(stats, "mimicMessageSent"));
+        assertFalse(requested(stats, "princeMessageSent"));
+
+        stats.observeTabLine(null, "Completed Rooms: 36/36", null);
+        stats.observeTabLine(null, "Team Deaths: 5", null);
+        assertEquals(291, stats.score(null, 52)); // Server breakdown: 91 + 93 + 100 + 7.
+        stats.observeStatLine(null, "Team Score: 291 (S)");
+        assertEquals(291, stats.score(null, 52)); // No end-of-run correction needed.
+    }
+
+    @Test
+    public void skyblockerBonusesAreIdempotentSilentAndResetWithTheRun() throws Exception {
+        var previous = KungConfig.get().dungeon;
+        KungConfig.get().dungeon = new DungeonConfig();
+        KungConfig.get().dungeon.setExtraScoreMessagesEnabled(true);
+        KungDebugRecorder.clear();
+        try {
+            var stats = new DungeonRunStats();
+            stats.rememberSelf(new java.util.UUID(0, 1), "Beng114");
+            for (var bonus : DungeonBonusContribution.values()) {
+                stats.observeSkyblockerBonus(bonus);
+                stats.observeSkyblockerBonus(bonus);
+                assertTrue(KungDebugRecorder.dump().contains("source=skyblocker bonus=" + bonus));
+            }
+            stats.observeMessage(null, "Party > Beng114: Mimic dead!", 1L);
+            stats.observeMessage(null, "A Prince falls. +1 Bonus Score", 2L);
+            stats.observeMessage(null, "A Bat has been slain. +1 Bonus Score", 3L);
+            assertTrue(stats.mimicKilled());
+            assertTrue(stats.princeKilled());
+            assertTrue(stats.batScoreKilled());
+            assertFalse(requested(stats, "mimicMessageSent"));
+            assertFalse(requested(stats, "princeMessageSent"));
+            assertFalse(requested(stats, "batMessageSent"));
+            assertEquals("", stats.playerStats(new java.util.UUID(0, 1)).bonusMarkers());
+            stats.resetForCountdown();
+            assertFalse(stats.mimicKilled());
+            assertFalse(stats.princeKilled());
+            assertFalse(stats.batScoreKilled());
+        } finally {
+            KungConfig.get().dungeon = previous;
+            KungDebugRecorder.clear();
+        }
+    }
+
+    @Test
     public void september18ScoreGapMatchesMissingMimicEvidenceWithoutInventingAKill() {
         var stats = new DungeonRunStats();
         stats.configureForFloor(7, true);

@@ -734,6 +734,13 @@ public final class DungeonStateTracker {
         runStats.observeEntityDeath(Minecraft.getInstance(), entity);
     }
 
+    void observeSkyblockerBonus(DungeonBonusContribution bonus) {
+        if (realRunStarted && canProcessDungeonRunMessage(Minecraft.getInstance())
+            && DungeonWorkload.current().players()) {
+            runStats.observeSkyblockerBonus(bonus);
+        }
+    }
+
     void serverTick() {
         if (dungeonInstanceActive) {
             splitTracker.serverTick(System.nanoTime() / 1_000_000L);

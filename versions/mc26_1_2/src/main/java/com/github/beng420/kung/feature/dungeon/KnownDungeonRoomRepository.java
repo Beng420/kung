@@ -10,6 +10,7 @@ public enum KnownDungeonRoomRepository implements DungeonRoomRepository {
     private long lastScanRevision = Long.MIN_VALUE;
     private long lastCatalogRevision = Long.MIN_VALUE;
     private List<DungeonKnownRoomCatalog.MatchedRoom> lastMatches = List.of();
+    private List<DungeonKnownRoomCatalog.MatchedRoom> lastPredictions;
 
     @Override
     public long revision() {
@@ -22,11 +23,21 @@ public enum KnownDungeonRoomRepository implements DungeonRoomRepository {
         if (lastSnapshot != snapshot || lastScanRevision != snapshot.scanRevision()
             || lastCatalogRevision != catalogRevision) {
             lastMatches = List.copyOf(DungeonKnownRoomCatalog.matchKnownRooms(snapshot));
+            lastPredictions = null;
             lastSnapshot = snapshot;
             lastScanRevision = snapshot.scanRevision();
             lastCatalogRevision = catalogRevision;
         }
         return lastMatches;
+    }
+
+    @Override
+    public List<DungeonKnownRoomCatalog.MatchedRoom> predictedRoomShapes(DungeonMapSnapshot snapshot) {
+        matchKnownRooms(snapshot);
+        if (lastPredictions == null) {
+            lastPredictions = DungeonRoomPrediction.predict(snapshot, DungeonKnownRoomCatalog.loadTemplates());
+        }
+        return lastPredictions;
     }
 
     @Override

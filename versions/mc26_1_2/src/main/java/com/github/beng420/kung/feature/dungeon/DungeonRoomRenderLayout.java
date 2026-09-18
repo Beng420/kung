@@ -16,7 +16,7 @@ import java.util.Map;
 import java.util.Set;
 
 /** Render-only projections of logical rooms. Never pass these to catalog learning/matching. */
-record DungeonRoomRenderLayout(List<MatchedRoom> rooms, Set<CellKey> cells) {
+record DungeonRoomRenderLayout(List<MatchedRoom> rooms, Set<CellKey> cells, Set<CellKey> internalDoors) {
     static DungeonRoomRenderLayout from(MatchRenderPlan plan) {
         Map<CellKey, RoomTemplate> metadata = new HashMap<>();
         Map<CellKey, MatchedComponent> components = new HashMap<>();
@@ -61,7 +61,31 @@ record DungeonRoomRenderLayout(List<MatchedRoom> rooms, Set<CellKey> cells) {
                 addRoom(group, plan, metadata, components, rooms, rendered);
             }
         }
-        return new DungeonRoomRenderLayout(List.copyOf(rooms), Set.copyOf(rendered));
+        Set<CellKey> doors = new HashSet<>(plan.internalDoors());
+        for (MatchedRoom prediction : plan.predictedRooms()) {
+            Set<CellKey> predictedCells = DungeonRoomPrediction.cells(prediction);
+            if (prediction.components().stream().anyMatch(c -> c.coreHash() == 0
+                && plan.roomOwners().containsKey(new CellKey(c.roomGridX(), c.roomGridZ())))) continue;
+            // A prediction cannot cut up an existing logical room or overwrite remote evidence.
+            if (rooms.stream().anyMatch(room -> room.components().stream().anyMatch(c -> prediction.contains(c.roomGridX(), c.roomGridZ()))
+                && !predictedCells.containsAll(DungeonRoomPrediction.cells(room)))) continue;
+            Set<CellKey> predictedDoors = new HashSet<>();
+            for (CellKey first : predictedCells) for (CellKey second : predictedCells) {
+                if (Math.abs(first.x() - second.x()) + Math.abs(first.z() - second.z()) == 1) {
+                    predictedDoors.add(new CellKey(first.x() + second.x(), first.z() + second.z()));
+                }
+            }
+            if (predictedDoors.stream().anyMatch(plan.externalDoors()::containsKey)) continue;
+            rooms.removeIf(room -> room.components().stream().anyMatch(c -> prediction.contains(c.roomGridX(), c.roomGridZ())));
+            rooms.add(prediction);
+            rendered.addAll(predictedCells);
+            doors.addAll(predictedDoors);
+        }
+        return new DungeonRoomRenderLayout(List.copyOf(rooms), Set.copyOf(rendered), Set.copyOf(doors));
+    }
+
+    boolean isInternalDoor(int x, int z) {
+        return internalDoors.contains(new CellKey(x, z));
     }
 
     private static void addRoom(List<CellKey> cells, MatchRenderPlan plan, Map<CellKey, RoomTemplate> metadata,

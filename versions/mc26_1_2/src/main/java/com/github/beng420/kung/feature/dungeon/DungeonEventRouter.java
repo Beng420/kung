@@ -43,6 +43,16 @@ public final class DungeonEventRouter {
         }
     }
 
+    public static void observeSkyblockerBonus(DungeonBonusContribution bonus) {
+        DungeonEventRouter router = activeRouter;
+        if (router == null) return;
+        try {
+            router.tracker.observeSkyblockerBonus(bonus);
+        } catch (RuntimeException | LinkageError exception) {
+            KungMod.LOGGER.warn("Failed to process Skyblocker dungeon bonus.", exception);
+        }
+    }
+
     public static void observeInstanceChanged() {
         DungeonEventRouter router = activeRouter;
         if (router != null) {

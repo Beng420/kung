@@ -19,10 +19,10 @@ public final class DungeonSplitsOverlayFeature extends ConfigurableFeature<Split
     private static final int LOSS_COLUMN_WIDTH = 60;
     private static final int ROW_HEIGHT = 10;
     private static final int PADDING = 2;
-    private static final int TEXT = 0xFFE9EDF2;
-    private static final int MUTED = 0xFF858B95;
+    static final int TEXT = 0xFFE9EDF2;
+    static final int MUTED = 0xFF858B95;
     private static final int ACTIVE = 0xFFFFF176;
-    private static final int LOST_TIME = 0xFFFF5555;
+    static final int LOST_TIME = 0xFFFF5555;
     private final DungeonStateTracker dungeonStateTracker;
 
     public DungeonSplitsOverlayFeature(DungeonStateTracker dungeonStateTracker) {
@@ -92,12 +92,12 @@ public final class DungeonSplitsOverlayFeature extends ConfigurableFeature<Split
             drawRow(graphics, y, "Boss Entry",
                 example ? 110_000L : portal != null ? portal.totalDurationMillis() : inClear ? timings.totalMillis() : -1L,
                 example ? 107_000L : portal != null ? portal.serverTotalDurationMillis() : inClear ? timings.serverTotalMillis() : -1L,
-                TEXT, 0xFF7777FF, config, false);
+                TEXT, phaseColor("Boss Entry"), config, false);
             y += ROW_HEIGHT;
             long totalWall = example ? 360_000L : tracker.started() ? timings.totalMillis() : -1L;
             long totalServer = example ? 352_000L : tracker.started() ? timings.serverTotalMillis() : -1L;
             drawRow(graphics, y, "Total", totalWall, totalServer,
-                tracker.running() ? ACTIVE : TEXT, 0xFF55FFFF, config, false);
+                tracker.running() ? ACTIVE : TEXT, phaseColor("Total"), config, false);
             Minecraft client = Minecraft.getInstance();
             if (config.timePrediction()) {
                 y += ROW_HEIGHT;
@@ -218,8 +218,10 @@ public final class DungeonSplitsOverlayFeature extends ConfigurableFeature<Split
             + seconds + "." + (fraction < 10L ? "0" : "") + fraction + "s";
     }
 
-    private static int phaseColor(String name) {
+    static int phaseColor(String name) {
         return switch (name) {
+            case "Boss Entry" -> 0xFF7777FF;
+            case "Total" -> 0xFF55FFFF;
             case "Blood Open" -> 0xFF55AA55;
             case "Blood Clear" -> 0xFF55FFFF;
             case "Portal Entry" -> 0xFFFF55FF;

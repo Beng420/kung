@@ -7,6 +7,7 @@ import java.util.List;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.MutableComponent;
 
 /** Split notifications use local Kung system messages, independent of prediction visibility. */
 final class DungeonSplitMessages {
@@ -29,26 +30,39 @@ final class DungeonSplitMessages {
         result.add(new Notice(KungMessages.Type.INFO, floorLabel + "Run Splits (server time in parentheses)"));
         for (String name : tracker.splitNames()) {
             var split = DungeonSplitsOverlayFeature.phaseSnapshot(tracker, name);
-            String label = split != null && split == tracker.stoppedCurrentSplit() ? name + " (unfinished)" : name;
-            result.add(summaryTime(label, split == null ? -1L : split.splitDurationMillis(),
-                split == null ? -1L : split.serverSplitDurationMillis(), config));
+            result.add(summaryTime(name, split == null ? -1L : split.splitDurationMillis(),
+                split == null ? -1L : split.serverSplitDurationMillis(), config,
+                split != null && split == tracker.stoppedCurrentSplit()));
         }
         var portal = tracker.completedSplits().stream().filter(split -> split.name().equals("Portal Entry"))
             .findFirst().orElse(null);
         result.add(summaryTime("Boss Entry", portal == null ? -1L : portal.totalDurationMillis(),
-            portal == null ? -1L : portal.serverTotalDurationMillis(), config));
-        result.add(summaryTime("Total", tracker.currentTotalDurationMillis(), tracker.currentTotalServerDurationMillis(), config));
+            portal == null ? -1L : portal.serverTotalDurationMillis(), config, false));
+        result.add(summaryTime("Total", tracker.currentTotalDurationMillis(), tracker.currentTotalServerDurationMillis(), config, false));
         if (config.timeLost()) {
-            result.add(new Notice(KungMessages.Type.INFO, "Time Lost: " + DungeonSplitsOverlayFeature.formatLostTimeMillis(
-                DungeonSplitsOverlayFeature.settledTotalLostTimeMillis(tracker))));
+            long loss = DungeonSplitsOverlayFeature.settledTotalLostTimeMillis(tracker);
+            result.add(new Notice(colored("Time Lost: ", DungeonSplitsOverlayFeature.LOST_TIME)
+                .append(colored(DungeonSplitsOverlayFeature.formatLostTimeMillis(loss),
+                    loss < 0L ? DungeonSplitsOverlayFeature.MUTED : DungeonSplitsOverlayFeature.LOST_TIME))));
         }
         return List.copyOf(result);
     }
 
-    private static Notice summaryTime(String label, long wallMillis, long serverMillis, SplitsConfig config) {
-        return new Notice(KungMessages.Type.INFO, label + ": "
-            + DungeonSplitsOverlayFeature.formatDurationMillis(wallMillis, config.format()) + " ("
-            + DungeonSplitsOverlayFeature.formatDurationMillis(serverMillis, config.format()) + ")");
+    private static Notice summaryTime(String name, long wallMillis, long serverMillis, SplitsConfig config, boolean unfinished) {
+        int labelColor = wallMillis >= 0L || name.equals("Boss Entry") || name.equals("Total")
+            ? DungeonSplitsOverlayFeature.phaseColor(name) : DungeonSplitsOverlayFeature.MUTED;
+        var body = colored(name + (unfinished ? " (unfinished)" : "") + ": ", labelColor)
+            .append(colored(DungeonSplitsOverlayFeature.formatDurationMillis(wallMillis, config.format()),
+                wallMillis < 0L ? DungeonSplitsOverlayFeature.MUTED : DungeonSplitsOverlayFeature.TEXT))
+            .append(colored(" (" + DungeonSplitsOverlayFeature.formatDurationMillis(serverMillis, config.format()) + ")",
+                DungeonSplitsOverlayFeature.MUTED));
+        String loss = config.timeLost() ? DungeonSplitsOverlayFeature.lostTimeSuffix(wallMillis, serverMillis) : "";
+        if (!loss.isEmpty()) body.append(colored(" " + loss, DungeonSplitsOverlayFeature.LOST_TIME));
+        return new Notice(body);
+    }
+
+    private static MutableComponent colored(String text, int argb) {
+        return Component.literal(text).withColor(argb & 0xFFFFFF);
     }
 
     static List<Notice> notices(DungeonSplitTracker.PhaseMessage phase) {
@@ -65,12 +79,21 @@ final class DungeonSplitMessages {
             : List.of(time);
     }
 
-    record Notice(KungMessages.Type type, String result) {
+    record Notice(KungMessages.Type type, String result, Component styledBody) {
+        Notice(KungMessages.Type type, String result) {
+            this(type, result, null);
+        }
+
+        Notice(Component styledBody) {
+            this(KungMessages.Type.INFO, styledBody.getString(), styledBody);
+        }
+
         String text() {
             return type == KungMessages.Type.SUCCESS ? "PERSONAL BEST! " + result : result;
         }
 
         Component component() {
+            if (styledBody != null) return KungMessages.component(type, "Splits", "").copy().append(styledBody);
             if (type != KungMessages.Type.SUCCESS) return KungMessages.component(type, "Splits", result);
             return KungMessages.component(type, "Splits", "").copy()
                 .append(Component.literal("PERSONAL BEST!").withStyle(ChatFormatting.LIGHT_PURPLE, ChatFormatting.BOLD))

@@ -9,6 +9,10 @@ public interface DungeonRoomRepository {
 
     List<DungeonKnownRoomCatalog.MatchedRoom> matchKnownRooms(DungeonMapSnapshot snapshot);
 
+    default List<DungeonKnownRoomCatalog.MatchedRoom> predictedRoomShapes(DungeonMapSnapshot snapshot) {
+        return List.of();
+    }
+
     DungeonKnownRoomCatalog.KnownCoreHint knownCoreHint(int coreHash);
 
     default DungeonKnownRoomCatalog.KnownCoreHint knownHintForPoint(DungeonMapSnapshot snapshot, DungeonScanPoint point) {

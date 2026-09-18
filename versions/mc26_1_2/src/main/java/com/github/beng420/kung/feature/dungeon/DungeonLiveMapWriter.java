@@ -49,6 +49,7 @@ public final class DungeonLiveMapWriter {
     }
     static record MatchRenderPlan(
         List<DungeonKnownRoomCatalog.MatchedRoom> matches,
+        List<DungeonKnownRoomCatalog.MatchedRoom> predictedRooms,
         Set<CellKey> matchedRoomCells,
         Set<CellKey> internalDoors,
         Map<CellKey, DoorRenderInfo> externalDoors,
@@ -452,6 +453,7 @@ public final class DungeonLiveMapWriter {
 
             return new MatchRenderPlan(
                 matches,
+                roomRepository.predictedRoomShapes(snapshot),
                 matchedRoomCells,
                 internalDoors,
                 externalDoors,
@@ -582,8 +584,7 @@ public final class DungeonLiveMapWriter {
                         continue;
                     }
                     CellKey separator = separatorBetween(room, neighbor);
-                    if (separator == null || hasBlockingRoomBoundary(snapshot, separator)
-                        || !snapshot.allowsInferredRoomConnection(separator.x(), separator.z())) {
+                    if (separator == null || hasBlockingRoomBoundary(snapshot, separator)) {
                         continue;
                     }
                     if (union(parent, sizes, entry.getValue(), neighborOwner)) internalDoors.add(separator);

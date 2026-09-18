@@ -10,7 +10,8 @@
     "ConnectionMixin",
     "FontAccessor",
     "LocalPlayerMixin",
-    "MultiPlayerGameModeMixin"
+    "MultiPlayerGameModeMixin",
+    "SkyblockerDungeonScoreMixin"
   ],
   "injectors": {
     "defaultRequire": 1

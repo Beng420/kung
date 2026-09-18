@@ -7,7 +7,10 @@ import com.github.beng420.kung.message.KungMessages;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.atomic.AtomicLong;
+import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.Style;
 import org.junit.Test;
 
 public final class DungeonSplitMessagesTest {
@@ -208,15 +211,33 @@ public final class DungeonSplitMessagesTest {
         tracker.observeMessage("Team Score: 300 (S+)", 0L);
         tracker.observeMessage("Defeated The Wither King in 12s", 0L);
         tracker.stopRun();
+        config.setTimeLost(false);
+        var hiddenLoss = DungeonSplitMessages.summary(tracker, 7, true, config);
+        assertEquals("Blood Open: 1.00s (0.05s)", hiddenLoss.get(1).text());
+        assertEquals("Total: 12.00s (0.60s)", hiddenLoss.getLast().text());
         tracker.reset();
         assertEquals(1, summaries.size());
         assertEquals(List.of("M7 Run Splits (server time in parentheses)",
-            "Blood Open: 1.00s (0.05s)", "Blood Clear: 1.00s (0.05s)", "Portal Entry: 1.00s (0.05s)",
-            "Maxor: 1.00s (0.05s)", "Storm: 1.00s (0.05s)", "Terminals: 1.00s (0.05s)",
-            "Goldor: 1.00s (0.05s)", "Necron: 1.00s (0.05s)", "Relics: 1.00s (0.05s)",
-            "Wither King: 1.00s (0.05s)", "Dragons: 1.00s (0.05s)",
-            "Boss Entry: 3.00s (0.15s)", "Total: 12.00s (0.60s)", "Time Lost: -11.4s"),
+            "Blood Open: 1.00s (0.05s) -1.0s", "Blood Clear: 1.00s (0.05s) -1.0s", "Portal Entry: 1.00s (0.05s) -1.0s",
+            "Maxor: 1.00s (0.05s) -1.0s", "Storm: 1.00s (0.05s) -1.0s", "Terminals: 1.00s (0.05s) -1.0s",
+            "Goldor: 1.00s (0.05s) -1.0s", "Necron: 1.00s (0.05s) -1.0s", "Relics: 1.00s (0.05s) -1.0s",
+            "Wither King: 1.00s (0.05s) -1.0s", "Dragons: 1.00s (0.05s) -1.0s",
+            "Boss Entry: 3.00s (0.15s) -2.9s", "Total: 12.00s (0.60s) -11.4s", "Time Lost: -11.4s"),
             summaries.getFirst().stream().map(DungeonSplitMessages.Notice::text).toList());
+        var summary = summaries.getFirst();
+        String[] names = DungeonSplitTracker.defaultSplitNames();
+        for (int index = 0; index < names.length; index++) {
+            Component row = summary.get(index + 1).component();
+            assertEquals(DungeonSplitsOverlayFeature.phaseColor(names[index]) & 0xFFFFFF, colorAt(row, names[index]));
+            assertEquals(0xE9EDF2, colorAt(row, "1.00s"));
+            assertEquals(0x858B95, colorAt(row, "(0.05s)"));
+            assertEquals(0xFF5555, colorAt(row, "-1.0s"));
+        }
+        assertEquals(0x7777FF, colorAt(summary.get(12).component(), "Boss Entry"));
+        assertEquals(0x55FFFF, colorAt(summary.get(13).component(), "Total"));
+        assertEquals(0xFF5555, colorAt(summary.get(13).component(), "-11.4s"));
+        assertEquals(0xFF5555, colorAt(summary.getLast().component(), "Time Lost"));
+        assertEquals(0xFF5555, colorAt(summary.getLast().component(), "-11.4s"));
     }
 
     @Test public void scoreFirstAndWipeSummariesRespectFormatAndMissingMeasurements() {
@@ -236,6 +257,7 @@ public final class DungeonSplitMessagesTest {
             "Blood Clear: -- (--)", "Portal Entry: -- (--)", "Bonzo Phase 1: -- (--)",
             "Bonzo Phase 2: 1m 30.12s (--)", "Boss Entry: -- (--)", "Total: 1m 31.12s (--)"),
             summaries.getFirst().stream().map(DungeonSplitMessages.Notice::text).toList());
+        assertEquals(0x858B95, colorAt(summaries.getFirst().get(1).component(), "Blood Open"));
         config.setFormat(SplitsConfig.TimeFormat.SECONDS);
         tracker.startRun(0L, 6, false);
         clock.addAndGet(90_120L);
@@ -244,6 +266,8 @@ public final class DungeonSplitMessagesTest {
         var wipe = summaries.getLast().stream().map(DungeonSplitMessages.Notice::text).toList();
         assertEquals("Blood Open (unfinished): 90.12s (--)", wipe.get(1));
         assertEquals("Total: 90.12s (--)", wipe.getLast());
+        assertEquals(0x55AA55, colorAt(summaries.getLast().get(1).component(), "Blood Open (unfinished)"));
+        assertEquals(0x858B95, colorAt(summaries.getLast().get(1).component(), "(--)"));
     }
 
     @Test public void summaryRequiresBothTogglesAndAnActualRunEnd() {
@@ -263,5 +287,16 @@ public final class DungeonSplitMessagesTest {
         tracker.observeMessage("Team Score: 0 (D)", 0L);
         tracker.reset();
         assertTrue(summaries.isEmpty());
+    }
+
+    private static int colorAt(Component component, String word) {
+        List<Integer> colors = new ArrayList<>();
+        component.visit((style, text) -> {
+            for (int index = 0; index < text.length(); index++) colors.add(style.getColor().getValue());
+            return Optional.empty();
+        }, Style.EMPTY);
+        int index = component.getString().indexOf(word);
+        assertTrue("Missing text: " + word, index >= 0);
+        return colors.get(index);
     }
 }

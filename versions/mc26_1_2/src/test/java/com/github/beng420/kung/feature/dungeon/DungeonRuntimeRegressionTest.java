@@ -227,7 +227,8 @@ public final class DungeonRuntimeRegressionTest {
         snapshot.observeMapVisibleRoom(0, 0);
         snapshot.observeMapVisibleRoom(1, 0);
         assertNotSame(cached, repository.matchKnownRooms(snapshot));
-        assertEquals(2, DungeonKnownRoomCatalog.matchKnownRooms(snapshot, List.of(template), hints).size());
+        assertEquals("Visibility alone must not split an exact room", 1,
+            DungeonKnownRoomCatalog.matchKnownRooms(snapshot, List.of(template), hints).size());
         var separated = repository.matchKnownRooms(snapshot);
         snapshot.observeMapOpenDoor(1, 0);
         assertNotSame(separated, repository.matchKnownRooms(snapshot));
@@ -240,6 +241,72 @@ public final class DungeonRuntimeRegressionTest {
         snapshot.observeMapRoomConnection(1, 0);
         snapshot.observeMapVisibleRoom(0, 0);
         assertSame(connected, repository.matchKnownRooms(snapshot));
+    }
+
+    @Test public void confirmedBlazeSurvivesUnknownPuzzleBlockChangesButAcceptsNewKnownEvidence() {
+        for (boolean mapVisible : List.of(true, false)) {
+            var snapshot = new DungeonMapSnapshot();
+            if (mapVisible) snapshot.observeMapVisibleRoom(0, 0);
+            // Direct Blaze hashes retained in the 23:26:08 trace before recognition disappeared.
+            snapshot.addScan(0, 0, 5, 5, List.of(new DungeonScanPoint(0, 0, -185, -185,
+                DungeonScanPointKind.ROOM, true, 1256805352, -1281477207, 0, DungeonDoorKind.NONE, !mapVisible)));
+            snapshot.addScan(1, 1, 5, 5, List.of(room(-1595482137, 994913400)));
+            assertEquals(-1595482137, snapshot.pointAt(0, 0).point().coreHash());
+            // The trace dropped the next hashes; arbitrary unknowns exercise that transition.
+            snapshot.addScan(2, 2, 5, 5, List.of(room(123456789, 987654321)));
+            assertEquals("Blaze", KnownDungeonRoomRepository.INSTANCE.matchKnownRooms(snapshot).getFirst().template().name());
+            snapshot.observeRoomClearState(0, 0, DungeonMapClearState.COMPLETED);
+            var plan = DungeonLiveMapWriter.MatchRenderPlan.from(snapshot);
+            assertEquals("Blaze", plan.matches().getFirst().template().name());
+            assertTrue(plan.isCompletedRoom(0, 0));
+
+            var replacement = DungeonKnownRoomCatalog.loadTemplates().stream()
+                .filter(t -> t.type() == RoomType.NORMAL && !t.components().isEmpty()).findFirst().orElseThrow();
+            var component = replacement.components().getFirst();
+            snapshot.addScan(3, 3, 5, 5, List.of(room(component.coreHash(), component.stableCoreHash())));
+            assertEquals(replacement.name(), KnownDungeonRoomRepository.INSTANCE.matchKnownRooms(snapshot).getFirst().template().name());
+            snapshot.reset();
+            snapshot.addScan(4, 4, 5, 5, List.of(room(123456789, 987654321)));
+            snapshot.observeMapVisibleRoom(0, 0);
+            assertTrue(KnownDungeonRoomRepository.INSTANCE.matchKnownRooms(snapshot).isEmpty());
+        }
+    }
+
+    @Test public void userRescannedBlazeCoreIsBundledForRoomsFirstSeenAfterPuzzleCompletion() {
+        var snapshot = new DungeonMapSnapshot();
+        snapshot.observeMapVisibleRoom(0, 0);
+        // /kung room learn at 23:26:05 logged this core; its stable hash was not retained.
+        snapshot.addScan(0, 0, 5, 5, List.of(room(-1229535227, 0)));
+        var match = KnownDungeonRoomRepository.INSTANCE.matchKnownRooms(snapshot).getFirst();
+        assertEquals("Blaze", match.template().name());
+        assertEquals(RoomType.PUZZLE, match.template().type());
+        assertEquals(1, match.template().secrets());
+    }
+
+    @Test public void september19IceFillIsRecognizedOnItsFirstVisibleScan() {
+        var snapshot = new DungeonMapSnapshot();
+        snapshot.addScan(6, 0, 5, 5, List.of(new DungeonScanPoint(6, 0, -89, -185,
+            DungeonScanPointKind.ROOM, true, -318865360, -318865360, 0, DungeonDoorKind.NONE)));
+        snapshot.observeMapVisibleRoom(3, 0);
+        // First nonempty observation at 00:08:56.515 in the user's 00:10:01 trace.
+        snapshot.addScan(1906, 1789769336515L, 5, 5, List.of(new DungeonScanPoint(6, 0, -89, -185,
+            DungeonScanPointKind.ROOM, true, 1904169381, 578676452, 0, DungeonDoorKind.NONE, true)));
+        var plan = DungeonLiveMapWriter.MatchRenderPlan.from(snapshot);
+        assertEquals("The visible Ice Fill needs direct bundled evidence", 1, plan.matches().size());
+        var match = plan.matches().getFirst();
+        assertEquals("Ice Fill", match.template().name());
+        assertEquals(RoomType.PUZZLE, match.template().type());
+        assertEquals(0, match.template().secrets());
+        assertTrue(match.contains(3, 0));
+        assertTrue(DungeonKnownRoomCatalog.isStableKnownCoreHash(1904169381));
+        assertTrue(DungeonKnownRoomCatalog.isStableKnownCoreHash(578676452));
+
+        snapshot.observeRoomClearState(3, 0, DungeonMapClearState.COMPLETED);
+        snapshot.addScan(1907, 1789769336565L, 5, 5, List.of(new DungeonScanPoint(6, 0, -89, -185,
+            DungeonScanPointKind.ROOM, true, 123456789, 987654321, 0, DungeonDoorKind.NONE, true)));
+        var completed = DungeonLiveMapWriter.MatchRenderPlan.from(snapshot);
+        assertEquals("Ice Fill", completed.matches().getFirst().template().name());
+        assertTrue(completed.isCompletedRoom(3, 0));
     }
 
     private static DungeonScanPoint room(int core, int stable) {

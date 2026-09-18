@@ -30,6 +30,10 @@ learning/undo JSONL formats when those commands need them. The ordinary user
 does not need to supply these files. Do not replace the bundled room database
 with profile content without reviewing its room/hash evidence.
 
+Room learning, crypt edits and deletion preserve existing local JSON even with
+Local Data off. The toggle controls recognition, not whether the next write may
+erase earlier saved observations. Normal builds still do not import profile data.
+
 `/kung room prince true|false` stores explicit per-room corrections in the existing
 `config/kung/kung.json` as `dungeonMap.princeRoomOverrides`. These settings use
 name/type/secret-count identity and apply with Local Data off. With a linked project,

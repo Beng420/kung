@@ -338,7 +338,7 @@ public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> 
                 int y = scanGridToPixel(gridZ);
                 int size = sizeFor(gridX, gridZ);
                 if (DungeonScanUtils.isDoorScanPoint(gridX, gridZ)
-                    && renderPlan.isInternalDoor(gridX, gridZ)) {
+                    && layout.isInternalDoor(gridX, gridZ)) {
                     continue;
                 }
 
@@ -638,7 +638,7 @@ public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> 
 
                 int doorGridX = first.roomGridX() + second.roomGridX();
                 int doorGridZ = first.roomGridZ() + second.roomGridZ();
-                if (!renderPlan.isInternalDoor(doorGridX, doorGridZ)) {
+                if (!roomLayoutFor(renderPlan).isInternalDoor(doorGridX, doorGridZ)) {
                     continue;
                 }
                 int x = left + scanGridToPixel(doorGridX);
@@ -672,10 +672,10 @@ public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> 
                 if (filledCorners != 4) {
                     continue;
                 }
-                if (!renderPlan.isInternalDoor(roomGridX * 2 + 1, roomGridZ * 2)
-                    || !renderPlan.isInternalDoor(roomGridX * 2 + 1, roomGridZ * 2 + 2)
-                    || !renderPlan.isInternalDoor(roomGridX * 2, roomGridZ * 2 + 1)
-                    || !renderPlan.isInternalDoor(roomGridX * 2 + 2, roomGridZ * 2 + 1)) {
+                if (!roomLayoutFor(renderPlan).isInternalDoor(roomGridX * 2 + 1, roomGridZ * 2)
+                    || !roomLayoutFor(renderPlan).isInternalDoor(roomGridX * 2 + 1, roomGridZ * 2 + 2)
+                    || !roomLayoutFor(renderPlan).isInternalDoor(roomGridX * 2, roomGridZ * 2 + 1)
+                    || !roomLayoutFor(renderPlan).isInternalDoor(roomGridX * 2 + 2, roomGridZ * 2 + 1)) {
                     continue;
                 }
 
@@ -2217,10 +2217,8 @@ public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> 
                     bounds.includeScanCell(gridX, gridZ);
                 }
             }
-            for (DungeonKnownRoomCatalog.MatchedRoom match : renderPlan.matches()) {
-                for (DungeonKnownRoomCatalog.MatchedComponent component : match.components()) {
-                    bounds.includeScanCell(component.roomGridX() * 2, component.roomGridZ() * 2);
-                }
+            for (DungeonLiveMapWriter.CellKey cell : roomLayoutFor(renderPlan).cells()) {
+                bounds.includeScanCell(cell.x() * 2, cell.z() * 2);
             }
             for (DungeonLiveMapWriter.CellKey hint : renderPlan.hints().keySet()) {
                 bounds.includeScanCell(hint.x() * 2, hint.z() * 2);

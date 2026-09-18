@@ -3,20 +3,71 @@
 Entry point for Kung maintenance. Project rules: [AGENTS.md](../AGENTS.md).
 Read the [code map](CODE_MAP.md), then only the topic needed for the task.
 
-## Current state — 2026-09-18
+## Current state — 2026-09-19
 
-- Room prediction now stops per cell on either server-map visibility or full
-  world-footprint chunk availability, as requested. Direct hashes still work;
-  bundled/session preloads, soft completion and name-only joins cannot override
-  observed cells. Map boundaries constrain strict templates, render fallback uses
-  the shared resolver, and remote names no longer preassign shared owners. Current
-  nonempty scans replace stale recognition. Matching invalidation includes new
-  visibility/topology; player/checkmark updates retain caching. Focused tests and
-  full Java 25 build pass: 719 cases, 718 passed, one Windows symlink skip, no
-  failures/errors; `git diff --check` passes. The 0.4.0 JAR is rebuilt, not installed.
-  Chunk presence does not prove server-side block generation has finished; live
-  map behavior and the upper Bridges L-room identity remain to verify.
-  See [visibility rule](ROOM_DATA.md#prediction-stops-at-observed-visibility--2026-09-18).
+- Ice Fill's `?` in the 00:10:01 trace is a missing first-scan variant: cell `3,0`
+  first contains core `1904169381` / stable `578676452` at 00:08:56.515, with no
+  earlier known Ice Fill to retain. The user-identified pair is now bundled under
+  the existing PUZZLE/0 entry. Prediction/retention code and other room metadata
+  are unchanged. The trace regression fails before the data addition and passes
+  afterward, including retention through an unknown puzzle update. Focused tests
+  and full Java 25 build pass: 734 cases, 733 passed, one Windows symlink skip,
+  no failures/errors. `git diff --check` passes; the pair is verified in the rebuilt
+  0.4.1 JAR. Built, not installed; live recognition remains to verify.
+  See [Ice Fill evidence](ROOM_DATA.md#ice-fill-first-scan-variant--2026-09-19-001001).
+
+- The 23:57/00:02 score report is traced to Skyblocker Secret Sync: archived
+  Minecraft logs confirm Mimic at 23:55:48 and Prince at 23:55:58, while Kung
+  received neither through chat. The screenshot agrees with Kung on Skill 91,
+  Explorer 93 and Speed 100; Bonus was 7 server-side versus 4 in Kung.
+  An optional event-only mixin now forwards Skyblocker's accepted Mimic/Prince/Bat
+  callbacks through the existing lifecycle/workload gates and per-run flags,
+  without announcements or inferred contributor credit. The captured-count replay
+  yields 300 before deaths and 291 after five deaths; duplicate/chat overlap and
+  reset regressions pass. Focused tests and full Java 25 build pass: 733 cases,
+  732 passed, one Windows symlink skip, no failures/errors. Optional hook signatures
+  were checked against installed Skyblocker 6.10.4+26.1.2; the 0.4.1 JAR contains
+  the registered bridge. Built, not installed; live callback delivery remains to
+  verify. See [sync bonus evidence](RUN_STATISTICS.md#missing-synchronized-bonuses--2026-09-19-0002-result).
+
+- Corrected the over-broad room-visibility restriction after the user's L/1x4
+  clarification. Visible/loaded cells connect early again; absent connector pixels
+  no longer manufacture a room boundary. Explicit narrow/special doors and the
+  four-cell union limit remain. New cached render-only predictions add one unseen
+  cell when at least two exact hashes leave a unique template placement across
+  rotations/mirrors; complete/larger alternatives and conflicting evidence block it.
+  The layout draws connectors and expands its viewport without adding scans, owners,
+  learning records or score/clear credit. Preload identity gating and the Blaze fix
+  remain. Nine new regressions include both requested shapes, ambiguity, real Museum
+  data, conflicts and cache invalidation; existing early-join expectations were fixed.
+  Full Java 25 build passes: 731 cases, 730 passed, one Windows symlink skip, no
+  failures/errors; `git diff --check` passes. The 0.4.1 JAR is rebuilt, not installed.
+  Live rendering remains to verify. See [partial completion](ROOM_DATA.md#unique-partial-room-completion--2026-09-18).
+
+- Run End Chat now shares the Splits overlay's phase/summary label colors,
+  light real times, muted server times and red losses. Every phase, Boss Entry
+  and Total appends its measured loss when Time Lost is enabled, using the HUD's
+  rounding and unknown/zero suppression. Styled bodies retain the Kung prefix
+  without generic gold number highlighting. Existing message regressions now check
+  final component colors, loss values, toggle behavior and unfinished/missing rows.
+  Focused tests and full Java 25 build pass: 722 cases, 721 passed, one Windows
+  symlink skip, no failures/errors; `git diff --check` passes. The 0.4.1 JAR is
+  rebuilt, not installed. In-game chat appearance remains to verify.
+  See [Splits](RUN_STATISTICS.md#splits).
+
+- Blaze follow-up from the 23:26:08 trace fixes a visibility regression: unknown
+  puzzle/block hashes no longer replace directly recognized room observations.
+  New direct evidence and reset still win; visible preload guesses remain blocked.
+  The user's 23:26:05 rescan core `-1229535227` is bundled as Blaze/PUZZLE/1 secret
+  with unknown stable hash (`0`). Local Data-off writes also preserve previously
+  learned JSON: the old initial-hash append had erased the new rescan hash.
+  Learning, crypt edits and deletion share that write-preservation path; recognition
+  remains gated by Local Data. Two reproduced failures now pass, plus new-core and
+  existing map regressions. Full Java 25 build: 722 cases, 721 passed, one Windows
+  symlink skip, no failures/errors; `git diff --check` passes. Existing project version
+  0.4.1 was built, and its JAR was checked for the new hash. No profile writes or
+  installation. Live play remains to verify; the trace omitted the first unknown
+  hash pair. See [Blaze follow-up](ROOM_DATA.md#blaze-recognition-and-rescan--2026-09-18-232608).
 
 - Bridges map corruption from the 22:23:34 trace is reproduced and corrected.
   Two catalog matches (upper `4,0|5,0|4,1`, lower `3,2|4,2`) were merged into
