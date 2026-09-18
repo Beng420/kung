@@ -182,7 +182,10 @@ public final class KungSettings {
                                     .withTooltip("PB uses personal best splits. AVG uses the last 20 finished runs on this floor. Reset AVG in /kung splits.")
                             )),
                         SettingEntry.toggle("Time Lost", config.splits::timeLost,
-                            () -> config.splits.setTimeLost(!config.splits.timeLost()))
+                            () -> config.splits.setTimeLost(!config.splits.timeLost())),
+                        SettingEntry.toggle("Run End Chat", config.splits::runEndChat,
+                            () -> config.splits.setRunEndChat(!config.splits.runEndChat()))
+                            .withTooltip("Print all splits in your local chat when the run ends.")
                     )
                 )
             )),

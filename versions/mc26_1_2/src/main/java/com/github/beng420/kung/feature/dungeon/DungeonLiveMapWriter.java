@@ -148,10 +148,7 @@ public final class DungeonLiveMapWriter {
                     roomOwners.put(roomCell, "cell:" + roomGridX + "," + roomGridZ);
 
                     DungeonKnownRoomCatalog.KnownCoreHint hint =
-                        roomRepository.knownCoreHint(observedPoint.point().coreHash());
-                    if (hint == null && observedPoint.point().stableCoreHash() != 0) {
-                        hint = roomRepository.knownCoreHint(observedPoint.point().stableCoreHash());
-                    }
+                        roomRepository.knownHintForPoint(snapshot, observedPoint.point());
                     if (hint != null) {
                         hints.put(roomCell, hint);
                         roomTypes.put(roomCell, hint.type());
@@ -194,6 +191,7 @@ public final class DungeonLiveMapWriter {
 
             for (DungeonMapSnapshot.RemoteRoom remoteRoom : snapshot.remoteRooms()) {
                 CellKey roomCell = new CellKey(remoteRoom.roomGridX(), remoteRoom.roomGridZ());
+                String remoteOwner = "remote:" + compactName(remoteRoom.source()) + ":" + roomCell.x() + "," + roomCell.z();
                 remoteRoomCells.add(roomCell);
                 RoomType remoteType = remoteRoom.type() == null ? RoomType.UNKNOWN : remoteRoom.type();
                 String remoteName = remoteRoom.name() == null ? "" : remoteRoom.name().trim();
@@ -221,14 +219,11 @@ public final class DungeonLiveMapWriter {
                     hints.putIfAbsent(roomCell, hint);
                     if (roomTypes.getOrDefault(roomCell, RoomType.UNKNOWN) == RoomType.UNKNOWN) {
                         roomTypes.put(roomCell, remoteType);
-                        roomOwners.put(roomCell, "remote:" + compactName(remoteRoom.source()) + ":" + compactName(hint.name()));
+                        roomOwners.put(roomCell, remoteOwner);
                         roomIdentities.put(roomCell, RoomIdentity.of(hint.name(), hint.type(), hint.secrets()));
                     } else {
                         roomTypes.putIfAbsent(roomCell, remoteType);
-                        roomOwners.putIfAbsent(
-                            roomCell,
-                            "remote:" + compactName(remoteRoom.source()) + ":" + compactName(hint.name())
-                        );
+                        roomOwners.putIfAbsent(roomCell, remoteOwner);
                         roomIdentities.putIfAbsent(
                             roomCell,
                             RoomIdentity.of(hint.name(), hint.type(), hint.secrets())
@@ -236,7 +231,7 @@ public final class DungeonLiveMapWriter {
                     }
                 } else {
                     roomTypes.putIfAbsent(roomCell, RoomType.UNKNOWN);
-                    roomOwners.putIfAbsent(roomCell, "remote:" + compactName(remoteRoom.source()));
+                    roomOwners.putIfAbsent(roomCell, remoteOwner);
                 }
                 RoomIdentity localIdentity = roomIdentities.get(roomCell);
                 if (remoteType == RoomType.RARE && roomTypes.get(roomCell) == RoomType.NORMAL
@@ -568,8 +563,10 @@ public final class DungeonLiveMapWriter {
             Set<CellKey> internalDoors
         ) {
             Map<String, String> parent = new HashMap<>();
+            Map<String, Integer> sizes = new HashMap<>();
             for (String owner : roomOwners.values()) {
                 parent.put(owner, owner);
+                sizes.merge(owner, 1, Integer::sum);
             }
 
             for (Map.Entry<CellKey, String> entry : roomOwners.entrySet()) {
@@ -585,11 +582,11 @@ public final class DungeonLiveMapWriter {
                         continue;
                     }
                     CellKey separator = separatorBetween(room, neighbor);
-                    if (separator == null || hasBlockingSpecialDoor(snapshot, separator)) {
+                    if (separator == null || hasBlockingRoomBoundary(snapshot, separator)
+                        || !snapshot.allowsInferredRoomConnection(separator.x(), separator.z())) {
                         continue;
                     }
-                    union(parent, entry.getValue(), neighborOwner);
-                    internalDoors.add(separator);
+                    if (union(parent, sizes, entry.getValue(), neighborOwner)) internalDoors.add(separator);
                 }
             }
 
@@ -605,8 +602,10 @@ public final class DungeonLiveMapWriter {
             Set<CellKey> internalDoors
         ) {
             Map<String, String> parent = new HashMap<>();
+            Map<String, Integer> sizes = new HashMap<>();
             for (String owner : roomOwners.values()) {
                 parent.put(owner, owner);
+                sizes.merge(owner, 1, Integer::sum);
             }
 
             for (DungeonMapSnapshot.GridKey mapDoor : snapshot.mapRoomConnections()) {
@@ -616,7 +615,7 @@ public final class DungeonLiveMapWriter {
                     continue;
                 }
                 CellKey separator = new CellKey(gridX, gridZ);
-                if (hasBlockingSpecialDoor(snapshot, separator)) {
+                if (hasBlockingRoomBoundary(snapshot, separator)) {
                     continue;
                 }
 
@@ -635,8 +634,7 @@ public final class DungeonLiveMapWriter {
                     continue;
                 }
 
-                union(parent, firstOwner, secondOwner);
-                internalDoors.add(separator);
+                if (union(parent, sizes, firstOwner, secondOwner)) internalDoors.add(separator);
             }
 
             for (Map.Entry<CellKey, String> entry : new ArrayList<>(roomOwners.entrySet())) {
@@ -644,7 +642,8 @@ public final class DungeonLiveMapWriter {
             }
         }
 
-        private static boolean hasBlockingSpecialDoor(DungeonMapSnapshot snapshot, CellKey separator) {
+        private static boolean hasBlockingRoomBoundary(DungeonMapSnapshot snapshot, CellKey separator) {
+            if (snapshot.hasMapRoomBoundary(separator.x(), separator.z())) return true;
             DungeonMapSnapshot.ObservedPoint observedPoint = snapshot.pointAt(separator.x(), separator.z());
             if (observedPoint == null || observedPoint.point().kind() != DungeonScanPointKind.DOOR) {
                 return false;
@@ -672,12 +671,16 @@ public final class DungeonLiveMapWriter {
             return root;
         }
 
-        private static void union(Map<String, String> parent, String first, String second) {
+        private static boolean union(Map<String, String> parent, Map<String, Integer> sizes, String first, String second) {
             String firstRoot = find(parent, first);
             String secondRoot = find(parent, second);
-            if (!firstRoot.equals(secondRoot)) {
-                parent.put(secondRoot, firstRoot);
-            }
+            if (firstRoot.equals(secondRoot)) return true;
+            int combinedSize = sizes.get(firstRoot) + sizes.get(secondRoot);
+            // Enforce the room limit before propagating clear/secret ownership, not only while drawing.
+            if (combinedSize > 4) return false;
+            parent.put(secondRoot, firstRoot);
+            sizes.put(firstRoot, combinedSize);
+            return true;
         }
 
         private static void expandVisitedRoomGroups(Set<CellKey> visitedRooms, Map<CellKey, String> roomOwners) {

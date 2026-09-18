@@ -122,7 +122,8 @@ public final class DungeonDebuffFeature extends ConfigurableFeature<DungeonConfi
         if (packet.getSlots().stream().noneMatch(slot -> slot.getSecond().is(Items.PACKED_ICE))) return;
         Entity entity = Minecraft.getInstance().level.getEntity(packet.getEntity());
         trace("ice-equipment id=" + packet.getEntity() + " entity=" + (entity == null ? "missing" : entity.getType())
-            + " position=" + (entity == null ? "unknown" : entity.position()));
+            + " position=" + (entity == null ? "unknown" : entity.position())
+            + " matchPosition=" + (entity == null ? "unknown" : matchingPosition(entity)));
         if (!(entity instanceof ArmorStand stand)) return;
         if (markers.containsKey(stand.getUUID()) || markers.size() >= DungeonDebuffTracker.MAX_MARKERS) return;
         IceMarker marker = new IceMarker(stand, tracker.tick());
@@ -136,27 +137,31 @@ public final class DungeonDebuffFeature extends ConfigurableFeature<DungeonConfi
         if (!marker.entity.isInvisible()) return;
         var level = Minecraft.getInstance().level;
         if (level == null) return;
+        var markerTarget = matchingTarget(marker.entity);
+        Vec3 markerPosition = markerTarget.position();
         List<DungeonDebuffTracker.Target> candidates = new ArrayList<>();
-        for (LivingEntity entity : level.getEntitiesOfClass(LivingEntity.class, marker.entity.getBoundingBox().inflate(8))) {
+        for (LivingEntity entity : level.getEntitiesOfClass(LivingEntity.class, markerTarget.bounds().inflate(8))) {
             if (entity instanceof ArmorStand || entity instanceof Player || !entity.isAlive()) continue;
             if (candidates.size() >= 128) return; // In a crowded query, retain unknown rather than truncate the competition.
-            candidates.add(new DungeonDebuffTracker.Target(entity.getUUID(), entity.position(), entity.getBoundingBox(), entity instanceof EnderDragon));
+            candidates.add(matchingTarget(entity));
         }
-        UUID target = DungeonDebuffTracker.uniqueTarget(marker.entity.position(), candidates);
+        UUID target = DungeonDebuffTracker.uniqueTarget(markerPosition, candidates);
         // Once candidates exist, later mob movement must not turn ambiguity into a guessed hit.
         if (!candidates.isEmpty()) marker.resolved = true;
         if (target == null) {
             trace("ice-marker id=" + marker.entity.getId() + " position=" + marker.entity.position()
+                + " matchPosition=" + markerPosition
                 + " target=ambiguous-or-missing candidates=" + candidates.size()
                 + " nearest=" + candidates.stream()
-                    .sorted(Comparator.comparingDouble(candidate -> candidate.distanceTo(marker.entity.position())))
-                    .limit(2).map(candidate -> "distance=" + candidate.distanceTo(marker.entity.position())
+                    .sorted(Comparator.comparingDouble(candidate -> candidate.distanceTo(markerPosition)))
+                    .limit(2).map(candidate -> "distance=" + candidate.distanceTo(markerPosition)
                         + " " + describeTarget(level.getEntity(candidate.uuid()))).toList());
             return;
         }
         marker.resolved = true;
         tracker.spray(target, marker.observedTick);
-        trace("ice-marker id=" + marker.entity.getId() + " target=" + target + " observedTick=" + marker.observedTick
+        trace("ice-marker id=" + marker.entity.getId() + " target=" + target + " matchPosition=" + markerPosition
+            + " observedTick=" + marker.observedTick
             + " expiresTick=" + (marker.observedTick + DungeonDebuffTracker.SPRAY_TICKS)
             + " " + describeTarget(level.getEntity(target)));
     }
@@ -240,8 +245,20 @@ public final class DungeonDebuffFeature extends ConfigurableFeature<DungeonConfi
     private static String describeTarget(Entity entity) {
         if (entity == null) return "entity=missing";
         return "entity=" + entity.getId() + ":" + entity.getType() + " name=\"" + entity.getName().getString()
-            + "\" position=" + entity.position() + " bounds=" + entity.getBoundingBox()
+            + "\" position=" + entity.position() + " matchPosition=" + matchingPosition(entity) + " bounds=" + entity.getBoundingBox()
             + (entity instanceof LivingEntity living ? " health=" + living.getHealth() : "");
+    }
+
+    static Vec3 matchingPosition(Entity entity) {
+        // Packet observations must not compare a new marker with a mob still interpolating behind it.
+        var interpolation = entity.getInterpolation();
+        return interpolation == null ? entity.position() : interpolation.position();
+    }
+
+    static DungeonDebuffTracker.Target matchingTarget(Entity entity) {
+        Vec3 position = matchingPosition(entity);
+        return new DungeonDebuffTracker.Target(entity.getUUID(), position,
+            entity.getBoundingBox().move(position.subtract(entity.position())), entity instanceof EnderDragon);
     }
 
     private void trace(String message) {

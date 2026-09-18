@@ -35,6 +35,11 @@ public enum KnownDungeonRoomRepository implements DungeonRoomRepository {
     }
 
     @Override
+    public DungeonKnownRoomCatalog.KnownCoreHint knownHintForPoint(DungeonMapSnapshot snapshot, DungeonScanPoint point) {
+        return DungeonKnownRoomCatalog.knownHintForPoint(snapshot, point);
+    }
+
+    @Override
     public DungeonKnownRoomCatalog.AutoLearnResult autoLearnStableHashes(
         DungeonKnownRoomCatalog.MatchedRoom match,
         DungeonMapSnapshot snapshot

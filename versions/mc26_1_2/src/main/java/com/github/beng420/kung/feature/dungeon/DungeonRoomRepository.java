@@ -11,6 +11,11 @@ public interface DungeonRoomRepository {
 
     DungeonKnownRoomCatalog.KnownCoreHint knownCoreHint(int coreHash);
 
+    default DungeonKnownRoomCatalog.KnownCoreHint knownHintForPoint(DungeonMapSnapshot snapshot, DungeonScanPoint point) {
+        var hint = knownCoreHint(point.coreHash());
+        return hint != null || point.stableCoreHash() == 0 ? hint : knownCoreHint(point.stableCoreHash());
+    }
+
     DungeonKnownRoomCatalog.AutoLearnResult autoLearnStableHashes(
         DungeonKnownRoomCatalog.MatchedRoom match,
         DungeonMapSnapshot snapshot

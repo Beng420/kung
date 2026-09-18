@@ -21,6 +21,7 @@ public final class SplitPersonalBestsConfigTest {
         config.splits.setX(321);
         config.splits.setScale(150);
         config.splits.setTimePrediction(false);
+        config.splits.setRunEndChat(true);
         config.splits.setPredictionMode(SplitsConfig.PredictionMode.LIVE);
         config.splits.recordPersonalBests(6, false, Map.of("Blood Open", 40_000L, "Blood Clear", 20_000L));
         config.splits.recordPersonalBests(7, false, Map.of("Blood Open", 35_000L));
@@ -40,6 +41,7 @@ public final class SplitPersonalBestsConfigTest {
         assertEquals(321, restored.splits.x());
         assertEquals(150, restored.splits.scale());
         assertFalse(restored.splits.timePrediction());
+        assertTrue(restored.splits.runEndChat());
         assertEquals(SplitsConfig.PredictionMode.LIVE, restored.splits.predictionMode());
         assertFalse(restored.splits.enabled());
         assertTrue(Files.readString(path).contains("\"M7\""));
@@ -108,6 +110,7 @@ public final class SplitPersonalBestsConfigTest {
             "{\"splitsOverlay\":{\"predictionMode\":\"unknown\"}}"}) {
             var config = KungConfig.read(new StringReader(json)).splits;
             assertTrue(config.timePrediction());
+            assertFalse(config.runEndChat());
             assertEquals(SplitsConfig.PredictionMode.PHASE_END, config.predictionMode());
             assertFalse(config.enabled());
         }

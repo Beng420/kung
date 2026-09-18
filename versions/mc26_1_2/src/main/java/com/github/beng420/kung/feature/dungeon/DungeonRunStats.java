@@ -2159,6 +2159,8 @@ public final class DungeonRunStats {
     }
 
     private void observeScoreKillMessage(Minecraft client, String message) {
+        boolean hadPrince = princeKilled;
+        boolean hadBat = batScoreKilled;
         var claim = DungeonBonusContribution.namedClaim(message);
         if (claim != null) {
             UUID uuid = trackedPlayerUuid(claim.name());
@@ -2179,6 +2181,10 @@ public final class DungeonRunStats {
         }
         if (BAT_KILL_PATTERN.matcher(message).matches() || message.equals(HYPIXEL_BAT_KILL_MESSAGE)) {
             markBatScoreKilled(client, message.equals(HYPIXEL_BAT_KILL_MESSAGE));
+        }
+        if (princeKilled != hadPrince || batScoreKilled != hadBat) {
+            KungDebugRecorder.event("score-bonus", "prince=" + princeKilled + " bat=" + batScoreKilled
+                + " message=\"" + KungDebugRecorder.compact(message) + "\"");
         }
     }
 

@@ -1,8 +1,11 @@
 package com.github.beng420.kung.feature.dungeon;
 
 import com.github.beng420.kung.KungMod;
+import java.util.function.BiConsumer;
+import java.util.function.Consumer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
+import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.Entity;
 
 public final class DungeonEventRouter {
@@ -18,9 +21,19 @@ public final class DungeonEventRouter {
         activeRouter = this;
         ClientTickEvents.END_CLIENT_TICK.register(tracker::tick);
         DungeonServerTickEvents.register(tracker::serverTick);
-        ClientReceiveMessageEvents.GAME.register(tracker::observeGameMessage);
-        ClientReceiveMessageEvents.CHAT.register((message, signedMessage, sender, params, receptionTimestamp) ->
-            tracker.observeChatMessage(message));
+        registerMessageObservers(tracker::observeGameMessage, tracker::observeChatMessage);
+    }
+
+    static void registerMessageObservers(BiConsumer<Component, Boolean> game, Consumer<Component> chat) {
+        // Observe original messages even when another listener hides or rewrites their display.
+        ClientReceiveMessageEvents.ALLOW_GAME.register((message, overlay) -> {
+            game.accept(message, overlay);
+            return true;
+        });
+        ClientReceiveMessageEvents.ALLOW_CHAT.register((message, signedMessage, sender, params, receptionTimestamp) -> {
+            chat.accept(message);
+            return true;
+        });
     }
 
     public static void observeEntityDeath(Entity entity) {

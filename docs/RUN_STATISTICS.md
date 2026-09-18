@@ -1,6 +1,6 @@
 # Run statistics and splits
 
-Current contracts as of 2026-09-13. Source and regression entry points:
+Current contracts as of 2026-09-18. Source and regression entry points:
 [CODE_MAP.md](CODE_MAP.md). Instance preparation, countdown and exit behavior:
 [dungeon lifecycle](DUNGEON_ARCHITECTURE.md#instance-and-run-lifecycle).
 
@@ -193,11 +193,63 @@ a Mimic kill. The formula and evidence requirements remain unchanged.
 `DungeonExtraScoreMessagesTest` replays the observed 298/299/298 sequence and
 the final server override without inventing Mimic evidence.
 
+### One-point score gap — 2026-09-18, 22:12 result
+
+`kung-trace-20260918-221219.log` records 47/59 secrets (79.7%), full projected
+room/puzzle credit, five crypts, Mimic, Prince and Bat. Kung estimates 300 before
+the actual `RedTurtle4000 died and became a ghost` message at 22:09:30.957.
+After that death, the estimate is 299: skill 99 (80 room credit, one death point,
+no puzzle penalty) + explore 91 (60 rooms, 31 secrets) + speed 100 + bonus 9.
+The server reports Team Score 300 at 22:12:15.638; Kung correctly adopts it,
+while the unchanged estimated components still total 299. This run does not
+have the missing Mimic evidence seen in the earlier investigation.
+
+The matching Minecraft log and saved Team Score chat component contain only
+the total. The EXTRA STATS component is a `/showextrastats` link with a generic
+hover, not the score breakdown. Skill, Explorer, Speed and Bonus were requested
+from the user and remain unavailable for this particular run. The subsequent
+22:18 screenshots concern another run, with no deaths and a missing Bonus point.
+Rounding the secret score up would add
+one point here, but that alone does not establish the cause; the inspected
+Noamm 26.1.2, Skyblocker and Skytils implementations also truncate secret score.
+No score formula, death rule or bonus flag was changed based on this mismatch.
+
+### Missing bonus point — 2026-09-18, 22:18 result
+
+`kung-trace-20260918-221900.log` and the supplied score-board screenshot isolate
+this run's mismatch: server Skill 100 + Explorer 91 + Speed 100 + Bonus 9 = 300;
+Kung's identical first three components plus Bonus 8 = 299. It has 41/52 secrets,
+78.8%, no deaths, full room/puzzle credit, five crypts, Mimic and Bat, but
+`prince=false`. The secret target consequently stays at 42 instead of 41.
+Neither the trace nor the matching Minecraft log contains a Prince bonus/party
+report for this run. This establishes the missing bonus input, not why it was
+unavailable; it does not resolve the preceding run's different Skill discrepancy.
+
+The message router previously used Fabric's post-filter `GAME` / `CHAT` events;
+only Kung's own filter forwarded hidden messages. It now observes the original
+message once via `ALLOW_GAME` / `ALLOW_CHAT`, including messages another listener
+cancels or rewrites. The old forwarding path is removed to prevent double delivery.
+New `score-bonus` trace events retain the actual input when Prince/Bat first gain
+credit, including hidden inputs. A routing regression replays the captured 299
+inputs, then a **synthetic** canceled Prince message: score becomes 300 and the
+secret target becomes 41; actionbar text cannot award it and repeated reports do
+not add another point. The same test checks a hidden Mort start message.
+
+No score formula or assumed Prince credit was added. Display filtering is a
+confirmed routing gap, but the old trace cannot prove it caused this particular
+missing message. A bonus only received by a teammate still needs their report;
+the client cannot infer it from a Prince room or an ordinary entity death.
+
 ## Splits
 
 - `DungeonSplitTracker` transitions are ordered and idempotent. Late boss messages
   cannot rewind progress. Missing boundaries leave segment times unknown while
   preserving totals. Missing floor metadata cannot downgrade an established M7 run.
+- Countdown prepares the live timer. Mort's exact map greeting rebases real and
+  accepted-tick time once before Blood Open completes, excluding the pre-start
+  countdown. Missing greetings retain the countdown fallback; late/duplicate
+  greetings and manual runs cannot reset timings. Existing PB/AVG history stays
+  stored; newly recorded Blood Open samples use the corrected origin.
 - M7 continues through Relics, Wither King dialogue and Dragons. Final boss dialogue
   ends combat; Total runs until the completion banner. There is no Victory phase.
   Wipe/abort freezes the unfinished measurement without pretending it completed.
@@ -244,6 +296,17 @@ the final server override without inventing Mimic evidence.
   banner and use the frozen phase duration. Repeated score/victory/boss messages,
   stop and reset cannot repeat notifications. PB storage keeps its batched run-end
   behavior and its final-floor correction; notifications do not add disk writes.
+- Splits Overlay > **Run End Chat** defaults off and requires the Splits master
+  toggle. At the first completion/Team Score message it posts one local summary:
+  floor/mode, every canonical phase in order, Boss Entry (cumulative Portal Entry),
+  Total, and Time Lost when enabled. Rows use the selected Minutes/Seconds format
+  and show server time in parentheses. Missing measurements remain `--`; a phase
+  interrupted by a wipe is marked `unfinished`. A missing boss-entry boundary
+  stays unknown. The summary snapshots the frozen times and does not announce PBs.
+  Repeated completion messages and score-before-victory confirmation cannot print
+  it again. Transfers/abort without an end signal, reset and manual debug runs
+  stay silent. Time Prediction and player-summary settings do not gate this output;
+  nothing is sent to party/server chat.
 - PB candidates are collected at phase boundaries, then committed in a batched config
   save at finish, transfer/abort or reset, and only for improvements. Waiting until
   then allows late M7 metadata to classify the early phases correctly. Completed
@@ -333,8 +396,8 @@ the final server override without inventing Mimic evidence.
   counts and last IDs from each source. `phaseTicks`, `phaseStartTicks`, `totalTicks`
   and the exact `boundary` message identify applied accepted progress; network
   totals can be slightly ahead of the client at a boundary. Countdown and Mort's
-  map message get separate `start-candidate` records. Kung starts at the countdown;
-  logging Mort's message does not restart or shift either clock.
+  map message get separate `start-candidate` records. The accepted Mort greeting
+  adds `timer-start` and rebases both clocks before the first completed phase.
   Full saved traces retain the last 128 split records separately from the
   general 2,500-entry ring, merged in original order without duplicates.
 - Red loss values update at settled phase boundaries, then freeze at run end.
@@ -344,7 +407,7 @@ the final server override without inventing Mimic evidence.
 - Show the live overlay only after the timer starts; retain frozen results until
   instance exit. Share the map's HUD layer so inventory backgrounds dim it.
   `hasCurrentSplit()` selects the active highlight; `running()` includes banner wait.
-  Chat filtering must forward boss messages to the tracker before suppressing them.
+  The shared pre-filter message observer receives boss dialogue even when hidden.
 
 The ideal clock remains a packet-based estimate; network/client delay at a boundary
 cannot be separated perfectly from server TPS loss. See

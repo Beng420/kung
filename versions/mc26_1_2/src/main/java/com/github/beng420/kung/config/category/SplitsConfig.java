@@ -13,6 +13,7 @@ public final class SplitsConfig extends ConfigCategory {
     private int scale = 85;
     private TimeFormat format = TimeFormat.MINUTES;
     private boolean timeLost = true;
+    private boolean runEndChat = false;
     private boolean timePrediction = true;
     private PredictionMode predictionMode = PredictionMode.PHASE_END;
     private PredictionSource predictionSource = PredictionSource.PB;
@@ -74,6 +75,13 @@ public final class SplitsConfig extends ConfigCategory {
 
     public void setTimeLost(boolean timeLost) {
         this.timeLost = timeLost;
+        save();
+    }
+
+    public boolean runEndChat() { return runEndChat; }
+
+    public void setRunEndChat(boolean runEndChat) {
+        this.runEndChat = runEndChat;
         save();
     }
 

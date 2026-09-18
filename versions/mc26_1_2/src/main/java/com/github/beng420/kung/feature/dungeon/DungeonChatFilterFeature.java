@@ -19,9 +19,9 @@ public final class DungeonChatFilterFeature extends ConfigurableFeature<DungeonC
     @Override
     protected void onInitialize() {
         ClientReceiveMessageEvents.ALLOW_CHAT.register((message, signedMessage, sender, params, receptionTimestamp) ->
-            allowMessage(tracker, message, false));
+            allowMessage(message));
         ClientReceiveMessageEvents.ALLOW_GAME.register((message, overlay) ->
-            allowMessage(tracker, message, overlay));
+            allowMessage(message));
     }
 
     @Override
@@ -29,13 +29,12 @@ public final class DungeonChatFilterFeature extends ConfigurableFeature<DungeonC
         return config().enabled();
     }
 
-    private boolean allowMessage(DungeonStateTracker tracker, Component message, boolean overlay) {
+    private boolean allowMessage(Component message) {
         Minecraft client = Minecraft.getInstance();
         if (!shouldHide(tracker, client, message)) {
             return true;
         }
 
-        tracker.observeSuppressedMessage(client, message.getString(), overlay);
         KungDebugRecorder.event("chat-filter", "hidden " + KungDebugRecorder.compact(message.getString()));
         return false;
     }

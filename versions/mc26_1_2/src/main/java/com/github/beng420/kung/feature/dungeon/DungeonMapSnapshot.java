@@ -20,6 +20,7 @@ public final class DungeonMapSnapshot {
     private final Set<GridKey> completedRooms = new HashSet<>();
     private final Set<GridKey> mapPlayerRooms = new HashSet<>();
     private final Set<GridKey> mapVisibleRooms = new HashSet<>();
+    private final Set<GridKey> fullyLoadedRooms = new HashSet<>();
     private final Set<GridKey> mapOpenDoors = new HashSet<>();
     private final Set<GridKey> mapRoomConnections = new HashSet<>();
     private final Set<GridKey> mimicRooms = new HashSet<>();
@@ -30,6 +31,7 @@ public final class DungeonMapSnapshot {
     private int playerGridX;
     private int playerGridZ;
     private long revision;
+    // Matching inputs only: scans, visibility and map topology, never player/checkmark changes.
     private long scanRevision;
     private long resetGeneration;
     private GridKey previousPlayerRoom;
@@ -46,6 +48,7 @@ public final class DungeonMapSnapshot {
         completedRooms.clear();
         mapPlayerRooms.clear();
         mapVisibleRooms.clear();
+        fullyLoadedRooms.clear();
         mapOpenDoors.clear();
         mapRoomConnections.clear();
         mimicRooms.clear();
@@ -81,6 +84,14 @@ public final class DungeonMapSnapshot {
             }
 
             GridKey key = new GridKey(point.gridX(), point.gridZ());
+            if (point.kind() == DungeonScanPointKind.ROOM && point.roomFullyLoaded()
+                && !DungeonRoomClassifier.isEmptyCore(point.coreHash())) {
+                GridKey room = new GridKey(point.gridX() / 2, point.gridZ() / 2);
+                if (fullyLoadedRooms.add(room)) {
+                    changed = true;
+                    logMapChange("room-fully-loaded room=" + gridText(room));
+                }
+            }
             recordInitialRoomPoint(key, point, scanNumber, timestamp);
             ObservedPoint previous = points.get(key);
             if (previous == null || shouldReplace(previous, point)) {
@@ -186,6 +197,7 @@ public final class DungeonMapSnapshot {
         GridKey room = new GridKey(roomGridX, roomGridZ);
         if (mapVisibleRooms.add(room)) {
             revision++;
+            scanRevision++;
             logMapChange("map-visible-room room=" + gridText(room)
                 + " revision=" + revision);
         }
@@ -198,6 +210,7 @@ public final class DungeonMapSnapshot {
         GridKey door = new GridKey(scanGridX, scanGridZ);
         if (mapOpenDoors.add(door)) {
             revision++;
+            scanRevision++;
             logMapChange("map-open-door door=" + gridText(door)
                 + " revision=" + revision);
         }
@@ -210,9 +223,35 @@ public final class DungeonMapSnapshot {
         GridKey door = new GridKey(scanGridX, scanGridZ);
         if (mapRoomConnections.add(door)) {
             revision++;
+            scanRevision++;
             logMapChange("map-room-connection door=" + gridText(door)
                 + " revision=" + revision);
         }
+    }
+
+    /** A narrow map connector is a room boundary; broad connectors join room cells. */
+    public boolean isMapExternalDoor(int scanGridX, int scanGridZ) {
+        GridKey door = new GridKey(scanGridX, scanGridZ);
+        return mapOpenDoors.contains(door) && !mapRoomConnections.contains(door);
+    }
+
+    boolean allowsRoomPrediction(int roomGridX, int roomGridZ) {
+        // Confirmed visibility lasts for this instance, even after its chunks unload.
+        GridKey room = new GridKey(roomGridX, roomGridZ);
+        return !mapVisibleRooms.contains(room) && !fullyLoadedRooms.contains(room);
+    }
+
+    boolean hasMapRoomBoundary(int scanGridX, int scanGridZ) {
+        if (mapRoomConnections.contains(new GridKey(scanGridX, scanGridZ))) return false;
+        return isMapExternalDoor(scanGridX, scanGridZ)
+            || (mapVisibleRooms.contains(new GridKey(scanGridX / 2, scanGridZ / 2))
+                && mapVisibleRooms.contains(new GridKey((scanGridX + 1) / 2, (scanGridZ + 1) / 2)));
+    }
+
+    boolean allowsInferredRoomConnection(int scanGridX, int scanGridZ) {
+        return mapRoomConnections.contains(new GridKey(scanGridX, scanGridZ))
+            || (allowsRoomPrediction(scanGridX / 2, scanGridZ / 2)
+                && allowsRoomPrediction((scanGridX + 1) / 2, (scanGridZ + 1) / 2));
     }
 
     public void observeMimicRoom(int roomGridX, int roomGridZ, String source) {
@@ -627,7 +666,7 @@ public final class DungeonMapSnapshot {
         return openedLockedDoors.contains(door);
     }
 
-    private static boolean shouldReplace(ObservedPoint previous, DungeonScanPoint next) {
+    private boolean shouldReplace(ObservedPoint previous, DungeonScanPoint next) {
         if (next.kind() != previous.point().kind()) {
             return true;
         }
@@ -660,7 +699,7 @@ public final class DungeonMapSnapshot {
             + " point=" + pointText(point));
     }
 
-    private static boolean shouldReplaceRoom(DungeonScanPoint previous, DungeonScanPoint next) {
+    private boolean shouldReplaceRoom(DungeonScanPoint previous, DungeonScanPoint next) {
         int previousCoreHash = previous.coreHash();
         int nextCoreHash = next.coreHash();
         if (previousCoreHash == nextCoreHash && previous.stableCoreHash() == next.stableCoreHash()) {
@@ -675,6 +714,9 @@ public final class DungeonMapSnapshot {
         if (previousEmpty) {
             return true;
         }
+
+        // Once visible, a current nonempty scan must replace stale preload/identity guesses.
+        if (!allowsRoomPrediction(next.gridX() / 2, next.gridZ() / 2)) return true;
 
         boolean previousKnownRoom = DungeonKnownRoomCatalog.isKnownCoreHash(previousCoreHash)
             || DungeonKnownRoomCatalog.isKnownCoreHash(previous.stableCoreHash());

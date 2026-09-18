@@ -5,6 +5,85 @@ Read the [code map](CODE_MAP.md), then only the topic needed for the task.
 
 ## Current state — 2026-09-18
 
+- Room prediction now stops per cell on either server-map visibility or full
+  world-footprint chunk availability, as requested. Direct hashes still work;
+  bundled/session preloads, soft completion and name-only joins cannot override
+  observed cells. Map boundaries constrain strict templates, render fallback uses
+  the shared resolver, and remote names no longer preassign shared owners. Current
+  nonempty scans replace stale recognition. Matching invalidation includes new
+  visibility/topology; player/checkmark updates retain caching. Focused tests and
+  full Java 25 build pass: 719 cases, 718 passed, one Windows symlink skip, no
+  failures/errors; `git diff --check` passes. The 0.4.0 JAR is rebuilt, not installed.
+  Chunk presence does not prove server-side block generation has finished; live
+  map behavior and the upper Bridges L-room identity remain to verify.
+  See [visibility rule](ROOM_DATA.md#prediction-stops-at-observed-visibility--2026-09-18).
+
+- Bridges map corruption from the 22:23:34 trace is reproduced and corrected.
+  Two catalog matches (upper `4,0|5,0|4,1`, lower `3,2|4,2`) were merged into
+  one five-cell owner, making the renderer split them into five labels and
+  sharing completion. Both owner-union passes now enforce the four-cell limit;
+  narrow server-map doors separate same-named rooms while broad internal
+  connections still merge fragments. No new scan or catalog write is added.
+  Two regressions failed before the fix and pass afterward, including isolated
+  completion and the second merge pass. Focused tests and full Java 25 build
+  pass: 715 cases, 714 passed, one Windows symlink skip, no failures/errors;
+  `git diff --check` passes. The 0.4.0 JAR is built, not installed. The upper L
+  variant's Bridges name is separately unverified; the user did not visit it,
+  so names/hashes/metadata remain unchanged. Live rendering remains to check.
+  See [Bridges owner merge](ROOM_DATA.md#bridges-owner-merge--2026-09-18-222334).
+
+- The 22:19 trace and next-run screenshots isolate a different 299/300 mismatch:
+  Skill 100, Explorer 91 and Speed 100 agree; Kung has Bonus 8 versus server 9,
+  with `prince=false` and no recorded Prince report. Dungeon messages now pass
+  through Fabric's pre-filter ALLOW events once; the old own-filter forwarding
+  is removed. This fixes a reproduced loss of hidden/modified bonus messages,
+  but whether filtering caused this run's missing Prince input remains unproved.
+  New `score-bonus` records preserve accepted Prince/Bat input; no bonus is guessed.
+  Splits now rebase both clocks once on Mort's map greeting before Blood Open:
+  this trace replays as 6:13.543 instead of 6:14.662, excluding the observed
+  1,119 ms / 21 ticks of countdown. Missing Mort retains the fallback; duplicate,
+  late, manual and unprepared cases are guarded. Existing PB/AVG data is preserved.
+  Focused tests and full Java 25 build pass: 713 cases, 712 passed, one Windows
+  symlink skip, no failures/errors; `git diff --check` passes. The 0.4.0 JAR is
+  built, not installed. Live split/score checks remain outstanding.
+  See [bonus gap](RUN_STATISTICS.md#missing-bonus-point--2026-09-18-2218-result)
+  and [start timing](SPLITS_TIMING_FIXES.md#mort-start-alignment--september-18-2026-2219-trace).
+
+- Score investigation for `kung-trace-20260918-221219.log` remains open.
+  At 47/59 secrets (79.7%), full room/puzzle credit, five crypts and all three
+  bonuses, Kung estimated 300. RedTurtle4000's actual death at 22:09:30 lowered
+  it to 299: skill 99 + explore 91 + speed 100 + bonus 9. The server returned
+  300 at 22:12:15; its component scores are absent from the trace, Minecraft
+  log and saved Team Score chat component. The subsequently supplied breakdown
+  belongs to the next run, so it does not resolve this run's discrepancy.
+  No formula change was made.
+  See [one-point score gap](RUN_STATISTICS.md#one-point-score-gap--2026-09-18-2212-result).
+
+- Latest Ice Spray report is Goldor (the user corrected Maxor). The 22:02:11 trace
+  proves all four markers at 22:02:04 were rejected: the alive wither was
+  2.19–2.41 blocks from them by client bounds, outside the 1.5-block limit.
+  Matching used interpolated positions. It now uses vanilla's received movement
+  destination for both marker and candidate and translates the matching bounds;
+  rendering, thresholds, ambiguity and expiry are preserved. Diagnostics add
+  `matchPosition`. The original trace lacks that destination, so tests simulate
+  it using the recorded marker/current coordinates; exact live resolution remains
+  unconfirmed. Two new regressions, the focused debuff/recorder tests and full
+  Java 25 build pass: 711 cases, 710 passed, one Windows symlink skip, no failures
+  or errors. `git diff --check` passes. The 0.4.0 JAR includes Run End Chat and
+  this correction; built, not installed. See [Goldor rejection](DUNGEON_DEBUFFS.md#goldor-marker-rejection-2026-09-18-220211).
+
+- Splits Overlay now has **Run End Chat**, off by default in the shared settings
+  catalog. With Splits enabled, the first run-end signal prints all canonical
+  phases, Boss Entry, Total and optional Time Lost locally, using the selected
+  time format and server times in parentheses. Missing values stay unknown;
+  interrupted phases are marked unfinished. Frozen snapshots prevent duplicate
+  score/victory output; ordinary aborts, reset and manual runs stay silent.
+  Three new summary regressions plus settings/persistence checks and the full
+  Java 25 build pass: 709 cases, 708 passed, one Windows symlink skip, no failures
+  or errors. `git diff --check` passes. The 0.4.0 JAR is built, not installed.
+  Live menu selection and end-of-run chat presentation remain unchecked.
+  See [split chat summaries](RUN_STATISTICS.md#splits).
+
 - The user explicitly requires one-click automatic updates in Modrinth. Removed
   the blanket brand/IPC guard and the interim GitHub/browser-import action.
   `Updates: Available` now downloads/verifies the compatible GitHub JAR and queues

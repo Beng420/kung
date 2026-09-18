@@ -11,24 +11,64 @@ import org.junit.Test;
 
 public final class DungeonSplitClockConservationTest {
     @Test
-    public void countdownAndMortDiagnosticsDoNotMoveTheRunStartOrItsTickBaseline() {
+    public void mortStartsBothClocksOnceAndExcludesTheRecordedCountdown() {
         AtomicLong clock = new AtomicLong();
         var diagnostics = new ArrayList<String>();
         DungeonSplitTracker tracker = new DungeonSplitTracker(clock::get, diagnostics::add);
         tracker.startRun(0L, 7, true);
         assertFalse(tracker.observeMessage("Starting in 1 second.", 0L));
-        for (int tick = 1; tick <= 20; tick++) {
+        for (int tick = 1; tick <= 21; tick++) {
             clock.set(tick * 50L);
             tracker.serverTick(clock.get());
         }
-        assertFalse(tracker.observeMessage("[NPC] Mort: Here, I found this map when I first entered the dungeon.", 0L));
-        assertEquals(1_000L, tracker.currentTotalDurationMillis());
-        assertEquals(1_000L, tracker.currentTotalServerDurationMillis());
+        clock.set(1_119L); // 22:12:35.415 in the supplied 22:19 trace.
+        assertTrue(tracker.observeMessage("[NPC] Mort: Here, I found this map when I first entered the dungeon.", 0L));
+        assertEquals(0L, tracker.currentTotalDurationMillis());
+        assertEquals(0L, tracker.currentTotalServerDurationMillis());
         assertTrue(diagnostics.stream().anyMatch(line -> line.startsWith("start-candidate")
-            && line.contains("[NPC] Mort:") && line.contains("wallMs=1000 totalTicks=20")));
+            && line.contains("[NPC] Mort:") && line.contains("wallMs=1119 totalTicks=21")));
+        clock.set(2_000L);
+        assertFalse(tracker.observeMessage("Starting in 1 second.", 0L));
+        assertFalse(tracker.observeMessage("[NPC] Mort: Here, I found this map when I first entered the dungeon.", 0L));
+        for (int tick = 21; tick < 543; tick++) tracker.serverTick(clock.get());
+        clock.set(28_933L);
         tracker.observeMessage("The BLOOD DOOR has been opened!", 0L);
-        assertTrue(diagnostics.stream().anyMatch(line -> line.startsWith("phase-end")
-            && line.contains("phaseStartTicks=0 totalTicks=20 boundary=\"The BLOOD DOOR has been opened!\"")));
+        var blood = tracker.completedSplits().getFirst();
+        assertEquals(27_814L, blood.splitDurationMillis());
+        assertEquals(26_100L, blood.serverSplitDurationMillis());
+        for (int tick = 543; tick < 6983; tick++) tracker.serverTick(clock.get());
+        clock.set(374_662L);
+        tracker.observeMessage("Team Score: 300 (S+)", 0L);
+        assertEquals(373_543L, tracker.currentTotalDurationMillis());
+        assertEquals(348_100L, tracker.currentTotalServerDurationMillis());
+        assertEquals(25_443L, DungeonSplitsOverlayFeature.settledTotalLostTimeMillis(tracker));
+        assertEquals(blood, tracker.completedSplits().getFirst());
+        assertFalse(tracker.observeMessage("[NPC] Mort: Here, I found this map when I first entered the dungeon.", 0L));
+    }
+
+    @Test
+    public void mortCannotStartAnUnpreparedRunOrRewriteCompletedAndManualSplits() {
+        String mort = "[NPC] Mort: Here, I found this map when I first entered the dungeon.";
+        AtomicLong clock = new AtomicLong();
+        DungeonSplitTracker tracker = new DungeonSplitTracker(clock::get);
+        assertFalse(tracker.observeMessage(mort, 0L));
+        assertFalse(tracker.started());
+        tracker.startRun(0L, 7, true);
+        clock.set(5_000L);
+        tracker.observeMessage("The BLOOD DOOR has been opened!", 0L);
+        assertFalse(tracker.observeMessage(mort, 0L));
+        assertEquals(5_000L, tracker.currentTotalDurationMillis());
+        assertEquals(5_000L, tracker.completedSplits().getFirst().splitDurationMillis());
+
+        tracker.startRun(0L, 7, true);
+        clock.set(6_000L);
+        assertTrue(tracker.observeMessage(mort, 0L));
+        assertEquals(0L, tracker.currentTotalDurationMillis());
+        tracker.reset();
+        tracker.mark("Blood Open", 0L);
+        clock.set(7_000L);
+        assertFalse(tracker.observeMessage(mort, 0L));
+        assertEquals(1_000L, tracker.currentTotalDurationMillis());
     }
 
     @Test

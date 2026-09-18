@@ -34,7 +34,16 @@ it does not show the live splits HUD. The accepted `Starting in 1 second.` signa
 starts it. Room observations survive countdown; `DungeonRunStats.resetForCountdown()`
 preserves prepared roster/classes and API secret baselines. A full reset belongs
 to instance replacement.
+Before the first split, Mort's exact map-greeting message confirms the playable
+start and rebases both split clocks once, excluding the countdown. Missing Mort
+keeps the countdown fallback; duplicate/late greetings cannot rewrite completed
+phases or manual runs. This timing adjustment does not reset instance/run statistics.
 The HUD editor can still preview splits before a run.
+
+Dungeon messages are observed once through Fabric's `ALLOW_GAME` / `ALLOW_CHAT`
+events before display cancellation or modification. Kung's own chat filter only
+controls visibility; it no longer forwards hidden messages separately. The shared
+tracker retains instance/workload gates and game/chat/actionbar source distinctions.
 
 Boss teleports within the instance retain clear-map and run state. Boss-map
 selection is presentation only; see [boss maps](BOSS_MAPS.md). Completion signals
@@ -62,13 +71,25 @@ applies. See [split PB ordering](RUN_STATISTICS.md#score-before-victory-pb-corre
 - Cache catalogue matches separately from visit/checkmark changes. Reuse core
   observations only with a nonzero stable hash; core-only observations need
   rescanning. A stable-hash change must refresh recognition even if core is unchanged.
+  New map visibility/connectors and full-world-cell observations also advance the
+  matching revision; repeated observations and player/checkmark changes do not.
 - Match strict templates first, then known cell hints. Soft matches cannot absorb
   unknown neighboring cores. Pre-run observations survive countdown and can become
   aliases of a later known room; see [room data](ROOM_DATA.md).
+  Preload aliases, soft shape completion and name-only joins stop for each cell
+  once the server map reveals it or all chunks intersecting its 32-block footprint
+  have loaded. This evidence lasts until instance reset. Exact hashes remain usable;
+  visible map boundaries override even strict templates. Check at most nine chunk
+  presences per scanned room cell within the existing batch budget, without loading
+  chunks or adding block scans. Render fallback hints use the same visibility gate.
 - Render logical `roomOwners` joined by `internalDoors`, not each raw match as an
   independent shape. This keeps Layers connected. Cache the layout by render-plan
   identity, keep groups at most four cells and respect boundaries. Render-only
   merges must never be persisted as catalogue matches or used for room learning.
+  Both owner-union passes enforce the four-cell limit before expanding visited/
+  cleared/completed state. Narrow map connectors are external doors even when
+  both sides have identical room metadata; broad connectors can still join
+  fragments of one room. See [Bridges merge](ROOM_DATA.md#bridges-owner-merge--2026-09-18-222334).
 - `DungeonMapItems` caches the last real map data per client level. Checkmark
   anchoring accepts PLAYER/BLUE_MARKER when FRAME is absent. Inspect `map-check`
   and `map-change` before assuming a drawing defect.

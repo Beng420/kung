@@ -19,6 +19,7 @@ import java.util.regex.Pattern;
 /** Ordered, server-message driven phases. Wall time and server time remain separate. */
 public final class DungeonSplitTracker {
     private static final String FIRST_SPLIT = "Blood Open";
+    private static final String TIMER_START = "[NPC] Mort: Here, I found this map when I first entered the dungeon.";
     private static final long VICTORY_CONFIRMATION_WINDOW_MILLIS = 5_000L;
     private static final String[] DEFAULT_SPLITS = {"Blood Open", "Blood Clear", "Portal Entry"};
     private static final String[][] FLOOR_SPLITS = {
@@ -42,6 +43,7 @@ public final class DungeonSplitTracker {
     private final Consumer<String> diagnostics;
     private final Supplier<SplitsConfig> config;
     private final Consumer<PhaseMessage> phaseMessages;
+    private final Consumer<List<DungeonSplitMessages.Notice>> runSummaries;
     private final Map<String, Long> personalBestCandidates = new HashMap<>();
     private final Map<String, Long> runMeasurements = new HashMap<>();
     private boolean manualRun;
@@ -56,6 +58,7 @@ public final class DungeonSplitTracker {
     private boolean masterMode;
     private boolean running;
     private boolean started;
+    private boolean timerStartConfirmed;
     private long startedAtMillis;
     private long stoppedElapsedMillis;
     /** Conserved accepted tick time; arrival jitter must not remove fractions of ticks. */
@@ -76,7 +79,7 @@ public final class DungeonSplitTracker {
     public DungeonSplitTracker() {
         this(() -> System.nanoTime() / 1_000_000L,
             event -> KungDebugRecorder.event("dungeon-splits", event + " " + ServerTpsTracker.INSTANCE.diagnostics()),
-            () -> KungConfig.get().splits, DungeonSplitMessages::send);
+            () -> KungConfig.get().splits, DungeonSplitMessages::send, DungeonSplitMessages::send);
     }
 
     DungeonSplitTracker(LongSupplier clock) {
@@ -93,15 +96,21 @@ public final class DungeonSplitTracker {
 
     DungeonSplitTracker(LongSupplier clock, Consumer<String> diagnostics, SplitsConfig config,
                         Consumer<PhaseMessage> phaseMessages) {
-        this(clock, diagnostics, () -> config, phaseMessages);
+        this(clock, diagnostics, config, phaseMessages, ignored -> { });
+    }
+
+    DungeonSplitTracker(LongSupplier clock, Consumer<String> diagnostics, SplitsConfig config,
+                        Consumer<PhaseMessage> phaseMessages, Consumer<List<DungeonSplitMessages.Notice>> runSummaries) {
+        this(clock, diagnostics, () -> config, phaseMessages, runSummaries);
     }
 
     private DungeonSplitTracker(LongSupplier clock, Consumer<String> diagnostics, Supplier<SplitsConfig> config,
-                                Consumer<PhaseMessage> phaseMessages) {
+                                Consumer<PhaseMessage> phaseMessages, Consumer<List<DungeonSplitMessages.Notice>> runSummaries) {
         this.clock = Objects.requireNonNull(clock);
         this.diagnostics = Objects.requireNonNull(diagnostics);
         this.config = Objects.requireNonNull(config);
         this.phaseMessages = Objects.requireNonNull(phaseMessages);
+        this.runSummaries = Objects.requireNonNull(runSummaries);
     }
 
     public void startRun(long nowTick, int floor, boolean masterMode) {
@@ -168,6 +177,7 @@ public final class DungeonSplitTracker {
         floor = -1;
         masterMode = false;
         started = false;
+        timerStartConfirmed = false;
         running = false;
         startedAtMillis = 0L;
         stoppedElapsedMillis = 0L;
@@ -225,11 +235,24 @@ public final class DungeonSplitTracker {
         if (message == null || message.isBlank()) return false;
         String clean = DungeonLifecycleSignals.clean(message);
         if (DungeonLifecycleSignals.isRunStart(clean)
-            || clean.equals("[NPC] Mort: Here, I found this map when I first entered the dungeon.")) {
+            || clean.equals(TIMER_START)) {
             diagnostics.accept("start-candidate message=\"" + clean + "\" running=" + running
                 + " wallMs=" + currentTotalDurationMillis() + " totalTicks=" + serverElapsedMillis / 50L);
         }
         if (!running) return confirmPendingVictory(clean);
+        if (clean.equals(TIMER_START) && !manualRun && !timerStartConfirmed
+            && completed.isEmpty() && FIRST_SPLIT.equals(currentSplitName)) {
+            // Countdown prepares the run; Mort marks when play actually starts.
+            // Rebase both clocks together, before any phase or PB has been recorded.
+            startedAtMillis = clock.getAsLong();
+            serverElapsedMillis = 0L;
+            lastServerTickAtMillis = Long.MIN_VALUE;
+            startClockSegment(0L);
+            timerStartConfirmed = true;
+            refreshPrediction();
+            diagnostics.accept("timer-start boundary=\"" + clean + "\"");
+            return true;
+        }
         if (DungeonLifecycleSignals.isRunStart(clean)) {
             // The lifecycle owner already starts this timer. A repeated countdown
             // must never erase completed splits, even if delivered much later.
@@ -446,6 +469,10 @@ public final class DungeonSplitTracker {
         saveMeasurements(predictedFinishMillis >= 0L && (awaitingCompletionAfter != null
             || DungeonLifecycleSignals.isVictoryForFloor(boundary, floor, masterMode)));
         traceStopped("run-finished", boundary);
+        SplitsConfig settings = config.get();
+        if (!manualRun && settings.enabled() && settings.runEndChat()) {
+            runSummaries.accept(DungeonSplitMessages.summary(this, floor, masterMode, settings));
+        }
     }
 
     private boolean confirmPendingVictory(String message) {

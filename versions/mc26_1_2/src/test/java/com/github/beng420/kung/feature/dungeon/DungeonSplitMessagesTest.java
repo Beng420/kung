@@ -16,7 +16,8 @@ public final class DungeonSplitMessagesTest {
     private final AtomicLong clock = new AtomicLong();
     private final SplitsConfig config = new SplitsConfig();
     private final List<DungeonSplitTracker.PhaseMessage> phases = new ArrayList<>();
-    private final DungeonSplitTracker tracker = new DungeonSplitTracker(clock::get, ignored -> { }, config, phases::add);
+    private final List<List<DungeonSplitMessages.Notice>> summaries = new ArrayList<>();
+    private final DungeonSplitTracker tracker = new DungeonSplitTracker(clock::get, ignored -> { }, config, phases::add, summaries::add);
 
     @Test public void eachFinishedPhaseReportsTimeAndOnlyNewOrStrictlyFasterTimesCelebrate() {
         config.setEnabled(true);
@@ -177,5 +178,90 @@ public final class DungeonSplitMessagesTest {
         assertEquals(1, phases.size());
         assertFalse(phases.getFirst().personalBest());
         assertEquals("Blood Open: 30.00s (PB: --)", DungeonSplitMessages.notices(phases.getFirst()).getFirst().text());
+    }
+
+    @Test public void m7SummaryIncludesEveryPhaseAndFrozenTotalsOnceAtTheBanner() {
+        config.setEnabled(true);
+        config.setRunEndChat(true);
+        config.setTimePrediction(false);
+        tracker.serverTick(0L);
+        tracker.startRun(0L, 7, true);
+        for (String message : List.of(BLOOD, CLEAR,
+            "[BOSS] Maxor: WELL! WELL! WELL! LOOK WHO'S HERE!",
+            "[BOSS] Storm: Pathetic Maxor, just like expected.",
+            "[BOSS] Goldor: Who dares trespass into my domain?",
+            "The Core entrance is opening!",
+            "[BOSS] Necron: You went further than any human before, congratulations.",
+            "[BOSS] Necron: All this, for nothing...",
+            "[BOSS] Wither King: You... again?",
+            "[BOSS] Wither King: We will decide it all, here, now.",
+            "[BOSS] Wither King: Incredible. You did what I couldn't do myself.")) {
+            clock.addAndGet(1_000L);
+            tracker.serverTick(clock.get());
+            tracker.observeMessage(message, 0L);
+        }
+        assertTrue(summaries.isEmpty());
+        clock.addAndGet(1_000L);
+        tracker.serverTick(clock.get());
+        tracker.observeMessage("Defeated The Wither King in 12s", 0L);
+        clock.addAndGet(5_000L);
+        tracker.observeMessage("Team Score: 300 (S+)", 0L);
+        tracker.observeMessage("Defeated The Wither King in 12s", 0L);
+        tracker.stopRun();
+        tracker.reset();
+        assertEquals(1, summaries.size());
+        assertEquals(List.of("M7 Run Splits (server time in parentheses)",
+            "Blood Open: 1.00s (0.05s)", "Blood Clear: 1.00s (0.05s)", "Portal Entry: 1.00s (0.05s)",
+            "Maxor: 1.00s (0.05s)", "Storm: 1.00s (0.05s)", "Terminals: 1.00s (0.05s)",
+            "Goldor: 1.00s (0.05s)", "Necron: 1.00s (0.05s)", "Relics: 1.00s (0.05s)",
+            "Wither King: 1.00s (0.05s)", "Dragons: 1.00s (0.05s)",
+            "Boss Entry: 3.00s (0.15s)", "Total: 12.00s (0.60s)", "Time Lost: -11.4s"),
+            summaries.getFirst().stream().map(DungeonSplitMessages.Notice::text).toList());
+    }
+
+    @Test public void scoreFirstAndWipeSummariesRespectFormatAndMissingMeasurements() {
+        config.setEnabled(true);
+        config.setRunEndChat(true);
+        config.setTimeLost(false);
+        tracker.startRun(0L, 1, false);
+        clock.set(1_000L);
+        tracker.observeMessage("[BOSS] Bonzo: Oh I'm dead!", 0L);
+        clock.set(91_120L);
+        tracker.observeMessage("Team Score: 177 (B)", 0L);
+        clock.addAndGet(100L);
+        tracker.observeMessage("Defeated Bonzo in 1m 31s", 0L);
+        tracker.observeMessage("Team Score: 177 (B)", 0L);
+        assertEquals(1, summaries.size());
+        assertEquals(List.of("F1 Run Splits (server time in parentheses)", "Blood Open: -- (--)",
+            "Blood Clear: -- (--)", "Portal Entry: -- (--)", "Bonzo Phase 1: -- (--)",
+            "Bonzo Phase 2: 1m 30.12s (--)", "Boss Entry: -- (--)", "Total: 1m 31.12s (--)"),
+            summaries.getFirst().stream().map(DungeonSplitMessages.Notice::text).toList());
+        config.setFormat(SplitsConfig.TimeFormat.SECONDS);
+        tracker.startRun(0L, 6, false);
+        clock.addAndGet(90_120L);
+        tracker.observeMessage("Team Score: 0 (D)", 0L);
+        assertEquals(2, summaries.size());
+        var wipe = summaries.getLast().stream().map(DungeonSplitMessages.Notice::text).toList();
+        assertEquals("Blood Open (unfinished): 90.12s (--)", wipe.get(1));
+        assertEquals("Total: 90.12s (--)", wipe.getLast());
+    }
+
+    @Test public void summaryRequiresBothTogglesAndAnActualRunEnd() {
+        config.setEnabled(true);
+        tracker.startRun(0L, 1, false);
+        tracker.observeMessage("Team Score: 0 (D)", 0L);
+        config.setRunEndChat(true);
+        config.setEnabled(false);
+        tracker.startRun(0L, 1, false);
+        tracker.observeMessage("Team Score: 0 (D)", 0L);
+        config.setEnabled(true);
+        tracker.startRun(0L, 1, false);
+        tracker.mark("Blood Clear", 0L);
+        tracker.observeMessage("Team Score: 0 (D)", 0L);
+        tracker.startRun(0L, 1, false);
+        tracker.stopRun();
+        tracker.observeMessage("Team Score: 0 (D)", 0L);
+        tracker.reset();
+        assertTrue(summaries.isEmpty());
     }
 }

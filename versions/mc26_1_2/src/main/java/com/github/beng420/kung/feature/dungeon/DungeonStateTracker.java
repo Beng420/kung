@@ -139,10 +139,6 @@ public final class DungeonStateTracker {
         return canProcessDungeonRunMessage(client);
     }
 
-    void observeSuppressedMessage(Minecraft client, String text, boolean overlay) {
-        observeDungeonMessage(client, text, overlay);
-    }
-
     public DungeonSplitTracker splitTracker() {
         return splitTracker;
     }

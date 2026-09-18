@@ -15,6 +15,10 @@ origin. A second eligible candidate within 0.5 blocks of the best distance makes
 the match unknown. Once a populated query is ambiguous, later movement cannot
 turn it into a successful match. Missing entities/invisibility metadata allow up
 to four resolution attempts, retaining the original equipment-packet tick.
+Matching uses each entity's received interpolation destination while it is moving,
+otherwise its current position. The original bounds are translated to that same
+position for the marker query and candidate distances. Render interpolation and
+the display-only Box Size setting cannot change the matching distances.
 
 This is **spatial inference**, not an explicit server target ID. Crowds can cause
 missed highlights, and decorations or another mob near a marker can still be
@@ -71,6 +75,34 @@ diagnostic JAR was built at 16:29 and has not been installed. These new reports
 cannot yet distinguish target selection, lifecycle filtering and rendering.
 Inspecting the active 26.1.2 Fabric extraction/render hooks and vanilla render
 types did not establish a rendering defect; no speculative geometry change is made.
+
+### Goldor marker rejection, 2026-09-18 22:02:11
+
+The user corrected the reported boss to Goldor. At 22:02:04.081–.082 / tick 4997,
+`kung-trace-20260918-220211.log` records Packed Ice markers 1021127–1021130 near
+`(47.8, 119.5, 40)`. All four queries reject the wither 1016947: distances from
+the current client bounds are 2.19–2.41 blocks, beyond the 1.5-block limit. The
+wither has 1000 health; the only other candidate is a sheep 6.94–7.11 blocks away.
+No highlight is created, so this incident does not originate in the death filter
+or draw stage. Earlier Maxor markers in this trace did reach extraction/drawing
+and expired after the configured 100 server ticks.
+
+Source inspection found packet matching using `Entity.position()` and its current
+bounds, which can still lag behind a received movement update. Vanilla 26.1.2's
+movement handlers set `InterpolationHandler.position()` to the received target
+before client interpolation catches up. Matching now uses that position for both
+marker and mob, translating the bounding box without changing the entity. The
+1.5/8-block limits, ambiguity rejection, local query bounds, expiry and renderer
+remain unchanged. `matchPosition` is included in existing bounded diagnostics
+alongside the rendered position, so the next trace can distinguish interpolation
+lag from an actual marker offset or packet-ordering issue.
+
+The trace did not contain the interpolation destination. The regression uses its
+four marker coordinates and rendered wither position, then a **simulated** movement
+destination to verify matching before the mob catches up, continued rejection of
+distant/overlapping targets, matching marker coordinates and unchanged render bounds.
+This fixes the identified coordinate mismatch; confirming that it resolves this
+exact live Goldor case still requires a run with the new JAR.
 
 ## M7 Dragon Debuff
 
@@ -220,6 +252,8 @@ single-statue assignment, trace-derived early/late hit offsets, independent effe
 ordinary/remote sound rejection, original observation ticks, expiry,
 ambiguous/distant markers, unload versus death, UUID reuse, bounds and retained
 HUD results and fresh counters/spray/timers for same-color respawns.
+`DungeonDebuffPositionTest` checks received movement targets with vanilla entities,
+including Goldor marker coordinates, ambiguity/range rejection and marker interpolation.
 `KungSettingsTest` covers independent defaults, persistence and HUD
 placement/scale; existing shared HUD/OneConfig and packet-clock tests also run.
 Additional regressions cover centered box expansion and limits, both initial-spawn

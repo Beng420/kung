@@ -118,6 +118,9 @@ public final class KungSettingsTest {
         assertEquals(List.of("PB", "AVG"), source.choices());
         source.intConsumer().accept(1);
         assertEquals("AVG", config.splits.predictionSource().label());
+        assertFalse(config.splits.runEndChat());
+        setting(splits, "Run End Chat").toggle().run();
+        assertTrue(config.splits.runEndChat());
 
         FeatureEntry updater = categories.getLast().features().getFirst();
         assertTrue(updater.actionOnly());

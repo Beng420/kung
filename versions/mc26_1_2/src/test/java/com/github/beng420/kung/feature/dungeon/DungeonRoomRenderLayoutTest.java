@@ -60,6 +60,87 @@ public final class DungeonRoomRenderLayoutTest {
     }
 
     @Test
+    public void bridgesTraceKeepsItsThreeAndTwoCellMatchesSeparateWithoutSharingCompletion() {
+        // Match geometry retained at 22:22:41.563 in kung-trace-20260918-222334.log.
+        // The trace lost the cell hashes; these matches reproduce the input to owner merging.
+        var upperCells = List.of(new DungeonKnownRoomCatalog.MatchedComponent(4, 0, 0),
+            new DungeonKnownRoomCatalog.MatchedComponent(5, 0, 0),
+            new DungeonKnownRoomCatalog.MatchedComponent(4, 1, 0));
+        var lowerCells = List.of(new DungeonKnownRoomCatalog.MatchedComponent(3, 2, 0),
+            new DungeonKnownRoomCatalog.MatchedComponent(4, 2, 0));
+        var template = new DungeonKnownRoomCatalog.RoomTemplate("Bridges", RoomType.NORMAL, 6, 6, false, 1, List.of());
+        var matches = List.of(new DungeonKnownRoomCatalog.MatchedRoom(template, upperCells),
+            new DungeonKnownRoomCatalog.MatchedRoom(template, lowerCells));
+        DungeonRoomRepository rooms = new DungeonRoomRepository() {
+            @Override public long revision() { return 0; }
+            @Override public List<DungeonKnownRoomCatalog.MatchedRoom> matchKnownRooms(DungeonMapSnapshot snapshot) { return matches; }
+            @Override public DungeonKnownRoomCatalog.KnownCoreHint knownCoreHint(int coreHash) { return null; }
+            @Override public DungeonKnownRoomCatalog.AutoLearnResult autoLearnStableHashes(
+                DungeonKnownRoomCatalog.MatchedRoom match, DungeonMapSnapshot snapshot) { return null; }
+            @Override public boolean hasPrince(String name) { return false; }
+        };
+        for (boolean extraMapConnection : List.of(false, true)) {
+            DungeonMapSnapshot snapshot = new DungeonMapSnapshot();
+            snapshot.observeMapPlayerRoom(4, 0);
+            snapshot.observeRoomClearState(4, 0, DungeonMapClearState.COMPLETED);
+            // Even erroneous map connectivity must not bypass the owner-size limit.
+            if (extraMapConnection) snapshot.observeMapRoomConnection(8, 3);
+            var plan = DungeonLiveMapWriter.MatchRenderPlan.from(snapshot, rooms);
+            DungeonRoomRenderLayout layout = DungeonRoomRenderLayout.from(plan);
+            assertEquals(List.of(2, 3), layout.rooms().stream().map(room -> room.components().size()).sorted().toList());
+            assertEquals(2L, plan.roomOwners().values().stream().distinct().count());
+            assertFalse(plan.internalDoors().contains(new DungeonLiveMapWriter.CellKey(8, 3)));
+            for (var cell : lowerCells) {
+                var key = new DungeonLiveMapWriter.CellKey(cell.roomGridX(), cell.roomGridZ());
+                assertFalse(plan.visitedRooms().contains(key));
+                assertFalse(plan.completedRooms().contains(key));
+            }
+            assertEquals(new DungeonRoomProgress(1, 1, 2), DungeonRoomProgress.from(plan));
+            assertEquals(matches, plan.matches());
+        }
+    }
+
+    @Test
+    public void narrowMapDoorKeepsSameNamedRoomsSeparateBelowTheSizeLimit() {
+        var snapshot = layersSnapshot(DungeonDoorKind.OPEN);
+        snapshot.observeMapOpenDoor(1, 0);
+        var plan = DungeonLiveMapWriter.MatchRenderPlan.from(snapshot, repository(true));
+        assertEquals(2, DungeonRoomRenderLayout.from(plan).rooms().size());
+        assertFalse(plan.internalDoors().contains(new DungeonLiveMapWriter.CellKey(1, 0)));
+        assertTrue(plan.externalDoors().containsKey(new DungeonLiveMapWriter.CellKey(1, 0)));
+
+        snapshot.observeMapRoomConnection(1, 0);
+        var connected = DungeonLiveMapWriter.MatchRenderPlan.from(snapshot, repository(true));
+        assertEquals("A broad internal connection still joins the Layers fragments", 1,
+            DungeonRoomRenderLayout.from(connected).rooms().size());
+    }
+
+    @Test
+    public void visibleRoomsCannotBeJoinedByNameButConfirmedMapConnectionsStillJoinThem() {
+        for (boolean mapVisible : List.of(true, false)) {
+            var snapshot = layersSnapshot(DungeonDoorKind.OPEN);
+            for (var cell : LAYERS_CELLS) {
+                if (mapVisible) snapshot.observeMapVisibleRoom(cell.x(), cell.z());
+                else {
+                    var point = snapshot.pointAt(cell.x() * 2, cell.z() * 2).point();
+                    snapshot.addScan(1, 1, 5, 5, List.of(new DungeonScanPoint(point.gridX(), point.gridZ(),
+                        point.worldX(), point.worldZ(), point.kind(), point.loaded(), point.coreHash(),
+                        point.stableCoreHash(), point.doorBlockId(), point.doorKind(), true)));
+                }
+            }
+            var separated = DungeonLiveMapWriter.MatchRenderPlan.from(snapshot, repository(true));
+            assertEquals(3, DungeonRoomRenderLayout.from(separated).rooms().size());
+            assertTrue(separated.internalDoors().isEmpty());
+
+            snapshot.observeMapRoomConnection(1, 0);
+            snapshot.observeMapRoomConnection(2, 1);
+            var connected = DungeonLiveMapWriter.MatchRenderPlan.from(snapshot, repository(true));
+            assertEquals(1, DungeonRoomRenderLayout.from(connected).rooms().size());
+            assertEquals(LAYERS_CELLS, DungeonRoomRenderLayout.from(connected).cells());
+        }
+    }
+
+    @Test
     public void lockedDoorsKeepSameNamedRoomsSeparate() {
         for (DungeonDoorKind kind : List.of(DungeonDoorKind.WITHER, DungeonDoorKind.BLOOD)) {
             var plan = DungeonLiveMapWriter.MatchRenderPlan.from(layersSnapshot(kind), repository(true));
@@ -109,6 +190,15 @@ public final class DungeonRoomRenderLayoutTest {
         assertEquals(6, layout.rooms().getFirst().template().secrets());
         assertEquals("Projection must not rewrite the original hint", 0, plan.hintAt(0, 0).secrets());
         assertEquals("Projection must not rewrite the original hint", 0, plan.hintAt(1, 0).secrets());
+
+        snapshot.observeMapVisibleRoom(0, 0);
+        snapshot.observeMapVisibleRoom(1, 0);
+        var separated = DungeonLiveMapWriter.MatchRenderPlan.from(snapshot, repository(false));
+        assertEquals("Remote room names must not bypass the observed map boundary", 2,
+            DungeonRoomRenderLayout.from(separated).rooms().size());
+        snapshot.observeMapRoomConnection(1, 0);
+        assertEquals(1, DungeonRoomRenderLayout.from(
+            DungeonLiveMapWriter.MatchRenderPlan.from(snapshot, repository(false))).rooms().size());
     }
 
     private static DungeonMapSnapshot layersSnapshot(DungeonDoorKind separatorKind) {

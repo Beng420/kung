@@ -558,6 +558,10 @@ public final class DungeonKnownRoomCatalog {
         return templateCache().knownCoreHints().get(coreHash);
     }
 
+    static KnownCoreHint knownHintForPoint(DungeonMapSnapshot snapshot, DungeonScanPoint point) {
+        return knownHintForPoint(snapshot, templateCache().knownCoreHints(), point);
+    }
+
     public static long revision() {
         synchronized (TEMPLATE_CACHE_LOCK) {
             return revision;
@@ -779,6 +783,7 @@ public final class DungeonKnownRoomCatalog {
                 !metadata.containsKey(new TemplateKey(hint.name(), hint.type(), hint.secrets())));
             preloadCoreHints.replaceAll((hash, hint) -> withPrinceOverride(hint, metadata));
             Map<Integer, KnownCoreHint> knownCoreHints = knownHintsByCoreHash(templates);
+            preloadCoreHints.keySet().removeAll(knownCoreHints.keySet());
             preloadCoreHints.forEach(knownCoreHints::putIfAbsent);
             Map<String, Boolean> princeByName = new HashMap<>();
             for (RoomTemplate template : templates) {
@@ -1348,11 +1353,13 @@ public final class DungeonKnownRoomCatalog {
                 return null;
             }
 
+            if (!snapshot.allowsRoomPrediction(roomGridX, roomGridZ)) return null;
+
             int observedCoreHash = observedPoint.point().coreHash();
             if (matchesComponent(observedPoint.point(), component)) {
                 exactComponentCount++;
             } else {
-                KnownCoreHint hint = knownHintForPoint(knownHintsByCoreHash, observedPoint.point());
+                KnownCoreHint hint = knownHintForPoint(snapshot, knownHintsByCoreHash, observedPoint.point());
                 if (!matchesTemplateHint(hint, variant.template())) {
                     return null;
                 }
@@ -1404,7 +1411,7 @@ public final class DungeonKnownRoomCatalog {
                     continue;
                 }
 
-                KnownCoreHint hint = knownHintForPoint(knownHintsByCoreHash, observedPoint.point());
+                KnownCoreHint hint = knownHintForPoint(snapshot, knownHintsByCoreHash, observedPoint.point());
                 if (hint == null) {
                     continue;
                 }
@@ -1464,7 +1471,7 @@ public final class DungeonKnownRoomCatalog {
                 continue;
             }
 
-            KnownCoreHint hint = knownHintForPoint(knownHintsByCoreHash, observedPoint.point());
+            KnownCoreHint hint = knownHintForPoint(snapshot, knownHintsByCoreHash, observedPoint.point());
             if (!expectedHint.equals(hint)) {
                 continue;
             }
@@ -1475,7 +1482,8 @@ public final class DungeonKnownRoomCatalog {
                 if (visitedCells.contains(neighbor)
                     || occupiedCells.contains(neighbor)
                     || !isValidRoomGrid(neighbor.x(), neighbor.z())
-                    || hasVisibleDoorBetween(snapshot, cell, neighbor)) {
+                    || hasVisibleDoorBetween(snapshot, cell, neighbor)
+                    || !snapshot.allowsInferredRoomConnection(cell.x() + neighbor.x(), cell.z() + neighbor.z())) {
                     continue;
                 }
 
@@ -1483,7 +1491,7 @@ public final class DungeonKnownRoomCatalog {
                 if (neighborPoint == null) {
                     continue;
                 }
-                KnownCoreHint neighborHint = knownHintForPoint(knownHintsByCoreHash, neighborPoint.point());
+                KnownCoreHint neighborHint = knownHintForPoint(snapshot, knownHintsByCoreHash, neighborPoint.point());
                 if (!expectedHint.equals(neighborHint)) {
                     continue;
                 }
@@ -1510,6 +1518,7 @@ public final class DungeonKnownRoomCatalog {
     private static boolean hasVisibleDoorBetween(DungeonMapSnapshot snapshot, CellKey first, CellKey second) {
         int dx = Integer.compare(second.x(), first.x());
         int dz = Integer.compare(second.z(), first.z());
+        if (snapshot.hasMapRoomBoundary(first.x() * 2 + dx, first.z() * 2 + dz)) return true;
         DungeonMapSnapshot.ObservedPoint doorPoint = snapshot.pointAt(first.x() * 2 + dx, first.z() * 2 + dz);
         return doorPoint != null
             && doorPoint.point().kind() == DungeonScanPointKind.DOOR
@@ -1529,9 +1538,17 @@ public final class DungeonKnownRoomCatalog {
     }
 
     private static KnownCoreHint knownHintForPoint(
+        DungeonMapSnapshot snapshot,
         Map<Integer, KnownCoreHint> knownHintsByCoreHash,
         DungeonScanPoint point
     ) {
+        Map<Integer, KnownCoreHint> preloads = templateCache().preloadCoreHints();
+        KnownCoreHint direct = preloads.containsKey(point.coreHash()) ? null : knownHintsByCoreHash.get(point.coreHash());
+        if (direct == null && point.stableCoreHash() != 0 && !preloads.containsKey(point.stableCoreHash())) {
+            direct = knownHintsByCoreHash.get(point.stableCoreHash());
+        }
+        if (direct != null || !snapshot.allowsRoomPrediction(point.gridX() / 2, point.gridZ() / 2)) return direct;
+
         KnownCoreHint hint = knownHintsByCoreHash.get(point.coreHash());
         if (hint == null && point.stableCoreHash() != 0) {
             hint = knownHintsByCoreHash.get(point.stableCoreHash());
@@ -1630,8 +1647,12 @@ public final class DungeonKnownRoomCatalog {
         TemplateKey key
     ) {
         for (MatchedComponent component : match.components()) {
-            for (CellKey neighbor : new CellKey(component.roomGridX(), component.roomGridZ()).neighbors()) {
-                if (occupiedCells.contains(neighbor) || !isValidRoomGrid(neighbor.x(), neighbor.z())) {
+            CellKey cell = new CellKey(component.roomGridX(), component.roomGridZ());
+            for (CellKey neighbor : cell.neighbors()) {
+                if (occupiedCells.contains(neighbor) || !isValidRoomGrid(neighbor.x(), neighbor.z())
+                    || !snapshot.allowsRoomPrediction(cell.x(), cell.z())
+                    || !snapshot.allowsRoomPrediction(neighbor.x(), neighbor.z())
+                    || hasVisibleDoorBetween(snapshot, cell, neighbor)) {
                     continue;
                 }
 
@@ -1640,10 +1661,7 @@ public final class DungeonKnownRoomCatalog {
                     continue;
                 }
 
-                KnownCoreHint hint = knownHintsByCoreHash.get(observedPoint.point().coreHash());
-                if (hint == null && observedPoint.point().stableCoreHash() != 0) {
-                    hint = knownHintsByCoreHash.get(observedPoint.point().stableCoreHash());
-                }
+                KnownCoreHint hint = knownHintForPoint(snapshot, knownHintsByCoreHash, observedPoint.point());
                 if (hint == null
                     || !hint.name().equals(key.name())
                     || hint.type() != key.type()

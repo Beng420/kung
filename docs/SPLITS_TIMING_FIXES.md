@@ -1,4 +1,27 @@
-# Dungeon split timing: September 12, 2026
+# Dungeon split timing
+
+## Mort start alignment — September 18, 2026, 22:19 trace
+
+The supplied `kung-trace-20260918-221900.log` preserves countdown at 22:12:34.297
+and Mort's map greeting at 22:12:35.415, with measured offsets of 1,119 real ms
+and 21 accepted ticks (1,050 ideal ms). Team Score freezes Kung at 374,662 real ms
+and 349,150 ideal ms. The following server banner reports `06m 13s`; its whole-second
+precision cannot supply an exact millisecond finish time.
+
+The tracker now rebases both clocks on that exact Mort greeting once, before any
+completed phase. Replaying these measured offsets gives Total **373,543 ms**,
+ideal **348,100 ms**, loss **25,443 ms**, and Blood Open **27,814 / 26,100 ms**.
+Other phase durations and the combat-end/result-banner distinction stay unchanged.
+Tick spacing in the regression is synthetic; the recorded totals and boundaries
+are not. Missing Mort retains the countdown fallback, while duplicate/late Mort,
+manual runs and unprepared instances cannot restart the timer. The instance and
+run-statistics lifecycle continues to use countdown.
+
+This intentionally supersedes the retained countdown-origin policy below. It
+excludes observed pre-start time, not a fixed one-second deduction. Saved PB/AVG
+history is preserved; new Blood Open samples use the new origin, and `/kung splits`
+already offers per-floor Reset AVG if the user wants to discard older averages.
+Live verification of the new build remains outstanding.
 
 ## 0.2.19 live check: 18:16:58 trace
 

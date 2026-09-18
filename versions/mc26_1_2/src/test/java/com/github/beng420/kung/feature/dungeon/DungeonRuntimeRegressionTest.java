@@ -146,6 +146,21 @@ public final class DungeonRuntimeRegressionTest {
             var match = DungeonKnownRoomCatalog.matchKnownRooms(nextRun).stream()
                 .filter(m -> m.contains(0, 0)).findFirst().orElseThrow();
             assertEquals(template.name(), match.template().name());
+            for (boolean mapVisible : List.of(true, false)) {
+                var visibleRun = new DungeonMapSnapshot();
+                visibleRun.addScan(0, 0, 5, 5, List.of(room(123456789, 987654321)));
+                var repository = KnownDungeonRoomRepository.INSTANCE;
+                var prediction = repository.matchKnownRooms(visibleRun);
+                assertFalse(prediction.isEmpty());
+                if (mapVisible) visibleRun.observeMapVisibleRoom(0, 0);
+                else visibleRun.addScan(1, 1, 5, 5, List.of(new DungeonScanPoint(0, 0, -185, -185,
+                    DungeonScanPointKind.ROOM, true, 123456789, 987654321, 0, DungeonDoorKind.NONE, true)));
+                assertNotSame(prediction, repository.matchKnownRooms(visibleRun));
+                assertTrue(repository.matchKnownRooms(visibleRun).isEmpty());
+                assertNull(DungeonLiveMapWriter.MatchRenderPlan.from(visibleRun).hintAt(0, 0));
+                visibleRun.addScan(2, 2, 5, 5, List.of(room(component.coreHash(), component.stableCoreHash())));
+                assertEquals(template.name(), repository.matchKnownRooms(visibleRun).getFirst().template().name());
+            }
         } finally {
             DungeonKnownRoomCatalog.reload();
         }
@@ -160,6 +175,71 @@ public final class DungeonRuntimeRegressionTest {
             DungeonScanUtils.classifyDoorColumn(4, 0, 0, true, false, DungeonDoorKind.WITHER));
         assertEquals(DungeonDoorKind.NONE,
             DungeonScanUtils.classifyDoorColumn(4, 0, 0, true, false, DungeonDoorKind.NONE));
+    }
+
+    @Test public void fullRoomLoadingRequiresEveryIntersectingChunkIncludingTheFarCorner() {
+        assertFalse(DungeonScanUtils.isRoomFullyLoaded((x, z) -> x == -12 && z == -12, -185, -185));
+        assertFalse(DungeonScanUtils.isRoomFullyLoaded((x, z) -> x != -11 || z != -11, -185, -185));
+        Set<String> checked = new HashSet<>();
+        assertTrue(DungeonScanUtils.isRoomFullyLoaded((x, z) -> checked.add(x + "," + z), -185, -185));
+        assertEquals(Set.of("-13,-13", "-13,-12", "-13,-11", "-12,-13", "-12,-12", "-12,-11",
+            "-11,-13", "-11,-12", "-11,-11"), checked);
+    }
+
+    @Test public void visibleRoomsDropBundledPreloadsAndAcceptCurrentUnknownHashes() {
+        int preload = -1783845896;
+        assertNotNull(DungeonKnownRoomCatalog.knownCoreHint(preload));
+        assertFalse(DungeonKnownRoomCatalog.isStableKnownCoreHash(preload));
+        for (boolean mapVisible : List.of(true, false)) {
+            var snapshot = new DungeonMapSnapshot();
+            snapshot.addScan(0, 0, 5, 5, List.of(room(preload, 987654321)));
+            assertFalse(KnownDungeonRoomRepository.INSTANCE.matchKnownRooms(snapshot).isEmpty());
+            if (mapVisible) snapshot.observeMapVisibleRoom(0, 0);
+            else snapshot.addScan(1, 1, 5, 5, List.of(new DungeonScanPoint(0, 0, -185, -185,
+                DungeonScanPointKind.ROOM, true, preload, 987654321, 0, DungeonDoorKind.NONE, true)));
+            var visible = DungeonLiveMapWriter.MatchRenderPlan.from(snapshot);
+            assertTrue(visible.matches().isEmpty());
+            assertNull("Rendering must not reintroduce a bundled preload", visible.hintAt(0, 0));
+            snapshot.addScan(2, 2, 5, 5, List.of(room(123456789, 987654321)));
+            assertEquals(123456789, snapshot.pointAt(0, 0).point().coreHash());
+            assertFalse("Chunk loss must not restore prediction for an already observed room",
+                snapshot.allowsRoomPrediction(0, 0));
+            snapshot.reset();
+            assertTrue(snapshot.allowsRoomPrediction(0, 0));
+        }
+    }
+
+    @Test public void mapShapeOverridesEvenAnExactTemplateAndRefreshesCachedMatches() {
+        var template = new DungeonKnownRoomCatalog.RoomTemplate("Repeated room", RoomType.NORMAL, 3, 0,
+            false, 1, List.of(new DungeonKnownRoomCatalog.TemplateComponent(0, 0, 101, 1001),
+                new DungeonKnownRoomCatalog.TemplateComponent(1, 0, 102, 1002)));
+        var hint = new DungeonKnownRoomCatalog.KnownCoreHint("Repeated room", RoomType.NORMAL, 3);
+        var hints = java.util.Map.of(101, hint, 102, hint);
+        var snapshot = new DungeonMapSnapshot();
+        snapshot.addScan(0, 0, 5, 5, List.of(room(101, 1001),
+            new DungeonScanPoint(2, 0, -153, -185, DungeonScanPointKind.ROOM, true, 102, 1002, 0, DungeonDoorKind.NONE)));
+        assertEquals(1, DungeonKnownRoomCatalog.matchKnownRooms(snapshot, List.of(template), hints).size());
+        var known = DungeonKnownRoomCatalog.loadTemplates().getFirst().components().getFirst();
+        snapshot.addScan(1, 1, 5, 5, List.of(new DungeonScanPoint(8, 8, -57, -57,
+            DungeonScanPointKind.ROOM, true, known.coreHash(), known.stableCoreHash(), 0, DungeonDoorKind.NONE)));
+        var repository = KnownDungeonRoomRepository.INSTANCE;
+        var cached = repository.matchKnownRooms(snapshot);
+        snapshot.observeMapVisibleRoom(0, 0);
+        snapshot.observeMapVisibleRoom(1, 0);
+        assertNotSame(cached, repository.matchKnownRooms(snapshot));
+        assertEquals(2, DungeonKnownRoomCatalog.matchKnownRooms(snapshot, List.of(template), hints).size());
+        var separated = repository.matchKnownRooms(snapshot);
+        snapshot.observeMapOpenDoor(1, 0);
+        assertNotSame(separated, repository.matchKnownRooms(snapshot));
+        assertEquals(2, DungeonKnownRoomCatalog.matchKnownRooms(snapshot, List.of(template), hints).size());
+        var external = repository.matchKnownRooms(snapshot);
+        snapshot.observeMapRoomConnection(1, 0);
+        assertNotSame(external, repository.matchKnownRooms(snapshot));
+        assertEquals(1, DungeonKnownRoomCatalog.matchKnownRooms(snapshot, List.of(template), hints).size());
+        var connected = repository.matchKnownRooms(snapshot);
+        snapshot.observeMapRoomConnection(1, 0);
+        snapshot.observeMapVisibleRoom(0, 0);
+        assertSame(connected, repository.matchKnownRooms(snapshot));
     }
 
     private static DungeonScanPoint room(int core, int stable) {

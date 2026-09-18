@@ -1,20 +1,54 @@
 package com.github.beng420.kung.feature.dungeon;
 
+import com.github.beng420.kung.config.category.SplitsConfig;
 import com.github.beng420.kung.message.KungMessages;
+import java.util.ArrayList;
 import java.util.List;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
 
-/** Phase notifications use local Kung system messages, independent of prediction visibility. */
+/** Split notifications use local Kung system messages, independent of prediction visibility. */
 final class DungeonSplitMessages {
     private DungeonSplitMessages() { }
 
     static void send(DungeonSplitTracker.PhaseMessage phase) {
+        send(notices(phase));
+    }
+
+    static void send(List<Notice> notices) {
         Minecraft client = Minecraft.getInstance();
-        for (Notice notice : notices(phase)) {
+        for (Notice notice : notices) {
             KungMessages.send(client, notice.component());
         }
+    }
+
+    static List<Notice> summary(DungeonSplitTracker tracker, int floor, boolean masterMode, SplitsConfig config) {
+        List<Notice> result = new ArrayList<>();
+        String floorLabel = floor < 0 ? "" : floor == 0 ? "Entrance " : (masterMode ? "M" : "F") + floor + " ";
+        result.add(new Notice(KungMessages.Type.INFO, floorLabel + "Run Splits (server time in parentheses)"));
+        for (String name : tracker.splitNames()) {
+            var split = DungeonSplitsOverlayFeature.phaseSnapshot(tracker, name);
+            String label = split != null && split == tracker.stoppedCurrentSplit() ? name + " (unfinished)" : name;
+            result.add(summaryTime(label, split == null ? -1L : split.splitDurationMillis(),
+                split == null ? -1L : split.serverSplitDurationMillis(), config));
+        }
+        var portal = tracker.completedSplits().stream().filter(split -> split.name().equals("Portal Entry"))
+            .findFirst().orElse(null);
+        result.add(summaryTime("Boss Entry", portal == null ? -1L : portal.totalDurationMillis(),
+            portal == null ? -1L : portal.serverTotalDurationMillis(), config));
+        result.add(summaryTime("Total", tracker.currentTotalDurationMillis(), tracker.currentTotalServerDurationMillis(), config));
+        if (config.timeLost()) {
+            result.add(new Notice(KungMessages.Type.INFO, "Time Lost: " + DungeonSplitsOverlayFeature.formatLostTimeMillis(
+                DungeonSplitsOverlayFeature.settledTotalLostTimeMillis(tracker))));
+        }
+        return List.copyOf(result);
+    }
+
+    private static Notice summaryTime(String label, long wallMillis, long serverMillis, SplitsConfig config) {
+        return new Notice(KungMessages.Type.INFO, label + ": "
+            + DungeonSplitsOverlayFeature.formatDurationMillis(wallMillis, config.format()) + " ("
+            + DungeonSplitsOverlayFeature.formatDurationMillis(serverMillis, config.format()) + ")");
     }
 
     static List<Notice> notices(DungeonSplitTracker.PhaseMessage phase) {

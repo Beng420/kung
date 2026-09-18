@@ -100,7 +100,67 @@ Canonical metadata rules:
 - During a run, Kung remembers the first non-empty hash per room cell and stores it together with later manual learns when it differs.
 - Pre-run observations survive the countdown. Matching refreshes when either the raw or stable hash changes. Same-cell transitions into directly known rooms also create session-only preload hints keyed by both hashes; conflicting pairs are rejected. These hints do not change bundled data or bypass the Local Data setting for profile files.
 - Matching is core-first: once a room cell has a known `core` or `stable` hash, Kung can label that cell even when the full multi-cell shape is incomplete.
-- Adjacent known cells are only grouped when they have the same room metadata and no visible door between them; groups over 4 cells are split into one-cell matches instead of drawing a huge fake room.
+- Adjacent known cells are only grouped when they have the same room metadata and no visible door between them. Once visible, hint-only grouping additionally requires a broad map connection; groups over 4 cells are split into one-cell matches instead of drawing a huge fake room.
+
+## Prediction stops at observed visibility — 2026-09-18
+
+The user requested both map and world visibility to stop room predictions. Each
+room cell stops accepting bundled/session preload aliases, soft template completion
+and name-only owner joins when it is visible on the server map **or** all chunks
+intersecting its 32-block world footprint have loaded. Applying this per cell also
+protects the visible portion of a partially revealed multi-cell room. World evidence
+checks chunk presence (at most nine checks per scanned cell), not completion of
+server-side block generation. Evidence persists through chunk unloads until reset.
+
+Direct catalog core/stable hashes still identify rooms, with direct hashes taking
+priority over preload aliases. A current nonempty scan replaces stale recognition
+after visibility; an unknown current hash stays unknown instead of retaining an old
+prediction. The render fallback uses the same hint resolver. Remote reports start
+with separate cell owners so a shared name cannot bypass the connection rules.
+
+Two map-visible adjacent cells without a broad internal connector form a boundary,
+including when the only connector is a narrow door. Even strict templates may not
+cross it. Broad observed connectors still join compatible fragments, subject to the
+four-cell limit. Newly observed visibility and connectors invalidate cached matches;
+repeated map observations, player movement and clear-state updates do not.
+
+Regression coverage exercises bundled and session predictions before/after both
+visibility signals, unchanged-hash invalidation, current unknown scans, reset,
+missing edge chunks, strict-template/map conflicts, name-only and remote grouping,
+and confirmed connector recovery. The stored upper L-room name from the Bridges
+trace remains unverified; this change does not rename catalog entries. Live play
+with the rebuilt JAR remains to check.
+
+## Bridges owner merge — 2026-09-18, 22:23:34
+
+`kung-trace-20260918-222334.log` retains two Bridges matches at 22:22:41.563:
+the upper L at `4,0|5,0|4,1` and the lower pair at `3,2|4,2`. Both have six
+secrets and were assigned the same logical owner. Their combined five cells
+exceeded the render layout's safety limit, so it displayed five individual
+Bridges labels, as in the supplied screenshot. Completion propagated to the
+entire mistaken owner. The joining scan point `8,3` was `NONE`, not a blocking
+Wither/Blood door. Identity-based merging ignored ordinary map-door boundaries
+and neither owner-union pass checked the combined cell count.
+
+Owner merging now rejects a union above four cells, retaining the existing
+matched groups, and respects narrow external doors observed on the server map.
+Only a successful union adds an internal connector. The map-connection pass uses
+the same size guard, before visited/clear/completed state is expanded. Existing
+Layers fragments still merge across broad internal connections. The change uses
+bounded cached snapshot data and adds no world scan or persistence path.
+
+Two regressions failed against the previous code, then passed: the recorded 3+2
+match geometry stays as two render rooms with separate completion, even with a
+synthetic erroneous map connection; a narrow map door separates same-named
+fragments below the size limit while a broad connection still joins them. The
+trace does not retain the final cell hashes, so the replay starts from its
+recorded matches rather than claiming an exact raw-scan reconstruction.
+
+The catalog also labels an L variant as Bridges, whereas the saved metadata
+reference lists Bridges as 1x2. The user did not visit the upper rooms and cannot
+identify them. No names, hashes, variants or secret/crypt totals were changed:
+the upper room's correct identity remains unverified, separately from this
+confirmed ownership defect. Live rendering with the rebuilt JAR remains to check.
 
 ## Manual Prince corrections
 

@@ -67,6 +67,16 @@ public final class DungeonScanUtils {
         return level.hasChunk(worldX >> 4, worldZ >> 4);
     }
 
+    static boolean isRoomFullyLoaded(java.util.function.BiPredicate<Integer, Integer> hasChunk, int worldX, int worldZ) {
+        // A loaded core column alone says nothing about the surrounding 32-block room cell.
+        for (int chunkX = (worldX - 15) >> 4; chunkX <= (worldX + 16) >> 4; chunkX++) {
+            for (int chunkZ = (worldZ - 15) >> 4; chunkZ <= (worldZ + 16) >> 4; chunkZ++) {
+                if (!hasChunk.test(chunkX, chunkZ)) return false;
+            }
+        }
+        return true;
+    }
+
     public static RoomCenter getRoomCenter(int worldX, int worldZ) {
         int roomX = Math.round((worldX - START_X) / (float) ROOM_SIZE_BLOCKS);
         int roomZ = Math.round((worldZ - START_Z) / (float) ROOM_SIZE_BLOCKS);

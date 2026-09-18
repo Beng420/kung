@@ -87,7 +87,9 @@ public final class DungeonScan {
             coreHash,
             stableCoreHash,
             doorBlockId,
-            doorKind
+            doorKind,
+            loaded && kind == DungeonScanPointKind.ROOM
+                && DungeonScanUtils.isRoomFullyLoaded(level::hasChunk, worldX, worldZ)
         );
     }
 
