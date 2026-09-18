@@ -25,11 +25,15 @@
   changing lifecycle, scanning, room ownership or player markers.
 - Before editing room metadata, read [room data](docs/ROOM_DATA.md). The selected
   Wiki reference supplies metadata, never hash identity. Admin=34 crypts,
-  Buttons=21; bundled Lava Pit is NORMAL. Core `-1005518830` is a type-only RARE hint.
+  Buttons=21. Lava Pit has separate NORMAL and RARE entries: core `-1005518830`
+  identifies the RARE namesake with user-approved 0/0 secret/crypt placeholders.
+  Preserve the NORMAL room's hashes and metadata; do not classify either by name alone.
 - Keep profile data separate from bundled data. Normal builds must not sync learned
   rooms or install a JAR into a game profile as a side effect.
 - Runtime files belong under `config/kung/` or `logs/kung/` (apart from the mod JAR).
   Use `KungPaths`; see [file storage](docs/FILE_STORAGE.md) before adding write paths.
+  The explicit `/kung room project` development link may instead write active
+  room resources through `DungeonRoomProject`; it defaults off and does not sync on build.
 
 ## Validate and hand off
 

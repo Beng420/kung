@@ -7,7 +7,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.Reader;
-import java.io.Writer;
+import java.io.StringWriter;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -15,7 +15,6 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
-import com.github.beng420.kung.runtime.KungPaths;
 
 public final class DungeonRoomClassifier {
     public static final int EMPTY_CORE_HASH = -318865360;
@@ -64,9 +63,7 @@ public final class DungeonRoomClassifier {
             throw new IllegalArgumentException("Cannot learn an empty dungeon room core.");
         }
 
-        knownRoomTypes().put(coreHash, roomType);
         Path file = knownRoomTypesFile();
-        Files.createDirectories(file.getParent());
 
         Properties properties = new Properties();
         if (Files.exists(file)) {
@@ -76,12 +73,8 @@ public final class DungeonRoomClassifier {
         }
 
         properties.setProperty(Integer.toString(coreHash), roomType.name());
-        try (Writer writer = Files.newBufferedWriter(file, StandardCharsets.UTF_8)) {
-            properties.store(
-                writer,
-                "Kung dungeon scan room type hints. Format: coreHash=ROOM_TYPE. Types: START, NORMAL, RARE, YELLOW, PUZZLE, BLOOD, FAIRY, TRAP, UNKNOWN."
-            );
-        }
+        writeRoomTypes(file, properties);
+        knownRoomTypes().put(coreHash, roomType);
     }
 
     public static void removeRoomTypes(Collection<Integer> coreHashes) throws IOException {
@@ -89,33 +82,23 @@ public final class DungeonRoomClassifier {
             return;
         }
 
-        for (int coreHash : coreHashes) {
-            knownRoomTypes().remove(coreHash);
+        if (DungeonRoomProject.enabled()) {
+            DungeonRoomProject.validateProject(KungConfig.get().dungeon.roomDataProjectDirectory());
         }
 
         Path file = knownRoomTypesFile();
-        if (!Files.exists(file)) {
-            return;
-        }
-
         Properties properties = new Properties();
-        try (Reader reader = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
-            properties.load(reader);
+        if (Files.exists(file)) {
+            try (Reader reader = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
+                properties.load(reader);
+            }
         }
         boolean changed = false;
         for (int coreHash : coreHashes) {
             changed = properties.remove(Integer.toString(coreHash)) != null || changed;
         }
-        if (!changed) {
-            return;
-        }
-
-        try (Writer writer = Files.newBufferedWriter(file, StandardCharsets.UTF_8)) {
-            properties.store(
-                writer,
-                "Kung dungeon scan room type hints. Format: coreHash=ROOM_TYPE. Types: START, NORMAL, RARE, YELLOW, PUZZLE, BLOOD, FAIRY, TRAP, UNKNOWN."
-            );
-        }
+        if (changed) writeRoomTypes(file, properties);
+        for (int coreHash : coreHashes) knownRoomTypes().remove(coreHash);
     }
 
     private static Map<Integer, RoomType> knownRoomTypes() {
@@ -126,19 +109,17 @@ public final class DungeonRoomClassifier {
     }
 
     private static Map<Integer, RoomType> loadKnownRoomTypes() {
-        Map<Integer, RoomType> roomTypes = new HashMap<>(DEFAULT_ROOM_TYPES);
-        loadPropertiesInto(roomTypes, bundledProperties());
-        if (!KungConfig.get().dungeon.localRoomDataEnabled()) {
-            return roomTypes;
+        boolean project = DungeonRoomProject.enabled();
+        Map<Integer, RoomType> roomTypes = new HashMap<>();
+        if (!project) {
+            roomTypes.putAll(DEFAULT_ROOM_TYPES);
+            loadPropertiesInto(roomTypes, bundledProperties());
+            if (!KungConfig.get().dungeon.localRoomDataEnabled()) return roomTypes;
         }
         Path file = knownRoomTypesFile();
 
         try {
-            Files.createDirectories(file.getParent());
-            if (!Files.exists(file)) {
-                writeDefaultKnownRoomTypes(file);
-                return roomTypes;
-            }
+            if (!Files.exists(file)) return roomTypes;
 
             Properties properties = new Properties();
             try (Reader reader = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
@@ -177,21 +158,17 @@ public final class DungeonRoomClassifier {
         }
     }
 
-    private static void writeDefaultKnownRoomTypes(Path file) throws IOException {
-        Properties properties = new Properties();
-        for (Map.Entry<Integer, RoomType> entry : DEFAULT_ROOM_TYPES.entrySet()) {
-            properties.setProperty(Integer.toString(entry.getKey()), entry.getValue().name());
+    private static void writeRoomTypes(Path file, Properties properties) throws IOException {
+        if (DungeonRoomProject.enabled()) {
+            DungeonRoomProject.validateProject(KungConfig.get().dungeon.roomDataProjectDirectory());
         }
-
-        try (Writer writer = Files.newBufferedWriter(file, StandardCharsets.UTF_8)) {
-            properties.store(
-                writer,
-                "Kung dungeon scan room type hints. Format: coreHash=ROOM_TYPE. Types: START, NORMAL, RARE, YELLOW, PUZZLE, BLOOD, FAIRY, TRAP, UNKNOWN."
-            );
-        }
+        StringWriter writer = new StringWriter();
+        properties.store(writer,
+            "Kung dungeon scan room type hints. Format: coreHash=ROOM_TYPE. Types: START, NORMAL, RARE, YELLOW, PUZZLE, BLOOD, FAIRY, TRAP, UNKNOWN.");
+        DungeonRoomProject.write(file, writer.toString());
     }
 
     private static Path knownRoomTypesFile() {
-        return KungPaths.dungeonDataDirectory().resolve("known-room-types.properties");
+        return DungeonRoomProject.dataDirectory().resolve("known-room-types.properties");
     }
 }

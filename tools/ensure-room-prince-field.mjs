@@ -9,25 +9,12 @@ if (!file) {
   process.exit(2);
 }
 
+// Positive Princes cells in wiki revision 795866, including legacy aliases.
 const legacyPrinceRoomKeys = new Set([
-  "Big Red Flag",
-  "Bridges",
-  "Draw Bridge",
-  "Chambers",
   "Doors",
-  "Flags",
-  "Grass Ruin",
-  "Leaves",
-  "Market",
-  "Pirate",
-  "Quartz Knight",
-  "Red Blue",
-  "Red-Blue",
   "Skull",
-  "Sloth",
   "Super Tall",
   "Supertall",
-  "Waterfall",
   "Withermancer",
   "Withermancers",
 ].map(roomNameKey));

@@ -735,7 +735,7 @@
           ]
         }
       ],
-      "prince": true
+      "prince": false
     },
     {
       "name": "Mural",
@@ -878,7 +878,7 @@
           ]
         }
       ],
-      "prince": true
+      "prince": false
     },
     {
       "name": "Steps",
@@ -1990,7 +1990,7 @@
           ]
         }
       ],
-      "prince": true
+      "prince": false
     },
     {
       "name": "Withermancer",
@@ -2546,7 +2546,7 @@
           ]
         }
       ],
-      "prince": true
+      "prince": false
     },
     {
       "name": "Cobble Wall Pillar",
@@ -2826,7 +2826,7 @@
           ]
         }
       ],
-      "prince": true
+      "prince": false
     },
     {
       "name": "Lava Ravine",
@@ -3523,7 +3523,7 @@
           ]
         }
       ],
-      "prince": true
+      "prince": false
     },
     {
       "name": "Grand Library",
@@ -4138,7 +4138,7 @@
           ]
         }
       ],
-      "prince": true
+      "prince": false
     },
     {
       "name": "Pressure Plates",
@@ -4568,7 +4568,7 @@
           ]
         }
       ],
-      "prince": true
+      "prince": false
     },
     {
       "name": "Spider",
@@ -5074,7 +5074,7 @@
           ]
         }
       ],
-      "prince": true
+      "prince": false
     },
     {
       "name": "Melon",
@@ -5401,7 +5401,7 @@
           ]
         }
       ],
-      "prince": true
+      "prince": false
     },
     {
       "name": "Well",
@@ -6214,7 +6214,7 @@
           ]
         }
       ],
-      "prince": true
+      "prince": false
     },
     {
       "name": "Buttons",
@@ -6465,6 +6465,32 @@
         }
       ],
       "prince": false
+    },
+    {
+      "name": "Lava Pit",
+      "type": "RARE",
+      "secrets": 0,
+      "crypts": 0,
+      "prince": false,
+      "variants": [
+        {
+          "components": [
+            {
+              "dx": 0,
+              "dz": 0,
+              "hashes": [
+                {
+                  "core": -1005518830,
+                  "stable": 1296131753,
+                  "seen": 1,
+                  "updatedAt": 1789147845249,
+                  "source": "profile-observation-2026-09-11; rare-lava-pit-identified-by-user-2026-09-18"
+                }
+              ]
+            }
+          ]
+        }
+      ]
     },
     {
       "name": "Mini Rail Track",
@@ -7246,7 +7272,7 @@
       "secrets": 6,
       "crypts": 2,
       "variants": [],
-      "prince": true
+      "prince": false
     },
     {
       "name": "Criss Cross",

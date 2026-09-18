@@ -96,7 +96,10 @@ public final class UiTextField {
     }
 
     public boolean mouseClicked(MouseButtonEvent event, boolean doubleClick) {
-        return control.mouseClicked(event, doubleClick);
+        boolean handled = control.mouseClicked(event, doubleClick);
+        // These fields are routed manually, outside Screen's child-widget focus handling.
+        if (handled) control.setFocused(true);
+        return handled;
     }
 
     public boolean mouseDragged(MouseButtonEvent event, double dragX, double dragY) {

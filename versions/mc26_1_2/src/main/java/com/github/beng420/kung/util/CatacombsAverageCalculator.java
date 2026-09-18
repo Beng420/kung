@@ -1,7 +1,6 @@
 package com.github.beng420.kung.util;
 
 import com.github.beng420.kung.skyblock.SkyBlockMayorTracker;
-import java.text.NumberFormat;
 import java.time.Instant;
 import java.util.EnumMap;
 import java.util.List;
@@ -10,7 +9,7 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
 public final class CatacombsAverageCalculator {
-    private static final NumberFormat INTEGER_FORMAT = NumberFormat.getIntegerInstance(Locale.US);
+    private static final long POST_50_XP = 200_000_000L;
     private static final DungeonClass[] CLASSES = DungeonClass.values();
     private static final double[] HECATOMB_BONUSES = {
         0.0, 0.0056, 0.0072, 0.0088, 0.0104, 0.012, 0.0136, 0.0152, 0.0168, 0.0184, 0.02
@@ -71,10 +70,10 @@ public final class CatacombsAverageCalculator {
         }
         Breakdown breakdown = calculateBreakdown(profile.classXp(), classXpPerRun);
         long cataXpPerRun = catacombsXpPerRun();
-        long cataRuns = runsToCatacombs(profile, cataXpPerRun);
+        long cataRuns = runsToCatacombs(profile.cataXp(), 50, cataXpPerRun);
         String message = goal == Goal.CATACOMBS_50
-            ? catacombsSummaryLine(player.name(), cataRuns)
-            : classAverageSummaryLine(player.name(), breakdown);
+            ? catacombsSummaryLine(player.name(), "M7", 50, cataRuns)
+            : classAverageSummaryLine(player.name(), "M7", breakdown);
         return Result.ok(message,
             resultDebug(player, profile, breakdown, cataRuns, cataXpPerRun, classXpPerRun, requestDebug, adjusted.debugDetails(), goal));
     }
@@ -122,20 +121,29 @@ public final class CatacombsAverageCalculator {
         return (long) Math.ceil(baseXp * cataMultiplier * (1.0 + globalBonus) - 0.0000001);
     }
 
-    private long runsToCatacombs(ProfileData profile, long cataXpPerRun) {
-        double remaining = xpForLevel(50) - profile.cataXp();
-        return remaining <= 0.0 ? 0L : (long) Math.ceil(remaining / Math.max(1L, cataXpPerRun));
+    public static long runsToCatacombs(double currentXp, int targetLevel, long xpPerRun) {
+        double remaining = xpForLevel(targetLevel) - currentXp;
+        return remaining <= 0.0 ? 0L : xpPerRun <= 0 ? Long.MAX_VALUE : (long) Math.ceil(remaining / xpPerRun);
     }
 
     public static Breakdown calculateBreakdown(
         Map<DungeonClass, Double> currentClassXp,
         Map<DungeonClass, Double> classXpPerRun
     ) {
+        return calculateBreakdown(currentClassXp, classXpPerRun, 50);
+    }
+
+    public static Breakdown calculateBreakdown(
+        Map<DungeonClass, Double> currentClassXp,
+        Map<DungeonClass, Double> classXpPerRun,
+        int targetLevel
+    ) {
+        long targetXp = xpForLevel(targetLevel);
         EnumMap<DungeonClass, Double> remaining = new EnumMap<>(DungeonClass.class);
         EnumMap<DungeonClass, Long> perClass = new EnumMap<>(DungeonClass.class);
         double totalRemaining = 0.0;
         for (DungeonClass dungeonClass : CLASSES) {
-            double xp = Math.max(0.0, xpForLevel(50) - currentClassXp.getOrDefault(dungeonClass, 0.0));
+            double xp = Math.max(0.0, targetXp - currentClassXp.getOrDefault(dungeonClass, 0.0));
             remaining.put(dungeonClass, xp);
             perClass.put(dungeonClass, 0L);
             totalRemaining += xp;
@@ -246,21 +254,21 @@ public final class CatacombsAverageCalculator {
         return best;
     }
 
-    private String classAverageSummaryLine(String playerName, Breakdown breakdown) {
-        java.util.ArrayList<String> parts = new java.util.ArrayList<>();
-        for (DungeonClass dungeonClass : CLASSES) {
-            long runs = breakdown.perClass(dungeonClass);
-            if (runs > 0L) {
-                parts.add(format(runs) + " " + dungeonClass.label());
-            }
-        }
-        String classPart = parts.isEmpty() ? "0 class-specific runs" : String.join(", ", parts);
-        return "It will take " + format(breakdown.total()) + " M7 runs for " + playerName
-            + " to reach Class Average 50 (" + classPart + ")";
+    public static String classAverageSummaryLine(String playerName, String floor, Breakdown breakdown) {
+        return classAverageSummaryLine(playerName, floor, 50, breakdown);
     }
 
-    private String catacombsSummaryLine(String playerName, long runs) {
-        return "It will take " + format(runs) + " M7 runs for " + playerName + " to reach Catacombs 50";
+    public static String classAverageSummaryLine(String playerName, String floor, int targetLevel, Breakdown breakdown) {
+        java.util.ArrayList<String> parts = new java.util.ArrayList<>();
+        for (DungeonClass dungeonClass : CLASSES) {
+            parts.add(dungeonClass.label().substring(0, 4) + " " + format(breakdown.perClass(dungeonClass)));
+        }
+        return playerName + " is " + format(breakdown.total()) + " " + floor
+            + " runs away from ca" + targetLevel + " (" + String.join(" | ", parts) + ")";
+    }
+
+    public static String catacombsSummaryLine(String playerName, String floor, int targetLevel, long runs) {
+        return playerName + " is " + format(runs) + " " + floor + " runs away from c" + targetLevel;
     }
 
     private static String resultDebug(
@@ -310,12 +318,22 @@ public final class CatacombsAverageCalculator {
         return builder.toString();
     }
 
-    private static long xpForLevel(int level) {
-        return CATACOMBS_XP[Math.clamp(level, 0, CATACOMBS_XP.length - 1)];
+    public static long xpForLevel(int level) {
+        return level <= 50 ? CATACOMBS_XP[Math.max(0, level)] : CATACOMBS_XP[50] + (level - 50L) * POST_50_XP;
+    }
+
+    public static double levelFromXp(double xp) {
+        if (xp >= xpForLevel(50)) return 50.0 + (xp - xpForLevel(50)) / POST_50_XP;
+        for (int level = 0; level < 50; level++) {
+            long current = xpForLevel(level);
+            long next = xpForLevel(level + 1);
+            if (xp < next) return level + Math.max(0.0, xp - current) / (next - current);
+        }
+        return 50.0;
     }
 
     private static String format(long value) {
-        return INTEGER_FORMAT.format(value);
+        return value == Long.MAX_VALUE ? "infinite" : Long.toString(value);
     }
 
     private static boolean validUsername(String value) {

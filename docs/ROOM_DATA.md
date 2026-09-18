@@ -2,7 +2,7 @@
 
 Bundled/canonical room data uses `known-rooms.json`.
 Kung can still import old `known-rooms.jsonl` files for migration, but active 26er profiles should store learned room data in JSON only.
-Runtime always loads bundled Jar room data. Local profile room data is an opt-in development/override layer behind the Dungeon Map `Local Data` setting, so stale files in a Modrinth profile cannot silently change normal player matching.
+Runtime normally loads bundled Jar room data. Local profile room data is an opt-in development/override layer behind the Dungeon Map `Local Data` setting, so stale files in a Modrinth profile cannot silently change normal player matching. An explicitly linked development project instead supplies the editable room data directly; see [automatic project saving](#automatic-project-saving).
 
 Since 0.2.16, optional local/remote room files live under
 `config/kung/dungeon-data/` in the game profile. The old `kung-dungeon-scans/`
@@ -15,9 +15,24 @@ The user-selected primary reference for room names, secret counts, shapes, crypt
 
 The saved comparison table is [reference/catacombs-rooms.json](reference/catacombs-rooms.json). Its source, revision, interpretation notes, and readable table are documented in [CATACOMBS_ROOMS_REFERENCE.md](CATACOMBS_ROOMS_REFERENCE.md). Keep this reference separate from runtime `known-rooms.json`: it provides factual metadata for review, not observed room hashes or an automatic import into the mod.
 
+The September 18, 2026 audit rechecked the live page (still revision 795866).
+Only `Doors`, `Skull`, `Withermancer` (one each) and `Supertall` (two) have positive
+counts in the **Princes** column. The bundled boolean is true for those four rooms.
+`Big Red Flag`, `Bridges`, `Chambers`, `Flags`, `Grass Ruin`, `Leaves`, `Market`,
+`Pirate`, `Quartz Knight`, `Red Blue`, `Sloth` and `Waterfall` were corrected to
+false: the selected source does not list a Prince there. Empty source cells remain
+empty in the reference; false in the runtime catalog means no source-backed Prince
+marker, not independent live confirmation of absence. Crypt totals and Revive Stones
+are not Prince evidence. Legacy fallbacks, aliases and maintenance tools use the
+same four positive rooms. `tools/check-prince-rooms.mjs` validates boolean flags and
+reports differences from that wiki baseline; add `--wiki-strict` to fail on differences.
+Deliberate in-game corrections may differ from the saved wiki reference.
+No other metadata, variants or hashes changed in this audit. `Ritual` remains absent
+from the catalog because the wiki provides no observed hashes for its identity.
+
 On September 11, 2026, the user confirmed the existing mod crypt totals for `Admin` (34) and `Buttons` (21). These are verified project values and remain unchanged. The wiki snapshot retains its original `[Confirm]` markers as source attribution; those markers do not make these two project values uncertain. `tools/check-room-crypts.mjs` checks both totals for missing entries and mismatches alongside the other crypt expectations, targeting the active `mc26_1_2` module only.
 
-The wiki marks the page as work in progress. Preserve duplicate rows and conflicting values for review rather than silently choosing one. In the saved September 11 reference, `Lava Pit` appears twice with 3 secrets in both rows but different crypt counts. There is no `Lava Pool` entry and the page supplies no Kung core/stable hashes. The locally learned `Lava Pool` core `-1005518830` therefore cannot be renamed to `Lava Pit`, or assigned its secret count, on name similarity alone; identify the actual room using in-game observations before changing runtime data.
+The wiki marks the page as work in progress. Preserve duplicate rows and conflicting values for review rather than silently choosing one. In the saved September 11 reference, `Lava Pit` appears twice with 3 secrets in both rows but different crypt counts. There is no `Lava Pool` entry and the page supplies no Kung core/stable hashes. On September 18 the user identified the previously unlabelled Rare room as a separate Lava Pit; this observation, not the wiki name, establishes its identity. Secrets and crypts remain unverified and use the user's requested 0/0 placeholders.
 
 ## Canonical Format
 
@@ -72,8 +87,9 @@ The wiki marks the page as work in progress. Preserve duplicate rows and conflic
 
 Canonical metadata rules:
 
-- `RARE` is a separate blue map type with ordinary room/door/clear mechanics. Eight matched Rare names use this type; legacy `NORMAL`/`UNKNOWN` records for those names are upgraded when loaded. Existing secrets, crypts, Prince flags and hashes stay unchanged. The duplicated wiki name `Lava Pit` was incorrectly applied to the bundled normal room: the user corrected this on 2026-09-12. Bundled `Lava Pit` and its existing aliases `Lava Skull`/`Lava Tomb` stay `NORMAL`; mistaken `RARE` imports and remote reports are repaired on read. The separately confirmed type-only Rare hash remains separate.
-- User-confirmed Rare core `-1005518830` is bundled as a type-only hint. Its locally saved name `Lava Pool` and 2 secrets remain unverified and are not imported into the bundled catalog. A type-only room renders blue with `?` until a room identity is known. Existing local/remote metadata can still supply its label without downgrading the confirmed blue type.
+- `RARE` is a separate blue map type with ordinary room/door/clear mechanics. Eight unambiguous Rare names promote legacy `NORMAL`/`UNKNOWN` records on load. `Lava Pit` additionally has two distinct entries: the established NORMAL room (3 secrets, 1 crypt) and the user-identified RARE room (0 secrets, 0 crypts as placeholders). Their shared name does not imply shared geometry or metadata. `Lava Skull`/`Lava Tomb` remain aliases of the NORMAL room.
+- Rare Lava Pit uses core `-1005518830` / stable `1296131753`, originally observed on September 11 and stored under the unverified name `Lava Pool`. The 01:18 September 18 trace shows an unlabelled, physically scanned RARE room at cell `1,4`, later visited and cleared. Its exact hashes are not retained in that trace; the association follows from the only configured RARE type-only hash in both bundled and profile type files, together with the user's identification. The new entry uses those already observed hashes, not generated wiki hashes. The old local 2-secret claim is not imported. Verify the label on the next live encounter; 0/0 is intentionally not a verified total and can undercount catalogue estimates until corrected.
+- Erroneous older RARE records for the normal Lava Pit are repaired only when one of its known core/stable hashes proves that identity. JSON/legacy imports and local observations retain the repair without collapsing the separate Rare metadata. A remote Lava Pit reported as RARE stays RARE without local hash evidence; an observed NORMAL hash corrects that report. Normal and Rare rooms keep separate owners and clear credit, even when adjacent. Normal builds do not modify any profile files.
 - Learning accepts `rare`, for example `/kung room learn Example 2 rare`; `/kung room type rare` learns only the current room type and refreshes the map immediately.
 - `Blaze` is `PUZZLE` with `secrets=1`.
 - Puzzle rooms with no wiki-listed secrets, including `Ice Path`, use `secrets=0`.
@@ -85,6 +101,64 @@ Canonical metadata rules:
 - Pre-run observations survive the countdown. Matching refreshes when either the raw or stable hash changes. Same-cell transitions into directly known rooms also create session-only preload hints keyed by both hashes; conflicting pairs are rejected. These hints do not change bundled data or bypass the Local Data setting for profile files.
 - Matching is core-first: once a room cell has a known `core` or `stable` hash, Kung can label that cell even when the full multi-cell shape is incomplete.
 - Adjacent known cells are only grouped when they have the same room metadata and no visible door between them; groups over 4 cells are split into one-cell matches instead of drawing a huge fake room.
+
+## Manual Prince corrections
+
+Stand in a recognized Catacombs room and run `/kung room prince true` or
+`/kung room prince false`. The local confirmation names the room and its type.
+The setting applies immediately to every variant of that room and survives
+restarts. Unknown rooms and positions outside the Catacombs room grid are rejected.
+
+Explicit corrections live in `config/kung/kung.json`, under
+`dungeonMap.princeRoomOverrides`, keyed by normalized name, type and secret count.
+They work with Local Data off and take precedence after bundled/local/remote
+metadata normalization, including both true and false. NORMAL and RARE Lava Pit
+remain separate. Templates, preload hints and existing session aliases all use the
+override; catalog revision invalidation refreshes the map without rescanning.
+The command changes Prince metadata only, not hashes, crypt counts, secret counts
+or the run's Prince-kill bonus. It does not upload a report. With a linked project,
+the exact project room record is updated first; profile overrides do not shadow
+the linked data. Explicit true and false values survive alias normalization and
+subsequent builds, including rooms recognized only through preload hints.
+
+## Automatic project saving
+
+Link the checkout once in the game using:
+
+```text
+/kung room project D:/Downloads/macros/kung
+```
+
+The validated absolute path persists in `config/kung/kung.json` under
+`dungeonMap.roomDataProjectDirectory`. It defaults to empty/off. Paths with spaces
+are accepted, with optional enclosing quotes. `/kung room project` (or `status`)
+shows the link; `/kung room project off` returns to ordinary profile behavior.
+
+While linked, room commands and automatic learning read and write
+`versions/mc26_1_2/src/main/resources/kung-dungeon-scans/` directly:
+
+- `known-rooms.json`: new `/kung room learn`, `look` and `learnmulti` observations,
+  automatically learned stable hashes, Prince/crypt corrections, deletion and undo.
+- `known-room-types.properties`: `/kung room type` hints and deletion cleanup.
+- `known-room-preloads.jsonl`: repeated observed hash transitions. New observations
+  carry `observed: true` and still need two agreeing observations, even after
+  packaging in a JAR; older curated hints retain their existing trust level.
+
+The linked project is authoritative even with Local Data off. It is not seeded
+with stale JAR, profile or remote data, and linking does not import earlier profile
+learning or Prince overrides. Live run sync remains independent; remote room
+cache and undo history stay in the profile. All untouched JSON metadata, variant
+IDs and hash source labels are retained. New observations merge only into the
+matching name/type/secret-count identity, preserving both Lava Pit entries.
+Unknown rooms still need a name/type/secret count through the existing learning
+commands; scanning cannot infer a new room's identity.
+
+Writes replace files atomically and reject missing or invalid project databases;
+they do not recreate a moved checkout or fall back to overwriting it with JAR
+data. Manual failures are reported in chat, automatic failures in `latest.log`.
+Do not run two clients that write the same checkout concurrently. Project writes
+occur at learning/edit time; ordinary builds do not sync profiles or install a JAR.
+The next build packages the saved resource files for use without the project link.
 
 ## Converting Current Data
 

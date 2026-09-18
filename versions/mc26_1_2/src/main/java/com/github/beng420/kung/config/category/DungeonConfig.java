@@ -2,6 +2,8 @@ package com.github.beng420.kung.config.category;
 
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.util.HashMap;
+import java.util.Map;
 
 public final class DungeonConfig extends ConfigCategory {
     private boolean enabled = false;
@@ -14,6 +16,7 @@ public final class DungeonConfig extends ConfigCategory {
     private boolean showLegend = false;
     private boolean showInBoss = true;
     private boolean princeIconsEnabled = true;
+    private Map<String, Boolean> princeRoomOverrides = new HashMap<>();
     private boolean mimicEspEnabled = false;
     private boolean iceSprayHighlightEnabled = false;
     private int iceSprayBoxSize = 100;
@@ -34,6 +37,7 @@ public final class DungeonConfig extends ConfigCategory {
     private boolean debugRoomCrypts = false;
     private boolean debugRoomMatches = false;
     private boolean localRoomDataEnabled = false;
+    private String roomDataProjectDirectory = "";
     private boolean fiveCryptPartyMessageEnabled = false;
     private String fiveCryptPartyMessage = "We got all 5 crypts (✿◠‿◠)";
     private boolean cryptProgressPartyMessageEnabled = false;
@@ -62,6 +66,14 @@ public final class DungeonConfig extends ConfigCategory {
     public void setShowInBoss(boolean value) { showInBoss = value; save(); }
     public boolean princeIconsEnabled() { return princeIconsEnabled; }
     public void setPrinceIconsEnabled(boolean value) { princeIconsEnabled = value; save(); }
+    public Boolean roomPrinceOverride(String roomKey) {
+        return princeRoomOverrides == null ? null : princeRoomOverrides.get(roomKey);
+    }
+    public void setRoomPrinceOverride(String roomKey, boolean prince) {
+        if (princeRoomOverrides == null) princeRoomOverrides = new HashMap<>();
+        princeRoomOverrides.put(roomKey, prince);
+        save();
+    }
     public boolean mimicEspEnabled() { return mimicEspEnabled; }
     public void setMimicEspEnabled(boolean value) { mimicEspEnabled = value; save(); }
     public boolean iceSprayHighlightEnabled() { return iceSprayHighlightEnabled; }
@@ -102,6 +114,11 @@ public final class DungeonConfig extends ConfigCategory {
     public void setDebugRoomMatches(boolean value) { debugRoomMatches = value; save(); }
     public boolean localRoomDataEnabled() { return localRoomDataEnabled; }
     public void setLocalRoomDataEnabled(boolean value) { localRoomDataEnabled = value; save(); }
+    public String roomDataProjectDirectory() { return roomDataProjectDirectory == null ? "" : roomDataProjectDirectory; }
+    public void setRoomDataProjectDirectory(String value) {
+        roomDataProjectDirectory = value == null ? "" : value.strip();
+        save();
+    }
     public boolean fiveCryptPartyMessageEnabled() { return fiveCryptPartyMessageEnabled; }
     public void setFiveCryptPartyMessageEnabled(boolean value) { fiveCryptPartyMessageEnabled = value; save(); }
     public String fiveCryptPartyMessage() { return getFiveCryptPartyMessage(); }

@@ -86,6 +86,67 @@ public final class DungeonStatisticsSourcesTest {
         assertNotEquals(301, stats.score());
     }
 
+    @Test public void recordedSeptember18RunCountsGhostMessagesWithoutCountingRevives() {
+        var stats = new DungeonRunStats();
+        var names = List.of("Beng114", "_FabledHyperion_", "FLC_x1", "Frostelle", "Loveisla");
+        for (int i = 1; i < names.size(); i++) stats.rememberSelf(new UUID(0, i + 1), names.get(i));
+        stats.rememberSelf(SELF, names.getFirst());
+        // Received chat from the matching latest.log fills the rate-limited trace's message gaps.
+        String messages = """
+            15:35:09|0|❣ You are reviving _FabledHyperion_!
+            15:35:09|1|☠ _FabledHyperion_ disconnected and became a ghost.
+            15:35:19|1|☠ _FabledHyperion_ reconnected.
+            15:35:20|1|❣ FLC_x1 is reviving _FabledHyperion_!
+            15:35:28|1|❣ _FabledHyperion_ was revived by FLC_x1!
+            15:36:06|2|☠ _FabledHyperion_ was killed by Stormy Skull and became a ghost.
+            15:36:22|2|❣ FLC_x1 is reviving _FabledHyperion_!
+            15:36:28|2|❣ _FabledHyperion_ was revived by FLC_x1!
+            15:36:42|3|☠ _FabledHyperion_ was killed by Stormy Mute and became a ghost.
+            15:36:54|4|☠ FLC_x1 was killed by Withermancer and became a ghost.
+            15:36:55|4|❣ FLC_x1 is reviving FLC_x1!
+            15:37:01|4|❣ FLC_x1 was revived by FLC_x1!
+            15:37:05|4|❣ _FabledHyperion_ was revived by Tyene the Fairy!
+            15:37:51|5|☠ _FabledHyperion_ was killed by Maxor and became a ghost.
+            15:37:51|5|❣ FLC_x1 is reviving _FabledHyperion_!
+            15:37:59|5|❣ _FabledHyperion_ was revived by FLC_x1!
+            15:38:00|6|☠ You were killed by Maxor and became a ghost.
+            15:38:00|6|Your Revive Stone revived you and broke!
+            15:38:04|7|☠ Frostelle was killed by Maxor and became a ghost.
+            15:38:06|7|❣ Beng114 was revived by Beng114!
+            15:38:07|8|☠ Loveisla was killed by Maxor and became a ghost.
+            15:38:10|8|❣ Loveisla is reviving Loveisla!
+            15:38:11|9|☠ _FabledHyperion_ disconnected and became a ghost.
+            15:38:11|9|❣ Frostelle was revived by Frostelle!
+            15:38:12|10|☠ You were killed by Maxor and became a ghost.
+            15:38:12|10|Your Revive Stone revived you and broke!
+            15:38:15|10|❣ Loveisla was revived by Loveisla!
+            15:38:19|10|❣ Beng114 was revived by Beng114!
+            15:38:25|11|☠ You died to a mob and became a ghost.
+            15:38:25|12|☠ FLC_x1 was killed by Maxor and became a ghost.
+            15:38:34|13|☠ Loveisla was killed by Maxor and became a ghost.
+            15:38:41|13|❣ Loveisla was revived by Loveisla!
+            15:38:53|13|❣ FLC_x1 was revived by FLC_x1!
+            15:39:11|14|☠ FLC_x1 was killed by Storm and became a ghost.
+            15:39:22|15|☠ Loveisla was killed by Storm and became a ghost.
+            15:39:29|15|❣ Loveisla was revived by Loveisla! §8(§7x§r2§8)
+            15:39:30|16|☠ Loveisla died to a mob and became a ghost.
+            15:39:47|16|❣ FLC_x1 was revived by FLC_x1!
+            15:39:51|17|☠ Frostelle was killed by Storm and became a ghost.
+            15:39:58|18|☠ FLC_x1 was killed by Storm and became a ghost.
+            """;
+        for (String line : messages.lines().toList()) {
+            String[] fields = line.split("\\|", 3);
+            long tick = java.time.LocalTime.parse(fields[0]).toSecondOfDay() * 20L;
+            stats.observeMessage(null, fields[2], tick);
+            assertEquals(line, Integer.parseInt(fields[1]), stats.deaths());
+        }
+        assertEquals(5, stats.dungeonPlayersInOrder().size());
+        int[] expectedDeaths = {3, 5, 4, 2, 4};
+        for (int i = 0; i < names.size(); i++) {
+            assertEquals(names.get(i), expectedDeaths[i], stats.playerStats(new UUID(0, i + 1)).deaths());
+        }
+    }
+
     @Test public void onlyKnownPlayersOwnSyncReportsCanSupplyPersonalSecrets() {
         var stats = run();
         stats.playerStats(SELF).setApiRunSecretsFound(7);

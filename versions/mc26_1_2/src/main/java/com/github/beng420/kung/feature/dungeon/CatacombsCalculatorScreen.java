@@ -1,5 +1,7 @@
 package com.github.beng420.kung.feature.dungeon;
 
+import static com.github.beng420.kung.util.CatacombsAverageCalculator.levelFromXp;
+
 import com.github.beng420.kung.KungMod;
 import com.github.beng420.kung.util.CatacombsAverageCalculator;
 import com.github.beng420.kung.util.CatacombsAverageCalculator.Breakdown;
@@ -44,65 +46,12 @@ public final class CatacombsCalculatorScreen extends Screen {
     private static final UiNumberField HECATOMB_LEVEL = new UiNumberField(0, 10, 1);
     private static final UiNumberField GRADUATE_LEVEL = new UiNumberField(0, 10, 1);
     private static final UiNumberField EXPLORER_LEVEL = new UiNumberField(0, 10, 1);
-    private static final UiNumberField TARGET_LEVEL = new UiNumberField(1, 50, 1);
+    private static final UiNumberField TARGET_LEVEL = new UiNumberField(1, 200, 1);
     private static final UiNumberField CLASS_PERK_LEVEL = new UiNumberField(0, 5, 1);
     private static final NumberFormat INTEGER_FORMAT = NumberFormat.getIntegerInstance(Locale.GERMANY);
     private static final DungeonClass[] CLASSES = DungeonClass.values();
     private static final double[] HECATOMB_BONUSES = {
         0.0, 0.0056, 0.0072, 0.0088, 0.0104, 0.012, 0.0136, 0.0152, 0.0168, 0.0184, 0.02
-    };
-    private static final long[] CATACOMBS_XP = {
-        0L,
-        50L,
-        125L,
-        235L,
-        395L,
-        625L,
-        955L,
-        1_425L,
-        2_095L,
-        3_045L,
-        4_385L,
-        6_275L,
-        8_940L,
-        12_700L,
-        17_960L,
-        25_340L,
-        35_640L,
-        50_040L,
-        70_040L,
-        97_640L,
-        135_640L,
-        188_140L,
-        259_640L,
-        356_640L,
-        488_640L,
-        668_640L,
-        911_640L,
-        1_239_640L,
-        1_684_640L,
-        2_284_640L,
-        3_084_640L,
-        4_149_640L,
-        5_559_640L,
-        7_459_640L,
-        9_959_640L,
-        13_259_640L,
-        17_559_640L,
-        23_159_640L,
-        30_359_640L,
-        39_559_640L,
-        51_559_640L,
-        66_559_640L,
-        85_559_640L,
-        109_559_640L,
-        139_559_640L,
-        177_559_640L,
-        225_559_640L,
-        285_559_640L,
-        360_559_640L,
-        453_559_640L,
-        569_809_640L
     };
 
     private long loadRequestId;
@@ -123,6 +72,7 @@ public final class CatacombsCalculatorScreen extends Screen {
     private int explorerLevel = 10;
     private boolean explorerPreset = true;
     private int targetCatacombsLevel = 50;
+    private int targetClassLevel = 50;
     private MayorBoost manualMayorBoost;
     private boolean autoLoadStarted;
     private boolean copiedClassAverage;
@@ -139,24 +89,31 @@ public final class CatacombsCalculatorScreen extends Screen {
 
     @Override
     protected void init() {
-        String name = initialUsername;
-        if (name.isBlank() && Minecraft.getInstance().player != null) {
-            name = Minecraft.getInstance().player.getName().getString();
+        if (usernameBox == null) {
+            String name = initialUsername;
+            if (name.isBlank() && Minecraft.getInstance().player != null) {
+                name = Minecraft.getInstance().player.getName().getString();
+            }
+            usernameBox = new UiTextField(font, Component.literal("Username"))
+                .maxLength(16)
+                .textShadow(true);
+            usernameBox.setValue(name);
         }
-        usernameBox = new UiTextField(font, Component.literal("Username"))
-            .maxLength(16)
-            .textShadow(true);
-        usernameBox.setValue(name);
         layoutUsernameBox();
-        if (!autoLoadStarted && !name.isBlank()) {
+        if (!autoLoadStarted && !usernameBox.value().isBlank()) {
             autoLoadStarted = true;
-            loadPlayer(name);
+            loadPlayer(usernameBox.value());
         }
     }
 
     @Override
     public boolean isPauseScreen() {
         return false;
+    }
+
+    @Override
+    public void removed() {
+        if (usernameBox != null) usernameBox.setFocused(false);
     }
 
     @Override
@@ -357,6 +314,9 @@ public final class CatacombsCalculatorScreen extends Screen {
             romanLevel(explorerLevel) + " (" + explorerLevel + "%)", mouseX, mouseY,
             () -> setExplorerLevel(EXPLORER_LEVEL.decrement(explorerLevel)),
             () -> setExplorerLevel(EXPLORER_LEVEL.increment(explorerLevel)));
+        drawControl(graphics, rightX, rowY, columnWidth, "Target level (each class)", String.valueOf(targetClassLevel), mouseX, mouseY,
+            () -> targetClassLevel = TARGET_LEVEL.decrement(targetClassLevel),
+            () -> targetClassLevel = TARGET_LEVEL.increment(targetClassLevel));
         rowY += 44;
 
         drawMuted(graphics, "Class XP boost perks (Essence shop, each level +2%)", leftX, rowY);
@@ -386,11 +346,11 @@ public final class CatacombsCalculatorScreen extends Screen {
         resultY += ROW;
         Breakdown breakdown = calculation.breakdown();
         for (DungeonClass dungeonClass : CLASSES) {
-            drawKV(graphics, leftX + 12, resultY, panelWidth - 52, "Runs to " + dungeonClass.label() + " 50",
+            drawKV(graphics, leftX + 12, resultY, panelWidth - 52, "Runs to " + dungeonClass.label() + " " + calculation.classTargetLevel(),
                 breakdown == null ? "..." : runsLabel(breakdown.perClass(dungeonClass)), THEME.text());
             resultY += 15;
         }
-        drawKV(graphics, leftX + 12, resultY, panelWidth - 52, "Runs to Class Average 50",
+        drawKV(graphics, leftX + 12, resultY, panelWidth - 52, "Runs to all classes " + calculation.classTargetLevel(),
             breakdown == null ? "..." : runsLabel(breakdown.total()), THEME.text());
 
         rowY += resultHeight + 14;
@@ -477,7 +437,7 @@ public final class CatacombsCalculatorScreen extends Screen {
         graphics.text(font, value, x + barWidth - font.width(value), y, THEME.text(), true);
         int barY = y + 13;
         graphics.fill(x, barY, x + barWidth, barY + 5, THEME.panelDark());
-        double progress = level >= 50.0 ? 1.0 : level - Math.floor(level);
+        double progress = level - Math.floor(level);
         int fillWidth = (int) Math.round(barWidth * Math.clamp(progress, 0.0, 1.0));
         graphics.fill(x, barY, x + fillWidth, barY + 5, highlight ? THEME.warning() : THEME.accent());
         String xpLabel = compactXp(xp) + " XP";
@@ -712,11 +672,10 @@ public final class CatacombsCalculatorScreen extends Screen {
         Long runsToCatacombs = null;
         Breakdown breakdown = null;
         if (profile != null && profile.stats().available()) {
-            double remaining = xpForLevel(targetCatacombsLevel) - profile.cataXp();
-            runsToCatacombs = remaining <= 0.0 ? 0L : (long) Math.ceil(remaining / cataPerRun);
-            breakdown = CatacombsAverageCalculator.calculateBreakdown(profile.classXp(), classXpPerRun);
+            runsToCatacombs = CatacombsAverageCalculator.runsToCatacombs(profile.cataXp(), targetCatacombsLevel, cataPerRun);
+            breakdown = CatacombsAverageCalculator.calculateBreakdown(profile.classXp(), classXpPerRun, targetClassLevel);
         }
-        return new Calculation(cataPerRun, average, targetCatacombsLevel, runsToCatacombs, breakdown);
+        return new Calculation(cataPerRun, average, targetCatacombsLevel, targetClassLevel, runsToCatacombs, breakdown);
     }
 
     private void copyClassAverageSummary(Calculation calculation) {
@@ -735,29 +694,18 @@ public final class CatacombsCalculatorScreen extends Screen {
 
     private String classAverageSummaryLine(Calculation calculation) {
         if (loadedPlayer == null || calculation.breakdown() == null) {
-            return "[Kung] Load a player to calculate Class Average 50.";
+            return "[Kung] Load a player to calculate ca" + calculation.classTargetLevel() + ".";
         }
-        Breakdown breakdown = calculation.breakdown();
-        ArrayList<String> parts = new ArrayList<>();
-        for (DungeonClass dungeonClass : CLASSES) {
-            long runs = breakdown.perClass(dungeonClass);
-            if (runs > 0L && runs < Long.MAX_VALUE) {
-                parts.add(format(runs) + " " + dungeonClass.label());
-            }
-        }
-        String classPart = parts.isEmpty() ? "0 class-specific runs" : String.join(", ", parts);
-        return "[Kung] It will take " + runsLabel(breakdown.total()) + " " + selectedFloor.shortLabel()
-            + " runs for " + loadedPlayer.name()
-            + " to reach Class Average 50 (" + classPart + ")";
+        return "[Kung] " + CatacombsAverageCalculator.classAverageSummaryLine(
+            loadedPlayer.name(), selectedFloor.shortLabel(), calculation.classTargetLevel(), calculation.breakdown());
     }
 
     private String catacombsSummaryLine(Calculation calculation) {
         if (loadedPlayer == null || calculation.runsToCatacombs() == null) {
-            return "[Kung] Load a player to calculate Catacombs 50.";
+            return "[Kung] Load a player to calculate c" + calculation.targetLevel() + ".";
         }
-        return "[Kung] It will take " + runsLabel(calculation.runsToCatacombs()) + " " + selectedFloor.shortLabel()
-            + " runs for " + loadedPlayer.name()
-            + " to reach Catacombs " + calculation.targetLevel();
+        return "[Kung] " + CatacombsAverageCalculator.catacombsSummaryLine(
+            loadedPlayer.name(), selectedFloor.shortLabel(), calculation.targetLevel(), calculation.runsToCatacombs());
     }
 
     private MayorBoost currentMayorBoost() {
@@ -873,24 +821,6 @@ public final class CatacombsCalculatorScreen extends Screen {
             average += levelFromXp(profile.classXp(dungeonClass));
         }
         return average / CLASSES.length;
-    }
-
-    private static double levelFromXp(double xp) {
-        if (xp >= xpForLevel(50)) {
-            return 50.0;
-        }
-        for (int level = 0; level < 50; level++) {
-            long current = xpForLevel(level);
-            long next = xpForLevel(level + 1);
-            if (xp < next) {
-                return level + Math.max(0.0, xp - current) / Math.max(1.0, next - current);
-            }
-        }
-        return 50.0;
-    }
-
-    private static long xpForLevel(int level) {
-        return CATACOMBS_XP[Math.clamp(level, 0, CATACOMBS_XP.length - 1)];
     }
 
     private static String floorStat(Map<String, Integer> values, String floor) {
@@ -1123,6 +1053,7 @@ public final class CatacombsCalculatorScreen extends Screen {
         long cataPerRun,
         double averageClassPerRun,
         int targetLevel,
+        int classTargetLevel,
         Long runsToCatacombs,
         Breakdown breakdown
     ) {

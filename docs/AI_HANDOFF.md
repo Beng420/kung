@@ -3,7 +3,164 @@
 Entry point for Kung maintenance. Project rules: [AGENTS.md](../AGENTS.md).
 Read the [code map](CODE_MAP.md), then only the topic needed for the task.
 
-## Current state — 2026-09-17
+## Current state — 2026-09-18
+
+- The user explicitly requires one-click automatic updates in Modrinth. Removed
+  the blanket brand/IPC guard and the interim GitHub/browser-import action.
+  `Updates: Available` now downloads/verifies the compatible GitHub JAR and queues
+  the existing atomic replacement after Minecraft exits in every launcher. Pending
+  recovery is no longer rejected just because Modrinth launched the game. Size,
+  hashes, dependency validation, path confinement, backup and session locks remain.
+  Source comparison corrected the earlier assumption: installed Modrinth 0.20.5
+  rescans changed JAR hashes; the shared-store validation cited earlier belonged
+  to another development revision. The friend's original repair cause remains
+  unproven. Historical SkyHanni 4.0.0 also queues post-exit file replacement;
+  current SkyHanni beta has since disabled that action. No new library is needed.
+  One menu regression now checks automatic eligibility regardless of launcher;
+  a new hard-link test protects caches/other profiles, replacing four obsolete
+  launcher-blocking tests. Focused tests and full Java 25 build pass: 706 cases,
+  705 passed, one Windows symlink skip, no failures/errors; `git diff --check`
+  passes. The 0.4.0 JAR is built, not installed or published. Actual Modrinth
+  download/exit/relaunch remains a live check; old blocked clients need this fix
+  installed once before they can use the automatic path.
+  See [launcher updates](UPDATES.md#safe-installation-and-launcher-ownership--2026-09-16).
+
+- Splits > Time Prediction now has an independent Source choice: PB (default) or
+  AVG, retaining Phase End/Live updates. AVG uses each phase's mean from up to
+  20 confirmed finished runs per floor/mode in `splitsOverlay.recentRuns`.
+  Accurate enabled samples only; missing splits are omitted, aborted/manual runs
+  excluded, score-before-victory saved once on confirmation, late M7 classified
+  by the final floor. PB and AVG completion data share one config save.
+  `/kung splits` shows the selected floor's run count and Reset AVG, clearing
+  only that history while preserving PBs. Source changes/reset invalidate the
+  running forecast immediately; clocks and HUD layout stay unchanged.
+  Seven new regressions plus extended completion-order/settings tests pass.
+  Full Java 25 build: 708 cases, 707 passed, one Windows symlink skip, no
+  failures/errors; `git diff --check` passes. The 0.4.0 JAR is built, not installed.
+  Live Source selection, history/reset button and next-run HUD remain unchecked.
+  See [split prediction and history](RUN_STATISTICS.md#splits).
+
+- Calculator input now focuses its manually routed text field on click, retains
+  edits across resize and releases focus on close. Catacombs and each-class
+  targets are independently selectable from 1–200, default 50. Per the user's
+  explicit choice, CA51/52 requires every class to reach that level, with passive
+  XP retained. Shared XP/level functions support 200M XP per overflow level;
+  results, level displays and copied summaries follow the targets. Chat command
+  defaults remain C50/CA50. Four new calculation regressions, the focused
+  calculator/UI/chat suite and the full Java 25 build pass: 701 cases, 700 passed,
+  one Windows symlink skip, no failures/errors. `git diff --check` passes.
+  The 0.4.0 JAR is built, not installed. Live name editing and controls remain unchecked.
+  See [custom targets](CATACOMBS_CALCULATOR_FIXES.md#editable-player-and-custom-targets--2026-09-18).
+
+- CA50/C50 replies now use `Name is N M7 runs away from ca50 (...)` / `c50`.
+  CA50 lists `Arch | Bers | Heal | Mage | Tank`, including zeros, without
+  thousands separators. Calculator previews/copy buttons share these formatters
+  and retain their selected floor/target. The shared Kung prefix remains.
+  Focused calculator/chat tests and the full Java 25 build pass: 697 cases,
+  696 passed, one Windows symlink skip, no failures/errors; `git diff --check`
+  passes. The 0.4.0 JAR is built, not installed. Live chat/copy presentation
+  remains to be checked. See [calculator summaries](CATACOMBS_CALCULATOR_FIXES.md#chat-and-copied-summaries--2026-09-18).
+
+- Follow-up: Ice Spray boxes also fail on Skeletors/Withermancers and may flash
+  on Maxor; death is not a confirmed explanation. The 16:42:56 trace still comes
+  from the older profile JAR and has no target/render diagnostics. The 16:40 run
+  calculates 298 at 45/57 secrets with Prince/Bat but `mimic=false`, while Noamm
+  reports 300. A missing Mimic bonus explains two points numerically; available
+  evidence and the user do not confirm a kill. The final server 300 correctly
+  overrides Kung's estimate. A regression replays the observed score sequence;
+  no score adjustment or speculative highlight fix is applied. See
+  [score gap](RUN_STATISTICS.md#two-point-score-gap--2026-09-18-1640-run).
+  Focused tests and the full Java 25 build pass: 697 cases, 696 passed, one
+  Windows symlink skip, no failures/errors. `git diff --check` passes. The
+  existing 0.4.0 diagnostic JAR remains the artifact; it is not installed.
+
+- The 16:20:57 trace and screenshot report a missing Ice Spray box on a wither.
+  Four markers at 16:20:46 / tick 6219 resolve to one UUID, but the old log lacks
+  its type/health and rendering state. The user cannot establish first-frame
+  visibility because the boss died quickly while they were inside its model.
+  No root cause or gameplay fix is claimed. Bounded diagnostics now include
+  target details/expiry, nearest rejected candidates, highlight availability
+  changes and extracted/drawn box counts. Matching, expiry and rendering stay
+  unchanged. Debuff/recorder tests and full Java 25 build pass: 696 cases,
+  695 passed, one Windows symlink skip, no failures/errors; `git diff --check`
+  passes. The 0.4.0 diagnosis JAR was built, not installed. Reproduce and save
+  immediately with this build to distinguish wrong target, death/expiry and
+  missing rendering. See [boss box investigation](DUNGEON_DEBUFFS.md#missing-boss-box-2026-09-18-162057).
+
+- The user's Redstone Key fixed chest is now bundled alongside Buttons and Dueces:
+  local `18,69,29`, core `1786984420`, stable `1448328045`, 48 unchanged probes.
+  Existing captures are preserved. Rotation/hash/resource tests cover the third
+  pattern and retain extra chest candidates. The supplied 13:39:58 UTC trace's
+  suspected revive/death bug is not reproduced: the matching Minecraft log has
+  17 separate ghost messages before capture (including two disconnects), then
+  an 18th death after capture. A 40-message integration replay verifies each
+  transition, unchanged totals on revives and final counts 3/5/4/2/4. Production
+  death logic is unchanged; no authoritative server total of 12 is present.
+  Validation: focused tests and full Java 25 build pass, 696 cases, 695 passed,
+  one Windows symlink skip, no failures/errors. `git diff --check` passes.
+  Artifact: `versions/mc26_1_2/build/libs/kung-26.1.2-0.4.0.jar`; not installed.
+  Live recognition after restart and a simultaneous server Team Deaths comparison
+  remain open. See [static chests](MIMIC_STATIC_CHESTS.md) and
+  [death/revive evidence](RUN_STATISTICS.md#deathrevive-evidence--2026-09-18).
+
+- `/kung room project D:/Downloads/macros/kung` now persistently links room learning
+  to the active checkout's resource files. The link defaults off; `status`/no argument
+  shows it and `off` disables it. While linked, the project is authoritative even
+  with Local Data off: new room learns, stable hashes, repeated preload observations,
+  type hints, crypt/Prince corrections and delete/undo write directly to the project.
+  Linking does not import earlier profile data. Raw JSON edits preserve untouched
+  room metadata, variant IDs and hash source labels; writes use atomic replacement
+  and reject missing/malformed project data. Remote cache and undo history remain
+  in the profile. Normal builds do not sync or install anything.
+  `/kung room prince true|false` updates the currently recognized Catacombs room
+  immediately by name/type/secret-count identity; NORMAL/RARE Lava Pit stay separate.
+  Without a project link, the command saves profile overrides independent of Local
+  Data. With a link, project values take precedence, including hinted-only rooms;
+  explicit booleans survive alias defaults and subsequent builds. Catalog revision
+  changes refresh rendering without rescanning. Unknown rooms and positions outside
+  the room grid are rejected. New identities still need the existing learn commands.
+  Validation: focused room/project/config/command tests and full Java 25 build pass:
+  695 cases, 694 passed, one Windows symlink skip, zero failures/errors. Integration
+  tests cover fresh config reloads, exact JSON preservation, automatic learning with
+  Local Data off, two-observation preload trust, namesake deletion/undo and rejected
+  writes. Prince baseline audit and `git diff --check` pass. The 0.3.5 JAR was built,
+  not installed; live linking, command feedback, icons and learning need an in-game
+  check. See [automatic project saving](ROOM_DATA.md#automatic-project-saving).
+
+- The selected Catacombs Rooms wiki was rechecked live in the browser: revision
+  795866 still lists Prince only in Doors, Skull, Withermancer and Supertall.
+  Twelve unsupported bundled flags are now false: Big Red Flag, Bridges, Chambers,
+  Flags, Grass Ruin, Leaves, Market, Pirate, Quartz Knight, Red Blue, Sloth and
+  Waterfall. The Java fallback, Draw Bridge alias and maintenance scripts agree.
+  All other room metadata, 194 variants and 551 hashes were preserved, including
+  both Lava Pit identities. Empty wiki cells are not independent live proof of
+  absence; the catalog now marks only source-backed Prince rooms.
+  Validation: Prince audit passes (4 positive / 137 negative entries), no hash
+  conflicts, three maintenance tools pass isolated 20-name/alias checks, and ten
+  focused catalog/repository tests pass. Full Java 25 build: 674 cases, 673 passed,
+  one Windows symlink skip, zero failures/errors. Packaged JSON exactly matches
+  source. Crypt audit has zero mismatches but still reports the pre-existing
+  missing Ritual entry; no hash identity was invented. The 0.3.5 JAR was built,
+  not installed. Live Prince marker checks remain open. See [room data](ROOM_DATA.md).
+
+- The user identifies the unnamed RARE cell `1,4` in `kung-trace-20260918-011800.log`
+  as a separate Lava Pit with the same name as the existing NORMAL room. Its only
+  applicable configured RARE type hint is the previously observed core `-1005518830`
+  / stable `1296131753`; those hashes are not printed directly in the new trace.
+  The bundled catalog now labels that identity Lava Pit, RARE, with user-approved
+  0/0 secret/crypt placeholders. NORMAL Lava Pit retains its hashes and 3/1 metadata.
+  Repairs of old RARE mistags now require known NORMAL hashes; imports, peer data
+  and render ownership preserve both namesakes. Actual counts and the live label
+  remain to be verified. See [room data](ROOM_DATA.md).
+  The user deferred the uncertain score report: at 01:59:17 the other mod's party
+  message says 300, agreeing with Kung's 300 from 01:59:13. Neither new trace proves
+  the suspected +/-2 mismatch, and the score calculation was left unchanged.
+  Validation: focused catalog/render/repository tests and the full Java 25 build pass
+  (672 cases, 671 passed, one Windows symlink skip, no failures/errors); `git diff --check`
+  passes. The crypt audit finds zero mismatches, including both Lava Pits and the
+  unchanged Admin=34/Buttons=21 values, but exits nonzero because Ritual is missing
+  from the existing catalog (also absent in HEAD before this change). That separate
+  metadata gap was not filled speculatively. The 0.3.5 JAR was built, not installed.
 
 - `/kung splits` opens the Split Personal Bests editor with Entrance/F1–F7 and
   M1–M7 selectors. Each canonical phase has a saved value, constrained `mm:ss.mmm`
@@ -32,9 +189,9 @@ Read the [code map](CODE_MAP.md), then only the topic needed for the task.
   passes. The 0.3.5 JAR includes the new LocalPlayer hook and was not installed.
   Live spam/timing, inventory updates and list/HUD interaction remain open.
   See [Bow Draw Indicator](BOW_DRAW_INDICATOR.md).
-- Active module: Minecraft **26.1.2**, version **0.3.5**, Java **25**.
+- Active module: Minecraft **26.1.2**, version **0.4.0**, Java **25**.
   The version source is [gradle.properties](../gradle.properties).
-  The user's existing version change to 0.3.5 is preserved.
+  The user's existing version change to 0.4.0 is preserved.
 - The 22:16:08 trace explains the 299-versus-300 map score at boss entry:
   `Prince Killed` from party chat lacked the previously required `!`, so the
   Prince bonus stayed false. Optional punctuation now works for Prince, Mimic
@@ -350,9 +507,10 @@ Read the [code map](CODE_MAP.md), then only the topic needed for the task.
   keeps the original filename and backup, serializes installers and retries pending
   work after interrupted shutdowns without replacing an already loaded JAR at startup.
   Downloads enforce size/hash/ZIP integrity and mod/version/dependency checks.
-  Modrinth starts show **Updates: Use Modrinth** and cannot self-install: its managed
-  path/hash validation matches the supplied repair/re-import error. The friend's
-  precise failure remains unproven. Legacy markers are preserved but not executed.
+  The initial blanket Modrinth restriction was removed on 2026-09-18 after checking
+  released Modrinth 0.20.5: automatic updates use the same verified helper. The
+  friend's precise original failure remains unproven. Legacy markers are preserved
+  but not executed.
   The game session lock does not cover Fabric's earlier discovery during an immediate
   relaunch; live launcher/shutdown/restart checks and physical power loss remain open.
   No real game profile was changed. See [safe updates](UPDATES.md#safe-installation-and-launcher-ownership--2026-09-16).

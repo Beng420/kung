@@ -21,25 +21,12 @@ const CANONICAL_ROOMS = new Map([
   ["Blaze", { type: "PUZZLE", secrets: 1 }],
   ["Ice Path", { type: "PUZZLE", secrets: 1 }],
 ]);
+// Positive Princes cells in wiki revision 795866, including legacy aliases.
 const LEGACY_PRINCE_ROOM_KEYS = new Set([
-  "Big Red Flag",
-  "Bridges",
-  "Draw Bridge",
-  "Chambers",
   "Doors",
-  "Flags",
-  "Grass Ruin",
-  "Leaves",
-  "Market",
-  "Pirate",
-  "Quartz Knight",
-  "Red Blue",
-  "Red-Blue",
   "Skull",
-  "Sloth",
   "Super Tall",
   "Supertall",
-  "Waterfall",
   "Withermancer",
   "Withermancers",
 ].map(roomNameKey));

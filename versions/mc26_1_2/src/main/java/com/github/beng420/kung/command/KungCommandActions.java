@@ -11,6 +11,7 @@ import com.github.beng420.kung.feature.dungeon.DungeonDoorKind;
 import com.github.beng420.kung.feature.dungeon.DungeonKnownRoomCatalog;
 import com.github.beng420.kung.feature.dungeon.DungeonRoomDataSyncClient;
 import com.github.beng420.kung.feature.dungeon.DungeonRoomClassifier;
+import com.github.beng420.kung.feature.dungeon.DungeonRoomProject;
 import com.github.beng420.kung.feature.dungeon.DungeonScanUtils;
 import com.github.beng420.kung.feature.dungeon.DungeonSplitTracker;
 import com.github.beng420.kung.feature.dungeon.room.RoomType;
@@ -43,6 +44,47 @@ final class KungCommandActions {
     private KungCommandActions() {
     }
 
+    static int roomProjectStatus(CommandContext<FabricClientCommandSource> context) {
+        String project = KungConfig.get().dungeon.roomDataProjectDirectory();
+        context.getSource().sendFeedback(commandMessage(project.isBlank()
+            ? "Room project: off. Link with /kung room project <project folder>."
+            : "Room project: " + project + ". Room changes are saved directly to this project."));
+        return 1;
+    }
+
+    static int setRoomProject(CommandContext<FabricClientCommandSource> context) {
+        String input = StringArgumentType.getString(context, "path").trim();
+        if (input.length() >= 2 && input.startsWith("\"") && input.endsWith("\"")) {
+            input = input.substring(1, input.length() - 1);
+        }
+        try {
+            Path project = DungeonRoomProject.validateProject(input);
+            KungConfig.get().dungeon.setRoomDataProjectDirectory(project.toString());
+            DungeonKnownRoomCatalog.reload();
+            DungeonRoomClassifier.reload();
+            context.getSource().sendFeedback(commandMessage(
+                "Room project linked: " + project
+                    + ". Learned rooms, hashes and metadata changes are now saved directly to the project."
+            ));
+            return 1;
+        } catch (IOException | IllegalArgumentException exception) {
+            context.getSource().sendFeedback(commandMessage("Could not link room project: " + exception.getMessage()));
+            return 0;
+        }
+    }
+
+    static int disableRoomProject(CommandContext<FabricClientCommandSource> context) {
+        KungConfig.get().dungeon.setRoomDataProjectDirectory("");
+        DungeonKnownRoomCatalog.reload();
+        DungeonRoomClassifier.reload();
+        context.getSource().sendFeedback(commandMessage("Room project disabled. Room changes now stay in this game profile."));
+        return 1;
+    }
+
+    private static Component roomWriteMessage(String message, boolean saved) {
+        return commandMessage(message + (saved && DungeonRoomProject.enabled() ? " Saved to the linked project." : ""));
+    }
+
     static int learnRoomType(
         CommandContext<FabricClientCommandSource> context,
         DungeonStateTracker dungeonStateTracker
@@ -58,7 +100,7 @@ final class KungCommandActions {
         DungeonStateTracker.LearnRoomTypeResult result =
             dungeonStateTracker.learnCurrentRoomType(context.getSource().getClient(), roomType);
 
-        context.getSource().sendFeedback(commandMessage(result.message()));
+        context.getSource().sendFeedback(roomWriteMessage(result.message(), result.learned()));
         return result.learned() ? 1 : 0;
     }
 
@@ -105,7 +147,7 @@ final class KungCommandActions {
             input.secrets(),
             input.crypts()
         );
-        context.getSource().sendFeedback(commandMessage(result.message()));
+        context.getSource().sendFeedback(roomWriteMessage(result.message(), result.learned()));
         return result.learned() ? 1 : 0;
     }
 
@@ -138,7 +180,7 @@ final class KungCommandActions {
             input.secrets(),
             input.crypts()
         );
-        context.getSource().sendFeedback(commandMessage(result.message()));
+        context.getSource().sendFeedback(roomWriteMessage(result.message(), result.learned()));
         return result.learned() ? 1 : 0;
     }
 
@@ -152,7 +194,7 @@ final class KungCommandActions {
             DungeonKnownRoomCatalog.DeleteRoomResult result = input.hasExplicitMetadata()
                 ? DungeonKnownRoomCatalog.deleteRoom(input.name(), input.type(), input.secrets())
                 : DungeonKnownRoomCatalog.deleteRoom(input.name());
-            context.getSource().sendFeedback(commandMessage(result.message()));
+            context.getSource().sendFeedback(roomWriteMessage(result.message(), result.deleted()));
             return result.deleted() ? 1 : 0;
         } catch (java.io.IOException | IllegalArgumentException exception) {
             context.getSource().sendFeedback(commandMessage(
@@ -191,7 +233,7 @@ final class KungCommandActions {
             input.secrets(),
             input.crypts()
         );
-        context.getSource().sendFeedback(commandMessage(result.message()));
+        context.getSource().sendFeedback(roomWriteMessage(result.message(), result.learned()));
         return result.learned() ? 1 : 0;
     }
 
@@ -441,6 +483,17 @@ final class KungCommandActions {
         );
     }
 
+    static int updateCurrentRoomPrince(
+        CommandContext<FabricClientCommandSource> context,
+        DungeonStateTracker dungeonStateTracker
+    ) {
+        DungeonStateTracker.LearnRoomResult result = dungeonStateTracker.updateCurrentRoomPrince(
+            context.getSource().getClient(), BoolArgumentType.getBool(context, "prince")
+        );
+        context.getSource().sendFeedback(roomWriteMessage(result.message(), result.learned()));
+        return result.learned() ? 1 : 0;
+    }
+
     static int updateCurrentRoomCrypts(
         CommandContext<FabricClientCommandSource> context,
         DungeonStateTracker dungeonStateTracker
@@ -449,7 +502,7 @@ final class KungCommandActions {
             context.getSource().getClient(),
             IntegerArgumentType.getInteger(context, "count")
         );
-        context.getSource().sendFeedback(commandMessage(result.message()));
+        context.getSource().sendFeedback(roomWriteMessage(result.message(), result.learned()));
         return result.learned() ? 1 : 0;
     }
 
@@ -610,7 +663,7 @@ final class KungCommandActions {
         try {
             com.github.beng420.kung.feature.dungeon.DungeonKnownRoomCatalog.UndoResult result =
                 com.github.beng420.kung.feature.dungeon.DungeonKnownRoomCatalog.undoLast();
-            context.getSource().sendFeedback(commandMessage(result.message()));
+            context.getSource().sendFeedback(roomWriteMessage(result.message(), result.undone()));
             return result.undone() ? 1 : 0;
         } catch (java.io.IOException exception) {
             context.getSource().sendFeedback(commandMessage(

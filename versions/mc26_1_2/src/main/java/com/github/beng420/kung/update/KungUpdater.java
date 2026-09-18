@@ -181,10 +181,6 @@ public enum KungUpdater {
         try {
             installerProcess.holdSession(updateDirectory());
             if (!Files.exists(pendingMarkerPath())) return;
-            if (KungUpdateEnvironment.requiresLauncherInstall()) {
-                rejectPending("This launcher manages mod files; use Modrinth to install updates.");
-                return;
-            }
             // Recovery schedules a fresh helper. Never replace Fabric's already loaded JAR at startup.
             KungUpdateInstaller.Plan plan;
             try {
@@ -252,16 +248,16 @@ public enum KungUpdater {
     }
 
     public boolean canInstallUpdate() {
-        return state.get().status() == Status.UPDATE_AVAILABLE && !installing.get()
-            && !installationBlocked && !KungUpdateEnvironment.requiresLauncherInstall();
+        State snapshot = state.get();
+        return snapshot.status() == Status.UPDATE_AVAILABLE && snapshot.updateInfo() != null
+            && !installing.get() && !installationBlocked;
     }
 
     public String buttonLabel() {
         return switch (state.get().status()) {
             case CHECKING -> "Updates: Checking...";
             case UP_TO_DATE -> "Updates: Up to date";
-            case UPDATE_AVAILABLE -> KungUpdateEnvironment.requiresLauncherInstall() ? "Updates: Use Modrinth"
-                : installationBlocked ? "Updates: Recovery needed" : "Updates: Available";
+            case UPDATE_AVAILABLE -> installationBlocked ? "Updates: Recovery needed" : "Updates: Available";
             case DOWNLOADING -> "Updates: Downloading...";
             case INSTALL_READY -> "Updates: Restart needed";
             case UNSUPPORTED -> "Updates: Dev build";
@@ -274,8 +270,7 @@ public enum KungUpdater {
         return switch (snapshot.status()) {
             case CHECKING -> "Checking GitHub";
             case UP_TO_DATE -> "Version " + snapshot.currentVersion();
-            case UPDATE_AVAILABLE -> KungUpdateEnvironment.requiresLauncherInstall()
-                ? "Update Kung through Modrinth" : "Installs " + snapshot.latestVersion();
+            case UPDATE_AVAILABLE -> "Installs " + snapshot.latestVersion();
             case DOWNLOADING -> "Downloading...";
             case INSTALL_READY -> "Restart Minecraft";
             case UNSUPPORTED -> snapshot.message();

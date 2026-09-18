@@ -81,6 +81,7 @@ public final class SplitPersonalBestsScreen extends Screen {
     private int rowY(int index) { return y + 104 + index * 24; }
     private UiBounds saveBounds(int index) { return new UiBounds(x + 383, rowY(index), 46, 20); }
     private UiBounds clearBounds(int index) { return new UiBounds(x + 436, rowY(index), 50, 20); }
+    private UiBounds resetAverageBounds() { return new UiBounds(x + 394, y + 6, 92, 20); }
     private UiBounds floorBounds(int index) {
         if (index == 0) return new UiBounds(x + 14, y + 32, 65, 20);
         int number = index > 7 ? index - 7 : index;
@@ -100,6 +101,10 @@ public final class SplitPersonalBestsScreen extends Screen {
             UiShapes.rounded(graphics, x - 1, y - 1, PANEL_WIDTH + 2, PANEL_HEIGHT + 2, 6, THEME.accent());
             UiShapes.rounded(graphics, x, y, PANEL_WIDTH, PANEL_HEIGHT, 5, THEME.panel());
             graphics.text(menuFont, getTitle(), x + 14, y + 12, THEME.accent(), false);
+            int runs = config.recentRunCount(floor(), masterMode());
+            graphics.text(menuFont, "AVG: " + runs + "/" + SplitsConfig.RECENT_RUN_LIMIT + " runs",
+                x + 270, y + 12, THEME.muted(), false);
+            button(graphics, resetAverageBounds(), "Reset AVG", mouseX, mouseY, runs > 0, THEME.error());
             for (int i = 0; i < 15; i++) {
                 button(graphics, floorBounds(i), floorLabel(i), mouseX, mouseY, true,
                     i == selectedFloor ? THEME.accent() : THEME.text());
@@ -139,6 +144,13 @@ public final class SplitPersonalBestsScreen extends Screen {
         layout();
         int mx = coordinate(event.x());
         int my = coordinate(event.y());
+        if (resetAverageBounds().contains(mx, my)) {
+            if (config.recentRunCount(floor(), masterMode()) > 0) {
+                config.clearRecentRuns(floor(), masterMode());
+                status = floorLabel(selectedFloor) + " AVG history reset. Personal bests kept.";
+            }
+            return true;
+        }
         for (int i = 0; i < 15; i++) {
             if (floorBounds(i).contains(mx, my)) {
                 if (i != selectedFloor) selectFloor(i);

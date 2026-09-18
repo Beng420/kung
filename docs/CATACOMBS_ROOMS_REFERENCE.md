@@ -2,6 +2,7 @@
 
 Metadatenreferenz auf Wunsch des Nutzers: [Catacombs Rooms, Hypixel SkyBlock Wiki](https://hypixelskyblock.minecraft.wiki/w/Catacombs_Rooms).
 Abgerufen am **11.09.2026**, [fester Seitenstand 795866](https://hypixelskyblock.minecraft.wiki/w/Catacombs_Rooms?oldid=795866), zuletzt bearbeitet laut Wiki am 27.07.2026 um 10:34.
+Am **18.09.2026** erneut im Browser geprüft: unverändert Revision 795866 mit 137 Raumzeilen. Die Princes-Spalte nennt nur Doors, Skull und Withermancer (je 1) sowie Supertall (2). Kungs zwölf zusätzliche Prince-Markierungen wurden anhand dieser Spalte entfernt; die Quell-Leerwerte in dieser Referenz bleiben erhalten.
 Attribution: Hypixel SkyBlock Wiki contributors; [CC BY-NC-SA 3.0](https://creativecommons.org/licenses/by-nc-sa/3.0/), [weitere Lizenzbedingungen](https://meta.weirdgloop.org/w/Licensing).
 
 Die folgende Ansicht enthält alle **137 Zeilen** in der Reihenfolge der Quelle. Die [JSON-Referenz](reference/catacombs-rooms.json) bewahrt zusätzlich alle 16 Originalspalten einschließlich der einzelnen Secret-Arten, Journals, Revive Stones und NPCs. Raumnamen und Typen entsprechen der Wiki-Schreibweise; sie wurden nicht automatisch in Kung-Namen oder Kung-Typen übersetzt.
@@ -15,7 +16,7 @@ Die folgende Ansicht enthält alle **137 Zeilen** in der Reihenfolge der Quelle.
 - Golden Oasis nennt insgesamt 1 Secret, aber 2 Chests. Bei Redstone Crypt stehen insgesamt 3 Secrets und nur 2 einzeln aufgeführte Secrets. Diese Widersprüche bleiben zur Prüfung erhalten.
 - Raum-Hashes sind in der Wiki nicht enthalten. Namensähnlichkeit oder dieselbe Secret-Anzahl beweisen keine Zuordnung eines gemessenen Hashes.
 
-## Aktueller Abgleich: „Lava Pool“
+## Abgleich: „Lava Pool“ und die beiden „Lava Pit“-Räume
 
 Der lokale Speichereintrag `Lava Pool`, NORMAL, 2 Secrets, Core `-1005518830`, Stable `1296131753` ist vorhanden. **„Lava Pool“ wird in dieser Wiki-Tabelle nicht geführt.** Die Quelle bestätigt deshalb weder diesen Namen noch die Zuordnung des Hashes.
 
@@ -24,6 +25,8 @@ Nachtrag vom 11.09.2026: Der Nutzer bestätigt diesen Raum als Rare. Kung enthä
 Die Wiki führt **zwei getrennte „Lava Pit“-Zeilen**, beide Rare, 1x1, 3 Secrets: eine mit 2 Chests und 1 Item Pickup, die andere mit 1 Bat, 1 Chest und 1 Item Pickup. Auch Crypts und Journals unterscheiden sich. Beide Quellzeilen bleiben erhalten; daraus wird kein Alias „Lava Pool = Lava Pit“ abgeleitet.
 
 **Korrektur vom 12.09.2026:** Der Nutzer bestätigt, dass der in Kung bereits enthaltene „Lava Pit“ ein normaler Raum ist. Die Übertragung des Wiki-Typs anhand des Namens war falsch und wurde zurückgenommen. Kung repariert auch ältere RARE-Einträge und Meldungen anderer Clients für diesen Raum. Die beiden historischen Wiki-Zeilen sind weiterhin unverändert sichtbar und kein Beleg für eine Zuordnung zu Kungs Hashes.
+
+**Identifikation vom 18.09.2026:** Der Nutzer identifiziert den unbenannten Rare-Raum im neuen 01:18-Log als einen anderen „Lava Pit“. Die Zuordnung zum früheren Core/Stable-Paar folgt aus dem einzigen vorhandenen RARE-Typ-Hinweis; der neue Trace enthält diesen Hash nicht direkt. Kung führt ihn nun als getrennten RARE-Raum neben dem unveränderten NORMAL-Raum. Da Secrets/Crypts nicht sicher bestätigt wurden, genehmigt der Nutzer vorerst **0/0 als Platzhalter**. Die zwei Wiki-Zeilen bleiben unverändert; ihre Angaben werden nicht auf Verdacht übernommen. Die Normal-Korrektur greift jetzt nur mit passenden Hashes, nicht mehr für jeden Raum dieses Namens.
 
 „Quad Lava“ hat laut Tabelle 2 Secrets, „Lava Ravine“ 6 Secrets. Auch diese Namen sind ohne einen belegten Raumvergleich keine Zuordnung für den gespeicherten Hash. „Layers“ wird als zusammenhängender L-Raum mit 8 Secrets und 3 Crypts geführt.
 

@@ -64,7 +64,7 @@ public final class DungeonKnownRoomCatalog {
         Map.entry(canonicalNameKey("Silver Swords"), new CanonicalRoomMetadata("Silvers Sword", RoomType.NORMAL, 1, 0, false)),
         Map.entry(canonicalNameKey("Lava Skull"), new CanonicalRoomMetadata("Lava Pit", RoomType.NORMAL, 3, 1, false)),
         Map.entry(canonicalNameKey("Lava Tomb"), new CanonicalRoomMetadata("Lava Pit", RoomType.NORMAL, 3, 1, false)),
-        Map.entry(canonicalNameKey("Draw Bridge"), new CanonicalRoomMetadata("Bridges", RoomType.NORMAL, 6, 6, true)),
+        Map.entry(canonicalNameKey("Draw Bridge"), new CanonicalRoomMetadata("Bridges", RoomType.NORMAL, 6, 6, false)),
         Map.entry(canonicalNameKey("Four Banner"), new CanonicalRoomMetadata("Banners", RoomType.NORMAL, 1, 1, false)),
         Map.entry(canonicalNameKey("Black Flag"), new CanonicalRoomMetadata("Black Flag", RoomType.NORMAL, 3, 1, false)),
         Map.entry(canonicalNameKey("Ritual"), new CanonicalRoomMetadata("Ritual", RoomType.NORMAL, 3, 1, false)),
@@ -76,30 +76,20 @@ public final class DungeonKnownRoomCatalog {
         Map.entry(canonicalNameKey("Ice Path"), new CanonicalRoomMetadata("Ice Path", RoomType.PUZZLE, 0, 0, false))
     );
     // Exact Rare names from docs/reference/catacombs-rooms.json (wiki revision 795866).
-    // The ambiguous wiki Lava Pit name does not identify the bundled NORMAL room (user correction 2026-09-12).
+    // Lava Pit has distinct NORMAL and RARE identities; its name cannot establish the type.
     private static final Set<String> RARE_ROOM_NAMES = canonicalNameSet(
         "Vinny 8 Ball", "Pillars", "Sand Dragon", "Tombstone", "Stone Window",
         "Mini Rail Track", "Trinity", "Hanging Vines"
     );
+    // Only these observed hashes identify the NORMAL Lava Pit affected by the old wiki import.
+    private static final Set<Integer> NORMAL_LAVA_PIT_HASHES = Set.of(
+        1192954774, -408192692, -411046242, 1156889764, 1676725858, 1741781156
+    );
     private static final Set<String> LEGACY_PRINCE_ROOM_NAMES = canonicalNameSet(
-        "Big Red Flag",
-        "Bridges",
-        "Draw Bridge",
-        "Chambers",
         "Doors",
-        "Flags",
-        "Grass Ruin",
-        "Leaves",
-        "Market",
-        "Pirate",
-        "Quartz Knight",
-        "Red Blue",
-        "Red-Blue",
         "Skull",
-        "Sloth",
         "Super Tall",
         "Supertall",
-        "Waterfall",
         "Withermancer",
         "Withermancers"
     );
@@ -115,11 +105,13 @@ public final class DungeonKnownRoomCatalog {
         "Banners",
         "Basement",
         "Beams",
+        "Big Red Flag",
         "Black Flag",
         "Blaze",
         "Blood",
         "Blue Skulls",
         "Boulder",
+        "Bridges",
         "Buttons",
         "Cage",
         "Cages",
@@ -128,6 +120,7 @@ public final class DungeonKnownRoomCatalog {
         "Catwalk",
         "Cell",
         "Chains",
+        "Chambers",
         "Cobble Wall Pillar",
         "Corridor",
         "Creeper Beams",
@@ -141,16 +134,19 @@ public final class DungeonKnownRoomCatalog {
         "Dome",
         "Double Diamond",
         "Dragon Skull",
+        "Draw Bridge",
         "Drop",
         "Dueces",
         "Duncan",
         "End",
         "Entrance",
         "Fairy",
+        "Flags",
         "Gold",
         "Golden Oasis",
         "Grand Library",
         "Granite",
+        "Grass Ruin",
         "Gravel",
         "Hall",
         "Hallway",
@@ -163,11 +159,13 @@ public final class DungeonKnownRoomCatalog {
         "Lava Pit",
         "Lava Ravine",
         "Layers",
+        "Leaves",
         "Locked Away",
         "Logs",
         "Long Hall",
         "Lots Of Floors",
         "Mage",
+        "Market",
         "Melon",
         "Mines",
         "Mini Rail Track",
@@ -187,14 +185,18 @@ public final class DungeonKnownRoomCatalog {
         "Perch",
         "Pillars",
         "Pipes",
+        "Pirate",
         "Pit",
         "Pressure Plates",
         "Prison Cell",
         "Purple Flags",
         "Quad Lava",
+        "Quartz Knight",
         "Quiz",
         "Raccoon",
         "Rails",
+        "Red Blue",
+        "Red-Blue",
         "Red Green",
         "Redstone Crypt",
         "Redstone Key",
@@ -207,6 +209,7 @@ public final class DungeonKnownRoomCatalog {
         "Silvers Sword",
         "Slabs",
         "Slime",
+        "Sloth",
         "Small Stairs",
         "Small Waterfall",
         "Spider",
@@ -225,6 +228,7 @@ public final class DungeonKnownRoomCatalog {
         "Vinny 8 Ball",
         "Water",
         "Water Board",
+        "Waterfall",
         "Well",
         "Wizard",
         "Zodd"
@@ -252,7 +256,7 @@ public final class DungeonKnownRoomCatalog {
 
     public static UndoResult undoLast() throws IOException {
         UndoResult jsonResult = undoLastJsonLearn();
-        if (jsonResult.undone()) {
+        if (jsonResult.undone() || DungeonRoomProject.enabled()) {
             invalidateTemplateCache();
             return jsonResult;
         }
@@ -278,6 +282,7 @@ public final class DungeonKnownRoomCatalog {
 
     private static UndoResult undoLastJsonLearn() throws IOException {
         Path file = knownRoomsFile();
+        if (DungeonRoomProject.enabled()) readProjectRooms();
         if (!Files.exists(file)) {
             return UndoResult.nothingToUndo("known-rooms.json does not exist yet.");
         }
@@ -295,7 +300,7 @@ public final class DungeonKnownRoomCatalog {
         }
 
         int removedHashes = removeJsonLearnBurst(rooms, latest);
-        Files.writeString(file, PRETTY_GSON.toJson(root) + "\n", StandardCharsets.UTF_8);
+        DungeonRoomProject.write(file, PRETTY_GSON.toJson(root) + "\n");
         return UndoResult.undone(
             "Removed the last learned JSON room entry: "
                 + latest.name()
@@ -585,7 +590,7 @@ public final class DungeonKnownRoomCatalog {
         MatchedRoom match,
         DungeonMapSnapshot snapshot
     ) throws IOException {
-        if (!KungConfig.get().dungeon.localRoomDataEnabled()) {
+        if (!DungeonRoomProject.enabled() && !KungConfig.get().dungeon.localRoomDataEnabled()) {
             return AutoLearnResult.none();
         }
         if (match == null || snapshot == null || match.components().isEmpty()) {
@@ -634,7 +639,7 @@ public final class DungeonKnownRoomCatalog {
     }
 
     public static void recordObservedCoreTransition(int previousCoreHash, int knownCoreHash, int knownStableCoreHash) {
-        if (!KungConfig.get().dungeon.localRoomDataEnabled()) {
+        if (!DungeonRoomProject.enabled() && !KungConfig.get().dungeon.localRoomDataEnabled()) {
             return;
         }
         int trustedKnownHash = knownCoreHash;
@@ -663,8 +668,54 @@ public final class DungeonKnownRoomCatalog {
         }
     }
 
+    public static void updateRoomPrince(String name, RoomType type, int secrets, boolean prince) throws IOException {
+        KnownRoomInfo room = knownRoomInfos(name).stream()
+            .filter(info -> info.type() == type && info.secrets() == secrets)
+            .findFirst().orElseThrow(() -> new IllegalArgumentException("Unknown room: " + name));
+        if (DungeonRoomProject.enabled()) {
+            JsonObject root = readProjectRooms();
+            projectRoom(root, new TemplateKey(room.name(), type, secrets)).addProperty("prince", prince);
+            DungeonRoomProject.write(knownRoomsFile(), PRETTY_GSON.toJson(root) + "\n");
+        }
+        KungConfig.get().dungeon.setRoomPrinceOverride(princeRoomKey(room.name(), type, secrets), prince);
+        invalidateTemplateCache();
+    }
+
+    private static String princeRoomKey(String name, RoomType type, int secrets) {
+        return canonicalNameKey(name) + "|" + type.name() + "|" + secrets;
+    }
+
+    private static boolean configuredPrince(String name, RoomType type, int secrets, boolean fallback) {
+        if (DungeonRoomProject.enabled()) return fallback;
+        Boolean override = KungConfig.get().dungeon.roomPrinceOverride(princeRoomKey(name, type, secrets));
+        return override == null ? fallback : override;
+    }
+
+    private static RoomTemplate withPrinceOverride(RoomTemplate room) {
+        boolean prince = configuredPrince(room.name(), room.type(), room.secrets(), room.prince());
+        return prince == room.prince() ? room : new RoomTemplate(room.name(), room.type(), room.secrets(),
+            room.crypts(), prince, room.variantNumber(), room.components());
+    }
+
+    private static KnownCoreHint withPrinceOverride(KnownCoreHint hint, Map<TemplateKey, KnownCoreHint> metadata) {
+        if (hint == null) return null;
+        TemplateKey key = new TemplateKey(hint.name(), hint.type(), hint.secrets());
+        if (DungeonRoomProject.enabled() && !metadata.containsKey(key)) return null;
+        hint = metadata.getOrDefault(key, hint);
+        boolean prince = configuredPrince(hint.name(), hint.type(), hint.secrets(), hint.prince());
+        return prince == hint.prince() ? hint
+            : new KnownCoreHint(hint.name(), hint.type(), hint.secrets(), hint.crypts(), prince);
+    }
+
     public static void updateRoomCrypts(String name, RoomType type, int secrets, int crypts) throws IOException {
         Path file = knownRoomsFile();
+        if (DungeonRoomProject.enabled()) {
+            JsonObject root = readProjectRooms();
+            projectRoom(root, new TemplateKey(name, type, secrets)).addProperty("crypts", Math.max(0, crypts));
+            DungeonRoomProject.write(file, PRETTY_GSON.toJson(root) + "\n");
+            invalidateTemplateCache();
+            return;
+        }
         RoomDatabase database = loadRoomDatabase(file);
         if (!database.updateCrypts(new TemplateKey(name, type, secrets), crypts)) {
             throw new IllegalArgumentException("Unknown room: " + name);
@@ -686,16 +737,27 @@ public final class DungeonKnownRoomCatalog {
     private static DeleteRoomResult deleteRoom(String name, RoomType type, int secrets, boolean explicitMetadata)
         throws IOException {
         Path file = knownRoomsFile();
-        RoomDatabase database = loadRoomDatabase(file);
+        JsonObject project = DungeonRoomProject.enabled() ? readProjectRooms() : null;
+        RoomDatabase database = project == null ? loadRoomDatabase(file) : projectDatabase(project);
         DeleteRoomResult result = database.deleteRoom(name, type, secrets, explicitMetadata);
         if (!result.deleted()) {
             return result;
         }
 
-        Files.createDirectories(file.getParent());
-        Files.writeString(file, database.toJson(), StandardCharsets.UTF_8);
-        DungeonRoomClassifier.removeRoomTypes(result.coreHashes());
-        invalidateTemplateCache();
+        if (project == null) {
+            DungeonRoomProject.write(file, database.toJson());
+        } else {
+            project.getAsJsonArray("rooms").asList().removeIf(element ->
+                matchesDelete(jsonRoomKey(element.getAsJsonObject()), name, type, secrets, explicitMetadata));
+            project.add("deletedRooms", JsonParser.parseString(database.toJson()).getAsJsonObject().get("deletedRooms"));
+            DungeonRoomProject.write(file, PRETTY_GSON.toJson(project) + "\n");
+        }
+        try {
+            DungeonRoomClassifier.removeRoomTypes(result.coreHashes());
+        } finally {
+            // The room file is already saved even if type-hint cleanup fails.
+            invalidateTemplateCache();
+        }
         return result;
     }
 
@@ -707,8 +769,15 @@ public final class DungeonKnownRoomCatalog {
                 return cachedTemplateCache;
             }
 
-            List<RoomTemplate> templates = loadTemplatesUncached(knownRoomsFile());
+            RoomDatabase database = loadRoomDatabase(knownRoomsFile());
+            List<RoomTemplate> templates = database.templates().stream().map(DungeonKnownRoomCatalog::withPrinceOverride).toList();
+            Map<TemplateKey, KnownCoreHint> metadata = new HashMap<>();
+            database.rooms.forEach((key, room) -> metadata.put(key,
+                new KnownCoreHint(key.name(), key.type(), key.secrets(), room.crypts, room.prince)));
             Map<Integer, KnownCoreHint> preloadCoreHints = preloadCoreHints();
+            if (DungeonRoomProject.enabled()) preloadCoreHints.values().removeIf(hint ->
+                !metadata.containsKey(new TemplateKey(hint.name(), hint.type(), hint.secrets())));
+            preloadCoreHints.replaceAll((hash, hint) -> withPrinceOverride(hint, metadata));
             Map<Integer, KnownCoreHint> knownCoreHints = knownHintsByCoreHash(templates);
             preloadCoreHints.forEach(knownCoreHints::putIfAbsent);
             Map<String, Boolean> princeByName = new HashMap<>();
@@ -722,7 +791,8 @@ public final class DungeonKnownRoomCatalog {
                 templates,
                 knownCoreHints,
                 preloadCoreHints,
-                Map.copyOf(princeByName)
+                Map.copyOf(princeByName),
+                Map.copyOf(metadata)
             );
             return cachedTemplateCache;
         }
@@ -735,13 +805,16 @@ public final class DungeonKnownRoomCatalog {
         }
     }
 
-    private static List<RoomTemplate> loadTemplatesUncached(Path file) {
-        RoomDatabase database = loadRoomDatabase(file);
-        return database.templates();
-    }
-
     private static RoomDatabase loadRoomDatabase(Path file) {
         RoomDatabase database = new RoomDatabase();
+        if (DungeonRoomProject.enabled()) {
+            try {
+                return projectDatabase(readProjectRooms());
+            } catch (IOException | RuntimeException exception) {
+                KungMod.LOGGER.warn("Failed to load linked project room data.", exception);
+                return database;
+            }
+        }
         List<LearnedRoom> learnedRooms = new ArrayList<>();
         long order = 0;
         String bundledJson = bundledText(BUNDLED_KNOWN_ROOMS_JSON_RESOURCE);
@@ -806,7 +879,8 @@ public final class DungeonKnownRoomCatalog {
 
     private static void upsertAll(List<LearnedRoom> rooms) throws IOException {
         Path file = knownRoomsFile();
-        RoomDatabase database = loadRoomDatabase(file);
+        JsonObject project = DungeonRoomProject.enabled() ? readProjectRooms() : null;
+        RoomDatabase database = project == null ? loadRoomDatabase(file) : new RoomDatabase();
         Map<TemplateKey, List<LearnedRoom>> roomsByKey = new LinkedHashMap<>();
         for (LearnedRoom room : rooms) {
             LearnedRoom normalizedRoom = canonicalLearnedRoom(room);
@@ -818,8 +892,102 @@ public final class DungeonKnownRoomCatalog {
             }
         }
 
-        Files.createDirectories(file.getParent());
-        Files.writeString(file, database.toJson(), StandardCharsets.UTF_8);
+        if (project == null) {
+            DungeonRoomProject.write(file, database.toJson());
+        } else {
+            mergeProjectObservations(project, JsonParser.parseString(database.toJson()).getAsJsonObject());
+            DungeonRoomProject.write(file, PRETTY_GSON.toJson(project) + "\n");
+        }
+    }
+
+    private static JsonObject readProjectRooms() throws IOException {
+        DungeonRoomProject.validateProject(KungConfig.get().dungeon.roomDataProjectDirectory());
+        try {
+            JsonObject root = JsonParser.parseString(Files.readString(knownRoomsFile(), StandardCharsets.UTF_8)).getAsJsonObject();
+            projectDatabase(root); // Reject malformed records before any edit; never replace them with JAR defaults.
+            return root;
+        } catch (RuntimeException exception) {
+            throw new IOException("Invalid room data in the linked project.", exception);
+        }
+    }
+
+    private static RoomDatabase projectDatabase(JsonObject root) {
+        RoomDatabase database = new RoomDatabase();
+        readRoomDatabase(root.toString(), database);
+        return database;
+    }
+
+    private static TemplateKey jsonRoomKey(JsonObject room) {
+        return new TemplateKey(room.get("name").getAsString(),
+            RoomType.valueOf(room.get("type").getAsString()), room.get("secrets").getAsInt());
+    }
+
+    private static JsonObject findProjectRoom(JsonObject root, TemplateKey key) {
+        for (JsonElement element : root.getAsJsonArray("rooms")) {
+            JsonObject room = element.getAsJsonObject();
+            TemplateKey candidate = jsonRoomKey(room);
+            if (canonicalNameKey(candidate.name()).equals(canonicalNameKey(key.name()))
+                && candidate.type() == key.type() && candidate.secrets() == key.secrets()) return room;
+        }
+        return null;
+    }
+
+    private static JsonObject projectRoom(JsonObject root, TemplateKey key) {
+        JsonObject room = findProjectRoom(root, key);
+        if (room == null) throw new IllegalArgumentException("Unknown project room: " + key.name());
+        return room;
+    }
+
+    private static void mergeProjectObservations(JsonObject project, JsonObject incoming) {
+        // Merge only new observations. Retain source labels, variant IDs and all untouched metadata.
+        for (JsonElement element : incoming.getAsJsonArray("rooms")) {
+            JsonObject learned = element.getAsJsonObject();
+            JsonObject room = findProjectRoom(project, jsonRoomKey(learned));
+            if (room == null) {
+                project.getAsJsonArray("rooms").add(learned);
+                continue;
+            }
+            if (!room.has("variants")) room.add("variants", new JsonArray());
+            JsonArray variants = room.getAsJsonArray("variants");
+            for (JsonElement variantElement : learned.getAsJsonArray("variants")) {
+                JsonObject learnedVariant = variantElement.getAsJsonObject();
+                JsonArray learnedCells = learnedVariant.getAsJsonArray("components");
+                JsonObject variant = variants.asList().stream().map(JsonElement::getAsJsonObject)
+                    .filter(existing -> existing.getAsJsonArray("components").size() == learnedCells.size()
+                        && learnedCells.asList().stream().allMatch(cell -> projectCell(existing, cell.getAsJsonObject()) != null))
+                    .findFirst().orElse(null);
+                if (variant == null) {
+                    variants.add(learnedVariant);
+                    continue;
+                }
+                for (JsonElement cellElement : learnedCells) {
+                    JsonObject learnedCell = cellElement.getAsJsonObject();
+                    JsonArray hashes = projectCell(variant, learnedCell).getAsJsonArray("hashes");
+                    for (JsonElement hashElement : learnedCell.getAsJsonArray("hashes")) {
+                        JsonObject learnedHash = hashElement.getAsJsonObject();
+                        JsonObject hash = hashes.asList().stream().map(JsonElement::getAsJsonObject)
+                            .filter(existing -> existing.get("core").equals(learnedHash.get("core"))
+                                && (existing.has("stable") ? existing.get("stable").getAsInt() : 0)
+                                    == learnedHash.get("stable").getAsInt())
+                            .findFirst().orElse(null);
+                        if (hash == null) {
+                            hashes.add(learnedHash);
+                        } else {
+                            hash.addProperty("seen", (hash.has("seen") ? hash.get("seen").getAsInt() : 1)
+                                + learnedHash.get("seen").getAsInt());
+                            hash.addProperty("updatedAt", Math.max(hash.has("updatedAt") ? hash.get("updatedAt").getAsLong() : 0,
+                                learnedHash.get("updatedAt").getAsLong()));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private static JsonObject projectCell(JsonObject variant, JsonObject cell) {
+        return variant.getAsJsonArray("components").asList().stream().map(JsonElement::getAsJsonObject)
+            .filter(existing -> existing.get("dx").equals(cell.get("dx")) && existing.get("dz").equals(cell.get("dz")))
+            .findFirst().orElse(null);
     }
 
     public static RemoteCacheResult updateRemoteCache(String json) throws IOException {
@@ -881,9 +1049,9 @@ public final class DungeonKnownRoomCatalog {
             TemplateKey key = new TemplateKey(metadata.name(), metadata.type(), metadata.secrets());
             crypts = metadata.crypts();
             prince = metadata.prince();
-            database.ensureRoom(key, crypts, prince);
             JsonArray variants = roomObject.getAsJsonArray("variants");
             if (variants == null) {
+                database.ensureRoom(key, crypts, prince);
                 continue;
             }
 
@@ -914,6 +1082,9 @@ public final class DungeonKnownRoomCatalog {
                     ));
                 }
             }
+            // Hash corrections may move a variant to another type. Do not leave its metadata
+            // in the old bucket, where it could contaminate a different same-name room.
+            if (variantNumber == 0) database.ensureRoom(key, crypts, prince);
         }
     }
 
@@ -991,7 +1162,8 @@ public final class DungeonKnownRoomCatalog {
             learnedRoom.name(),
             learnedRoom.type(),
             learnedRoom.secrets(),
-            learnedRoom.crypts()
+            learnedRoom.crypts(),
+            legacyHasPrince(learnedRoom.name()), learnedRoom.coreHash(), learnedRoom.stableCoreHash()
         );
         return new TemplateKey(metadata.name(), metadata.type(), metadata.secrets());
     }
@@ -1364,7 +1536,8 @@ public final class DungeonKnownRoomCatalog {
         if (hint == null && point.stableCoreHash() != 0) {
             hint = knownHintsByCoreHash.get(point.stableCoreHash());
         }
-        return hint != null ? hint : SESSION_PRELOAD_HINTS.get(point.coreHash(), point.stableCoreHash());
+        return hint != null ? hint : withPrinceOverride(
+            SESSION_PRELOAD_HINTS.get(point.coreHash(), point.stableCoreHash()), templateCache().metadata());
     }
 
     private static boolean matchesTemplateHint(KnownCoreHint hint, RoomTemplate template) {
@@ -1487,15 +1660,14 @@ public final class DungeonKnownRoomCatalog {
     private static Map<Integer, KnownCoreHint> preloadCoreHints() {
         Map<Integer, KnownCoreHint> hints = new HashMap<>(STATIC_PRELOAD_CORE_HINTS);
         Map<Integer, Map<KnownCoreHint, Integer>> observations = new HashMap<>();
-        readPreloadObservations(
-            bundledLines(BUNDLED_PRELOADS_RESOURCE),
-            observations,
-            MIN_DYNAMIC_PRELOAD_OBSERVATIONS
-        );
+        if (!DungeonRoomProject.enabled()) {
+            readPreloadObservations(bundledLines(BUNDLED_PRELOADS_RESOURCE), observations, MIN_DYNAMIC_PRELOAD_OBSERVATIONS);
+        }
         Path file = knownRoomPreloadsFile();
-        if (KungConfig.get().dungeon.localRoomDataEnabled() && Files.exists(file)) {
+        if ((DungeonRoomProject.enabled() || KungConfig.get().dungeon.localRoomDataEnabled()) && Files.exists(file)) {
             try {
-                readPreloadObservations(Files.readAllLines(file, StandardCharsets.UTF_8), observations, 1);
+                readPreloadObservations(Files.readAllLines(file, StandardCharsets.UTF_8), observations,
+                    DungeonRoomProject.enabled() ? MIN_DYNAMIC_PRELOAD_OBSERVATIONS : 1);
             } catch (IOException | RuntimeException exception) {
                 KungMod.LOGGER.warn("Failed to load dungeon room preload hints.", exception);
             }
@@ -1533,7 +1705,7 @@ public final class DungeonKnownRoomCatalog {
             );
             observations
                 .computeIfAbsent(coreHash, ignored -> new HashMap<>())
-                .merge(hint, weight, Integer::sum);
+                .merge(hint, object.has("observed") && object.get("observed").getAsBoolean() ? 1 : weight, Integer::sum);
         }
     }
 
@@ -1571,6 +1743,14 @@ public final class DungeonKnownRoomCatalog {
 
     private static void appendPreloadHint(int coreHash, KnownCoreHint hint) throws IOException {
         Path file = knownRoomPreloadsFile();
+        if (DungeonRoomProject.enabled()) {
+            readProjectRooms();
+            String previous = Files.exists(file) ? Files.readString(file, StandardCharsets.UTF_8) : "";
+            String line = "{\"coreHash\":" + coreHash + ",\"name\":" + jsonString(hint.name())
+                + ",\"type\":\"" + hint.type().name() + "\",\"secrets\":" + hint.secrets() + ",\"observed\":true}\n";
+            DungeonRoomProject.write(file, previous + (previous.isEmpty() || previous.endsWith("\n") ? "" : "\n") + line);
+            return;
+        }
         Files.createDirectories(file.getParent());
 
         try (BufferedWriter writer = Files.newBufferedWriter(
@@ -1733,7 +1913,8 @@ public final class DungeonKnownRoomCatalog {
         boolean prince = object.has("prince")
             ? object.get("prince").getAsBoolean()
             : legacyHasPrince(name);
-        CanonicalRoomMetadata metadata = canonicalMetadata(name, type, secrets, crypts, prince);
+        CanonicalRoomMetadata metadata = canonicalMetadata(name, type, secrets, crypts, prince,
+            object.get("coreHash").getAsInt(), object.has("stableCoreHash") ? object.get("stableCoreHash").getAsInt() : 0);
         return new LearnedRoom(
             order,
             metadata.name(),
@@ -1756,13 +1937,15 @@ public final class DungeonKnownRoomCatalog {
         RoomType type,
         int secrets,
         int crypts,
-        boolean prince
+        boolean prince,
+        int... hashes
     ) {
         CanonicalRoomMetadata override = CANONICAL_METADATA_OVERRIDES.get(canonicalNameKey(name));
         CanonicalRoomMetadata metadata = override == null
             ? new CanonicalRoomMetadata(name, type, secrets, Math.max(0, crypts), prince)
-            : override;
-        RoomType correctedType = canonicalRoomType(metadata.name(), metadata.type());
+            : new CanonicalRoomMetadata(override.name(), override.type(), override.secrets(),
+                name.equalsIgnoreCase(override.name()) ? Math.max(0, crypts) : override.crypts(), prince);
+        RoomType correctedType = canonicalRoomType(metadata.name(), metadata.type(), hashes);
         if (correctedType != metadata.type()) {
             return new CanonicalRoomMetadata(
                 metadata.name(), correctedType, metadata.secrets(), metadata.crypts(), metadata.prince()
@@ -1771,20 +1954,22 @@ public final class DungeonKnownRoomCatalog {
         return metadata;
     }
 
-    static RoomType canonicalRoomType(String name, RoomType type) {
+    static RoomType canonicalRoomType(String name, RoomType type, int... hashes) {
         if (type != RoomType.NORMAL && type != RoomType.UNKNOWN && type != RoomType.RARE) return type;
         String key = canonicalNameKey(name);
         CanonicalRoomMetadata alias = CANONICAL_METADATA_OVERRIDES.get(key);
         String resolvedKey = alias == null ? key : canonicalNameKey(alias.name());
-        // Repair NORMAL -> RARE records written by the earlier name-only wiki import.
-        if (resolvedKey.equals("lavapit")) return RoomType.NORMAL;
+        if (resolvedKey.equals("lavapit")) {
+            for (int hash : hashes) if (NORMAL_LAVA_PIT_HASHES.contains(hash)) return RoomType.NORMAL;
+        }
         if (type == RoomType.RARE) return type;
         return RARE_ROOM_NAMES.contains(key) || (alias != null && alias.type() == RoomType.RARE)
             ? RoomType.RARE : type;
     }
 
     private static LearnedRoom canonicalLearnedRoom(LearnedRoom room) {
-        CanonicalRoomMetadata metadata = canonicalMetadata(room.name(), room.type(), room.secrets(), room.crypts());
+        CanonicalRoomMetadata metadata = canonicalMetadata(room.name(), room.type(), room.secrets(), room.crypts(),
+            legacyHasPrince(room.name()), room.coreHash(), room.stableCoreHash());
         return new LearnedRoom(
             room.order(),
             metadata.name(),
@@ -1806,9 +1991,15 @@ public final class DungeonKnownRoomCatalog {
             template.crypts(),
             template.prince()
         );
+        RoomType type = metadata.type();
+        for (TemplateComponent component : template.components()) {
+            for (HashObservation hash : component.hashes()) {
+                type = canonicalRoomType(metadata.name(), type, hash.coreHash(), hash.stableCoreHash());
+            }
+        }
         return new RoomTemplate(
             metadata.name(),
-            metadata.type(),
+            type,
             metadata.secrets(),
             metadata.crypts(),
             metadata.prince(),
@@ -1917,7 +2108,7 @@ public final class DungeonKnownRoomCatalog {
     }
 
     private static Path knownRoomsFile() {
-        return KungPaths.dungeonDataDirectory().resolve("known-rooms.json");
+        return DungeonRoomProject.dataDirectory().resolve("known-rooms.json");
     }
 
     static Path remoteKnownRoomsFile() {
@@ -1929,7 +2120,7 @@ public final class DungeonKnownRoomCatalog {
     }
 
     private static Path knownRoomPreloadsFile() {
-        return KungPaths.dungeonDataDirectory().resolve("known-room-preloads.jsonl");
+        return DungeonRoomProject.dataDirectory().resolve("known-room-preloads.jsonl");
     }
 
     private static Path undoneRoomsFile() {
@@ -2667,7 +2858,8 @@ public final class DungeonKnownRoomCatalog {
         List<RoomTemplate> templates,
         Map<Integer, KnownCoreHint> knownCoreHints,
         Map<Integer, KnownCoreHint> preloadCoreHints,
-        Map<String, Boolean> princeByName
+        Map<String, Boolean> princeByName,
+        Map<TemplateKey, KnownCoreHint> metadata
     ) {
     }
 

@@ -38,6 +38,23 @@ players. Death lines never create identities; forwarded/social chat and actionba
 text are not deaths. Reconcile exact Team Deaths counters without double-counting
 events; merge aliases on UUID remapping. The invented player `Party` was a parser bug.
 
+### Death/revive evidence — 2026-09-18
+
+The supplied trace created at 13:39:58 UTC (15:39:58 local) ends at 17 counted
+deaths. Its 2,500-entry ring and message rate limit omit some input lines. The
+matching `Dungeons 26.1.2/logs/latest.log` supplies a separate anchored ghost
+message for every increment: 15 death messages and two disconnect-to-ghost
+messages. Another death at 15:39:58, after the clipboard capture, brings the run
+to 18 (Beng114 3, _FabledHyperion_ 5, FLC_x1 4, Frostelle 2, Loveisla 4).
+Revive starts, player/fairy revives, Revive Stone notices and reconnections do
+not increment the counter; a preceding death still does. The real message replay
+in `DungeonStatisticsSourcesTest` checks every transition and all five totals.
+The production counter is unchanged. Neither log provides an authoritative
+`Team Deaths: 12` field, so the reported discrepancy with the server's death total
+remains unconfirmed; it needs the exact server counter at the same moment.
+
+### Score authority
+
 Server Score takes precedence over estimates; final Team Score is authoritative
 over later ordinary Score fields. Footer secrets mean **found - remaining for
 300 - max**, not target total. The secret target is planning guidance assuming
@@ -158,6 +175,24 @@ explained by this punctuation fix and must not be invented in the forecast.
 Focused score/message tests pass; verify the accepted report and map footer in
 the next live run. This change adds no scans or new chat output.
 
+### Two-point score gap — 2026-09-18, 16:40 run
+
+`kung-trace-20260918-164256.log` records 45/57 secrets, 78.9%, no deaths,
+full projected room/puzzle credit, nine crypts, Prince and Bat at 16:42:19.
+Kung calculates 298: skill 100 + explore 91 + speed 100 + bonus 7. Noamm's
+300 announcement appears at 16:42:22 in the matching Minecraft log.
+At 16:42:23 Kung has 46/57 secrets, 80.7% and score 299; a later death lowers
+that estimate to 298. The server reports Team Score 300 at 16:47:18, and Kung's
+summary correctly adopts it.
+
+The missing Mimic flag would account for exactly two points, but neither a
+Mimic death observation nor a kill/charm chat report appears in the available
+run evidence, and the user cannot confirm the kill. This is a missing-input
+hypothesis, not a proved detection bug. A different mod's total does not establish
+a Mimic kill. The formula and evidence requirements remain unchanged.
+`DungeonExtraScoreMessagesTest` replays the observed 298/299/298 sequence and
+the final server override without inventing Mimic evidence.
+
 ## Splits
 
 - `DungeonSplitTracker` transitions are ordered and idempotent. Late boss messages
@@ -187,6 +222,10 @@ the next live run. This change adds no scans or new chat output.
   already buffered sample for that phase, including a pending final-phase PB awaiting
   victory. Frozen run clocks/results stay unchanged; newly completed phases and future
   runs can still learn PBs normally.
+  The header also shows **AVG: N/20 runs** for the selected floor and a **Reset AVG**
+  button. Reset immediately deletes that floor/mode's saved run history, preserves
+  PBs and other floors, and invalidates a running forecast. New completed runs can
+  collect samples again. This action works with the overlay disabled.
 - Each enabled, accurately completed phase also posts a local Kung system message,
   for example `[Kung Splits] F6 Blood Open: 31.00s (PB: 30.00s)`. A first PB or strictly faster
   phase adds a separate message with bold pink `PERSONAL BEST!` and green result text, for example
@@ -224,21 +263,38 @@ the next live run. This change adds no scans or new chat output.
   the same control as Dungeon Chat Filter > Boss Messages. It defaults on to retain
   the existing prediction row; the Splits master toggle stays off by default.
   Turning prediction off removes the `Predicted` row below Total (before Time Lost),
-  including its preview/editor height, while PB collection continues. The child
-  **Update** switches between **Phase End** (default) and **Live**. Both settings
-  persist in the existing Splits config; missing/unknown modes fall back to Phase End.
-- Phase End starts with the sum of that floor's PBs, then uses **real elapsed time
-  at the last boundary + PBs of the active and later phases**. It stays fixed within
-  a phase, even if that phase exceeds its PB. Live uses **current real Run time +
-  PBs of only the later phases**, excluding the active phase. For example, during
-  Storm in F7: current Total + Terminals PB + Goldor PB + Necron PB; M7 also adds
+  including its preview/editor height, while PB and AVG collection continues.
+  **Update** switches between **Phase End** (default) and **Live**; **Source** selects
+  **PB** (default) or **AVG** independently. All settings persist in the existing
+  Splits config; missing/unknown values fall back to Phase End and PB.
+- AVG stores up to the **last 20 confirmed finished runs per floor/mode** under
+  `splitsOverlay.recentRuns`, oldest first. Each run contains that run's accurately
+  measured, positive real phase milliseconds collected with Splits enabled.
+  Each phase's baseline is its arithmetic mean across those runs, rounded to the
+  nearest millisecond. Missing/skipped/zero phases are omitted from that phase's
+  denominator, never treated as zero. Eviction removes the oldest whole run.
+  There is no PB fallback or cross-floor sharing when an average is missing.
+  Collection works in PB mode and with Time Prediction hidden. PB edits do not
+  alter measured AVG samples. Aborts, score-only wipes, unknown floors and manual
+  debug runs cannot enter history. A score-before-victory run is added once on the
+  matching confirmation, using the frozen score-boundary sample. Boss-death runs
+  wait for the completion banner. Late M7 detection uses the final floor bucket.
+  PB improvements and run samples share one save at a confirmed finish; a slower
+  completed run still updates AVG even when no PB improves.
+- Phase End starts with the sum of that floor's selected baselines, then uses
+  **real elapsed time at the last boundary + baselines of the active and later
+  phases**. It stays fixed within a phase, even if that phase exceeds its baseline.
+  Live uses **current real Run time + baselines of only the later phases**,
+  excluding the active phase. For example, during Storm in F7: current Total +
+  Terminals baseline + Goldor baseline + Necron baseline; M7 also adds
   Relics, Wither King and Dragons. Live advances with Total, including banner wait,
-  using the same clock sample as the displayed Total. Future PB sums are cached at
-  boundaries/floor changes/manual PB edits; switching modes takes effect immediately mid-phase.
+  using the same clock sample as the displayed Total. Future sums are cached at
+  boundaries/floor changes and invalidated on source/data changes; AVG does not scan
+  history every frame. Switching Update or Source takes effect immediately mid-phase.
 - Late floor metadata refreshes both forecasts. Skipped spans are already included
-  in elapsed time and never counted twice. Missing required PBs or unknown floors
-  show `--`; passed phases do not require PBs, and Live does not require the active
-  phase's PB. No tick-time or TPS adjustment is applied. Phase End freezes during
+  in elapsed time and never counted twice. Missing required baselines or unknown floors
+  show `--`; passed phases do not require baselines, and Live does not require the active
+  phase's baseline. No tick-time or TPS adjustment is applied. Phase End freezes during
   the boss/banner wait; confirmed completion freezes both modes to actual Total.
   An unfinished stop shows `--`. Minutes/Seconds formatting and `/kung hud`
   position/scale apply to the row, including its preview and editor bounds.
@@ -303,6 +359,15 @@ completed versus aborted phases, manual/disabled runs, late M7 metadata,
 boss/banner timing and overflow. The full active-module Java 25 build passes
 all 537 tests with no failures/errors/skips. Live F6/M7 runs, restart restoration, menu
 toggle/expansion/mode clicks, local phase/PB chat and HUD readability remain open.
+
+PB/AVG validation (2026-09-18): seven new regressions cover persisted whole-run
+eviction at 20, per-phase means with missing samples, floor/mode isolation, legacy
+config defaults, immediate reset/source switching in both update modes, disabled
+prediction learning, excluded runs and late M7 completion. Extended completion-order
+tests cover single insertion after score-before-victory, duplicate/expired banners
+and tracking eligibility. The focused suite and full Java 25 build pass: 708 cases,
+707 passed, one Windows symlink skip, no failures/errors. The JAR is built, not
+installed; live Source clicks, run count/reset and next-run HUD remain unchecked.
 
 ### Score-before-victory PB correction — 2026-09-15
 

@@ -36,6 +36,21 @@ public final class KungUpdateInstallerTest {
         assertArrayEquals(old, Files.readAllBytes(f.dir.resolve("previous.jar")));
     }
 
+    @Test public void replacementDoesNotChangeALauncherCacheOrAnotherProfilesHardLink() throws Exception {
+        Fixture f = fixture();
+        byte[] old = Files.readAllBytes(f.target);
+        Path cached = Files.createLink(temp.getRoot().toPath().resolve("launcher-cache.jar"), f.target);
+        Path other = Files.createLink(temp.getRoot().toPath().resolve("other-profile.jar"), f.target);
+        assertTrue(Files.isSameFile(cached, f.target));
+        KungUpdateInstaller.apply(f.dir, f.plan);
+        assertArrayEquals(Files.readAllBytes(f.source), Files.readAllBytes(f.target));
+        assertArrayEquals(old, Files.readAllBytes(cached));
+        assertArrayEquals(old, Files.readAllBytes(other));
+        assertArrayEquals(old, Files.readAllBytes(f.dir.resolve("previous.jar")));
+        assertFalse(Files.isSameFile(cached, f.target));
+        assertFalse(Files.exists(f.marker()));
+    }
+
     @Test public void failuresAtEachTransactionBoundaryLeaveACompleteJarAndCanResume() throws Exception {
         for (var point : KungUpdateInstaller.Checkpoint.values()) {
             Fixture f = fixture();

@@ -94,7 +94,7 @@ public final class RareDungeonRoomCatalogTest {
         }
     }
 
-    @Test public void userConfirmedLavaRoomOnlyAddsATypeHint() throws Exception {
+    @Test public void sameNameLavaPitsHaveSeparateHashesTypesAndMetadata() throws Exception {
         Properties types = new Properties();
         try (var reader = new InputStreamReader(getClass().getResourceAsStream(
             "/kung-dungeon-scans/known-room-types.properties"), StandardCharsets.UTF_8)) {
@@ -102,9 +102,18 @@ public final class RareDungeonRoomCatalogTest {
         }
         assertEquals("RARE", types.getProperty("-1005518830"));
         DungeonKnownRoomCatalog.reload();
-        assertNull(DungeonKnownRoomCatalog.knownCoreHint(-1005518830));
+        var rare = DungeonKnownRoomCatalog.knownCoreHint(-1005518830);
+        assertNotNull(rare);
+        assertEquals("Lava Pit", rare.name());
+        assertEquals(RoomType.RARE, rare.type());
+        assertEquals("User-approved placeholder, not a verified secret count", 0, rare.secrets());
+        assertEquals(0, rare.crypts());
         assertTrue(DungeonKnownRoomCatalog.knownRoomInfos("Lava Pool").isEmpty());
-        assertTrue(DungeonKnownRoomCatalog.knownRoomInfos("Lava Pit", -1005518830, 1296131753).isEmpty());
+        assertEquals(2, DungeonKnownRoomCatalog.knownRoomInfos("Lava Pit").size());
+        var stableRare = DungeonKnownRoomCatalog.knownRoomInfos("Lava Pit", 0, 1296131753);
+        assertEquals(1, stableRare.size());
+        assertEquals(RoomType.RARE, stableRare.getFirst().type());
+        assertEquals(RoomType.NORMAL, DungeonKnownRoomCatalog.knownCoreHint(1192954774).type());
     }
 
     @Test public void mistakenRareLavaPitImportsAreRepairedWithoutLosingTheirHashes() throws Exception {
@@ -120,6 +129,22 @@ public final class RareDungeonRoomCatalogTest {
             assertEquals(1, template.crypts());
             assertEquals(1192954774, template.components().getFirst().coreHash());
             assertEquals(-408192692, template.components().getFirst().stableCoreHash());
+        }
+    }
+
+    @Test public void repairingTheNormalRoomCannotMergeItsCryptsIntoTheRareNamesake() throws Exception {
+        JsonArray rooms = new JsonArray();
+        rooms.add(room("Lava Pit", "RARE", 3, 0, false, -1005518830, 1296131753));
+        rooms.add(room("Lava Pit", "RARE", 3, 1, false, 1192954774, -408192692));
+        JsonObject database = new JsonObject();
+        database.add("rooms", rooms);
+        var templates = parseTemplates(database.toString());
+        assertEquals(2, templates.size());
+        for (var template : templates) {
+            boolean rare = template.components().getFirst().coreHash() == -1005518830;
+            assertEquals(rare ? RoomType.RARE : RoomType.NORMAL, template.type());
+            assertEquals(rare ? 0 : 1, template.crypts());
+            assertEquals(3, template.secrets());
         }
     }
 

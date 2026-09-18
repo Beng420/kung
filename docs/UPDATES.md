@@ -76,21 +76,32 @@ nor download updates into a game profile.
 
 ## Safe installation and launcher ownership — 2026-09-16
 
-Modrinth starts retain update checks/notices, but the installation control reads
-**Updates: Use Modrinth** and cannot replace a mod file. Use Modrinth's own update
-or import workflow. Detection uses its IPC system properties or the exact
-`theseus`/`modrinth` launcher brand, including starts with a custom brand but the
-standard IPC properties. This conservatively includes unmanaged files in those
-starts; Kung does not edit Modrinth's database or guess which JAR it owns.
+As clarified by the user on 2026-09-18, **Updates: Available** starts the automatic
+GitHub download and verified post-exit installation in Modrinth as well as other
+launchers. Minecraft must close before the replacement, then be started again.
+Neither the `theseus`/`modrinth` brand nor Modrinth IPC properties disable the
+button or reject pending recovery. No browser/import detour or Modrinth project
+listing is required. Already installed versions with the old blocked action need
+a one-time manual installation of this fix; that old code cannot update itself.
 
-The supplied `mods/kung-26.1.2-0.3.1.jar needs repair or re-import` screenshot
-matches Modrinth's [managed-file validation error](https://github.com/modrinth/code/blob/1faf434ad5b1a6675f1acbc55c1c7342b2646a98/packages/app-lib/src/state/content_store/commands/instance_files.rs#L71-L116).
-Its managed records validate both the path and content; [rescanning preserves
-conflicting managed bindings](https://github.com/modrinth/code/blob/1faf434ad5b1a6675f1acbc55c1c7342b2646a98/packages/app-lib/src/state/instances/commands/sync_content_files.rs#L173-L227).
-Thus either renaming or replacing a managed JAR externally can invalidate it.
-The screenshot alone does not establish which operation caused the friend's error.
+The blanket launcher guard was too broad. The locally installed Modrinth is
+**0.20.5**. Its released [file rescan implementation](https://github.com/modrinth/code/blob/34e3b90d35cc15e371de562c91207fe4617d4833/packages/app-lib/src/state/instances/commands/sync_content_files.rs)
+recognizes changed hashes/sizes at the same path and updates its file records;
+its [launch path](https://github.com/modrinth/code/blob/34e3b90d35cc15e371de562c91207fe4617d4833/packages/app-lib/src/launcher/mod.rs)
+does not have the shared-store validation used to justify the guard.
+The earlier `needs repair or re-import` wording was matched against a different
+[development revision](https://github.com/modrinth/code/blob/1faf434ad5b1a6675f1acbc55c1c7342b2646a98/packages/app-lib/src/state/content_store/commands/instance_files.rs).
+That is not evidence that every Modrinth release rejects external updates, nor
+proof of the friend's original failure. Future shared-store launcher builds and
+the exact original repair incident remain outside the live verification here.
 
-For other launchers, installation follows these rules:
+For comparison, [SkyHanni 4.0.0](https://github.com/hannibal002/SkyHanni/blob/4.0.0/src/main/java/at/hannibal2/skyhanni/features/misc/update/UpdateManager.kt)
+downloads/prepares the update and queues libautoupdate's post-exit file replacement;
+it does not use a special Modrinth installation API. Its current beta at
+`96e01263192bc432d088c000362fd2b37e7fde13` uses a no-op target instead. Kung reuses its
+existing verified installer, without adding a library or editing launcher databases.
+
+Installation follows these rules for all launchers:
 
 - Only the loaded standalone JAR directly inside this profile's `mods/` can be
   replaced. Symlink paths and external/cache origins are rejected. The installed
@@ -113,6 +124,8 @@ For other launchers, installation follows these rules:
   atomic replacement of the exact original path. There is no delete-first or
   copy-over-active-JAR fallback. Unsupported atomic moves, cross-volume custom
   config paths, access errors and changed files leave the existing JAR intact.
+  Atomic replacement also breaks a target hard link without changing a cache or
+  another profile that still links the old bytes.
 - Success clears the pending marker and keeps the verified source and backup.
   A crash after the commit can be recognized by its new hash without reinstalling.
   Interrupted downloads never create a pending transaction. An interrupted helper
@@ -124,17 +137,22 @@ For other launchers, installation follows these rules:
 The success chat now says **verified and queued**, not **installed**. Installer
 results appear in `logs/kung/update-installer.log`; preparation/recovery failures
 are in `logs/latest.log`. A blocked recovery disables further installation in that
-session instead of overwriting the pending transaction. Managed-launcher startup
-preserves any pending marker as rejected without applying it.
+session instead of overwriting the pending transaction. Modrinth uses the same
+verified recovery path; launcher identity alone never rejects a pending update.
 
-`KungUpdateDownloadTest`, `KungUpdateInstallerTest`, `KungUpdateEnvironmentTest`
+`KungUpdateActionTest` covers automatic installation eligibility for Modrinth,
+other brands and IPC properties, plus inactive/missing-release states and genuine
+recovery failures. The GitHub v0.3.5 release page was confirmed on 2026-09-18;
+the public API was rate-limited during that check.
+
+`KungUpdateDownloadTest`, `KungUpdateInstallerTest`
 and `KungUpdateProcessTest` cover local HTTP failures/limits, corrupt/wrong or
-incompatible JARs, launcher detection, transaction-boundary interruptions,
+incompatible JARs, hard-link isolation, transaction-boundary interruptions,
 unsupported atomic replacement, altered targets/sources, marker recovery and a
 real isolated Java helper process including session-lock contention. Temporary
 test profiles are the only installation targets. Windows may skip the symlink
 creation case when the OS denies that capability; path-confinement tests still run.
-The final Java-25 active-module build passed: 575 cases, 574 passed, zero failures
+The original 2026-09-16 Java-25 build passed: 575 cases, 574 passed, zero failures
 or errors and one skipped Windows symlink-creation case; 71 cases belong to the
 update package (38 newly added). The real-process test kills a waiting helper,
 retries while a dummy game JVM is alive and confirms installation only after that
@@ -146,7 +164,7 @@ durability. File data is flushed, but directory flushing is unavailable on some
 filesystems, notably Windows. Disk/controller failure remains outside the atomic
 replacement guarantee. The session lock starts during Kung initialization, after
 Fabric discovery; a very fast new launch during an older helper's commit still
-needs live validation. Modrinth's update/import flow, normal exit, interrupted
+needs live validation. Modrinth's automatic update/restart flow, normal exit, interrupted
 download, PC shutdown and immediate relaunch remain live checks. No user profile
 or launcher database was modified during development.
 

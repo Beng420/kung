@@ -9,6 +9,7 @@ import com.github.beng420.kung.message.KungMessages;
 import com.github.beng420.kung.skyblock.HypixelInstanceTracker;
 import com.github.beng420.kung.util.KungDebugRecorder;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -38,6 +39,7 @@ public final class DungeonDebuffFeature extends ConfigurableFeature<DungeonConfi
     private final Map<UUID, IceMarker> markers = new LinkedHashMap<>();
     private final Map<UUID, EnderDragon> dragons = new HashMap<>();
     private final Map<UUID, Boolean> endings = new HashMap<>();
+    private final Map<UUID, String> highlightStates = new HashMap<>();
     private long epoch = Long.MIN_VALUE;
 
     private DungeonDebuffFeature() { super(config -> config.dungeon); }
@@ -72,6 +74,7 @@ public final class DungeonDebuffFeature extends ConfigurableFeature<DungeonConfi
         markers.clear();
         dragons.clear();
         endings.clear();
+        highlightStates.clear();
         epoch = Long.MIN_VALUE;
     }
 
@@ -144,12 +147,18 @@ public final class DungeonDebuffFeature extends ConfigurableFeature<DungeonConfi
         if (!candidates.isEmpty()) marker.resolved = true;
         if (target == null) {
             trace("ice-marker id=" + marker.entity.getId() + " position=" + marker.entity.position()
-                + " target=ambiguous-or-missing candidates=" + candidates.size());
+                + " target=ambiguous-or-missing candidates=" + candidates.size()
+                + " nearest=" + candidates.stream()
+                    .sorted(Comparator.comparingDouble(candidate -> candidate.distanceTo(marker.entity.position())))
+                    .limit(2).map(candidate -> "distance=" + candidate.distanceTo(marker.entity.position())
+                        + " " + describeTarget(level.getEntity(candidate.uuid()))).toList());
             return;
         }
         marker.resolved = true;
         tracker.spray(target, marker.observedTick);
-        trace("ice-marker id=" + marker.entity.getId() + " target=" + target + " observedTick=" + marker.observedTick);
+        trace("ice-marker id=" + marker.entity.getId() + " target=" + target + " observedTick=" + marker.observedTick
+            + " expiresTick=" + (marker.observedTick + DungeonDebuffTracker.SPRAY_TICKS)
+            + " " + describeTarget(level.getEntity(target)));
     }
 
     public void observeSound(ClientboundSoundPacket packet) {
@@ -211,11 +220,28 @@ public final class DungeonDebuffFeature extends ConfigurableFeature<DungeonConfi
         var level = Minecraft.getInstance().level;
         if (level == null) return List.of();
         List<Entity> entities = new ArrayList<>();
-        for (UUID uuid : tracker.highlighted()) {
+        var highlighted = tracker.highlighted();
+        for (UUID uuid : highlighted) {
             Entity entity = level.getEntity(uuid);
-            if (entity != null && entity.isAlive() && !entity.isRemoved()) entities.add(entity);
+            String state = entity == null ? "missing" : entity.isRemoved() ? "removed" : !entity.isAlive() ? "dead" : "ready";
+            if (!state.equals(highlightStates.put(uuid, state))) {
+                trace("ice-highlight target=" + uuid + " state=" + state + " " + describeTarget(entity));
+            }
+            if (state.equals("ready")) entities.add(entity);
         }
+        highlightStates.keySet().removeIf(uuid -> {
+            if (highlighted.contains(uuid)) return false;
+            trace("ice-highlight target=" + uuid + " state=inactive");
+            return true;
+        });
         return entities;
+    }
+
+    private static String describeTarget(Entity entity) {
+        if (entity == null) return "entity=missing";
+        return "entity=" + entity.getId() + ":" + entity.getType() + " name=\"" + entity.getName().getString()
+            + "\" position=" + entity.position() + " bounds=" + entity.getBoundingBox()
+            + (entity instanceof LivingEntity living ? " health=" + living.getHealth() : "");
     }
 
     private void trace(String message) {

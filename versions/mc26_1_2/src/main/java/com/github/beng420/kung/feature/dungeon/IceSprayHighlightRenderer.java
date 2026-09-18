@@ -1,8 +1,11 @@
 package com.github.beng420.kung.feature.dungeon;
 
 import com.github.beng420.kung.config.KungConfig;
+import com.github.beng420.kung.util.KungDebugRecorder;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import net.fabricmc.fabric.api.client.rendering.v1.RenderStateDataKey;
 import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderEvents;
 import net.minecraft.client.renderer.ShapeRenderer;
@@ -18,6 +21,8 @@ final class IceSprayHighlightRenderer {
         {6, 7, 3, 2}, {1, 0, 2, 3}, {4, 5, 7, 6}};
     private static final int OUTLINE = 0xFF99DDFF;
     private static final int FILL = 0x3399DDFF; // 51 / 255 = 20% alpha per face.
+    private static Set<Integer> lastExtractedTargets = Set.of();
+    private static int lastDrawnCount;
 
     private IceSprayHighlightRenderer() { }
 
@@ -31,6 +36,7 @@ final class IceSprayHighlightRenderer {
     static void initialize() {
         LevelRenderEvents.END_EXTRACTION.register(context -> {
             List<AABB> boxes = new ArrayList<>();
+            Set<Integer> targets = new HashSet<>();
             var camera = context.camera();
             Vec3 position = camera.position();
             float partialTick = camera.getCameraEntityPartialTicks(context.deltaTracker());
@@ -39,11 +45,21 @@ final class IceSprayHighlightRenderer {
                 if (!entity.shouldRender(position.x, position.y, position.z)) continue;
                 boxes.add(scaledBounds(entity.getBoundingBox(), size)
                     .move(entity.getPosition(partialTick).subtract(entity.position())));
+                targets.add(entity.getId());
+            }
+            if (!targets.equals(lastExtractedTargets)) {
+                KungDebugRecorder.event("dungeon-debuff", "ice-boxes extracted=" + boxes.size()
+                    + " entityIds=" + targets + " size=" + size + " camera=" + position + " bounds=" + boxes);
+                lastExtractedTargets = Set.copyOf(targets);
             }
             context.levelState().setData(BOXES, List.copyOf(boxes));
         });
         LevelRenderEvents.END_MAIN.register(context -> {
             List<AABB> boxes = context.levelState().getDataOrDefault(BOXES, List.of());
+            if (boxes.size() != lastDrawnCount) {
+                KungDebugRecorder.event("dungeon-debuff", "ice-boxes draw=" + boxes.size());
+                lastDrawnCount = boxes.size();
+            }
             if (boxes.isEmpty()) return;
             Vec3 camera = context.levelState().cameraRenderState.pos;
             var fillType = RenderTypes.debugQuads();

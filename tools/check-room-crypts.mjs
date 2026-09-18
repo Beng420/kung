@@ -113,7 +113,6 @@ const wikiCrypts = new Map(Object.entries({
   "Sand Dragon": 1,
   "Tombstone": 0,
   "Stone Window": 1,
-  "Lava Pit": 1,
   "Mini Rail Track": 3,
   "Trinity": 0,
   "Hanging Vines": 0,
@@ -180,8 +179,15 @@ for (const moduleName of modules) {
     }
   }
 
+  // Same name, different rooms. RARE's zero is the user's placeholder, not a wiki count.
+  for (const [type, crypts] of [["NORMAL", 1], ["RARE", 0]]) {
+    const room = rooms.find((entry) => entry.name === "Lava Pit" && entry.type === type);
+    if (!room) missing.push(`Lava Pit (${type})`);
+    else if (room.crypts !== crypts) mismatches.push(`Lava Pit (${type}): db=${room.crypts} expected=${crypts}`);
+  }
+
   const extras = rooms
-    .filter((room) => !wikiCrypts.has(room.name) && !userConfirmedCrypts.has(room.name))
+    .filter((room) => room.name !== "Lava Pit" && !wikiCrypts.has(room.name) && !userConfirmedCrypts.has(room.name))
     .map((room) => `${room.name}|${room.type}|${room.secrets}/${room.crypts}`);
 
   console.log(`${moduleName}:`);

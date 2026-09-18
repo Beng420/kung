@@ -43,10 +43,12 @@ public final class DungeonSplitTracker {
     private final Supplier<SplitsConfig> config;
     private final Consumer<PhaseMessage> phaseMessages;
     private final Map<String, Long> personalBestCandidates = new HashMap<>();
+    private final Map<String, Long> runMeasurements = new HashMap<>();
     private boolean manualRun;
     private long predictedFinishMillis = -1L;
-    /** PB sum after the active phase; refreshed at boundaries, floor changes or manual PB edits. */
+    /** Selected baseline sum after the active phase; recomputed only when phases or data change. */
     private long futurePhaseBestsMillis = -1L;
+    private long predictionRevision = -1L;
     private final List<CompletedSplit> completed = new ArrayList<>();
     private List<CompletedSplit> completedView = List.of();
     private String[] splitNames = DEFAULT_SPLITS;
@@ -150,12 +152,13 @@ public final class DungeonSplitTracker {
         captureStoppedCurrentSplit(stoppedElapsedMillis, "stopRun");
         running = false;
         predictedFinishMillis = -1L;
-        savePersonalBests();
+        saveMeasurements(false);
         traceStopped("run-stop", "stopRun");
     }
 
     public void reset() {
-        savePersonalBests();
+        saveMeasurements(false);
+        runMeasurements.clear();
         manualRun = false;
         predictedFinishMillis = -1L;
         futurePhaseBestsMillis = -1L;
@@ -298,6 +301,7 @@ public final class DungeonSplitTracker {
 
     /** The HUD passes its Total snapshot so live prediction uses the same wall-clock sample. */
     public long predictedFinishMillis(long elapsedMillis) {
+        if (running && predictionRevision != config.get().predictionRevision()) refreshPrediction();
         if (!running || config.get().predictionMode() == SplitsConfig.PredictionMode.PHASE_END) {
             return predictedFinishMillis;
         }
@@ -333,40 +337,45 @@ public final class DungeonSplitTracker {
     private void refreshPrediction() {
         predictedFinishMillis = -1L;
         futurePhaseBestsMillis = -1L;
+        SplitsConfig settings = config.get();
+        predictionRevision = settings.predictionRevision();
         if (!running || !hasKnownFloor() || manualRun) return;
         int next = awaitingCompletionAfter == null ? indexOf(currentSplitName) : splitNames.length;
         if (next < 0) return;
-        SplitsConfig settings = config.get();
         long future = 0L;
         for (int index = next + 1; index < splitNames.length; index++) {
-            long best = settings.personalBestMillis(floor, masterMode, splitNames[index]);
+            long best = settings.predictionMillis(floor, masterMode, splitNames[index]);
             if (best < 0L || future > Long.MAX_VALUE - best) return;
             future += best;
         }
         futurePhaseBestsMillis = future;
-        // Phase End includes the active phase's full PB. Live uses its elapsed time instead.
+        // Phase End includes the active phase's full baseline. Live uses its elapsed time instead.
         long activeBest = next < splitNames.length
-            ? settings.personalBestMillis(floor, masterMode, splitNames[next]) : 0L;
+            ? settings.predictionMillis(floor, masterMode, splitNames[next]) : 0L;
         if (activeBest < 0L || future > Long.MAX_VALUE - activeBest) return;
         long remaining = future + activeBest;
-        // This boundary includes skipped phases; never add their PBs a second time.
+        // This boundary includes skipped phases; never add their estimates a second time.
         if (currentSplitStartMillis <= Long.MAX_VALUE - remaining) {
             predictedFinishMillis = currentSplitStartMillis + remaining;
         }
     }
 
-    private void savePersonalBests() {
+    private void saveMeasurements(boolean completedRun) {
         // Late metadata can still upgrade F7 to M7. Commit with the final floor on
         // finish/exit, rather than permanently putting early splits in the wrong bucket.
-        if (!manualRun && hasKnownFloor() && !personalBestCandidates.isEmpty()) {
+        if (!manualRun && hasKnownFloor()) {
             Map<String, Long> validPhases = new HashMap<>();
+            Map<String, Long> averagePhases = new HashMap<>();
             for (String name : splitNames) {
                 Long duration = personalBestCandidates.get(name);
                 if (duration != null) validPhases.put(name, duration);
+                Long sample = runMeasurements.get(name);
+                if (completedRun && sample != null) averagePhases.put(name, sample);
             }
-            config.get().recordPersonalBests(floor, masterMode, validPhases);
+            config.get().recordRun(floor, masterMode, validPhases, averagePhases);
         }
         personalBestCandidates.clear();
+        if (completedRun) runMeasurements.clear();
     }
 
     private long splitServerDurationMillis() {
@@ -398,6 +407,7 @@ public final class DungeonSplitTracker {
         PhaseMessage notice = phaseMessage(split);
         if (!manualRun && config.get().enabled() && duration > 0L) {
             personalBestCandidates.merge(currentSplitName, duration, Math::min);
+            runMeasurements.put(currentSplitName, duration);
             if (confirmed) phaseMessages.accept(notice);
         }
         tracePhase("phase-end", split, boundary);
@@ -433,7 +443,8 @@ public final class DungeonSplitTracker {
         predictedFinishMillis = finalPhaseConfirmed && !manualRun && hasKnownFloor() && stoppedCurrentSplit == null
             && !completed.isEmpty() && completed.getLast().name().equals(splitNames[splitNames.length - 1])
             ? elapsed : -1L;
-        savePersonalBests();
+        saveMeasurements(predictedFinishMillis >= 0L && (awaitingCompletionAfter != null
+            || DungeonLifecycleSignals.isVictoryForFloor(boundary, floor, masterMode)));
         traceStopped("run-finished", boundary);
     }
 
@@ -446,12 +457,12 @@ public final class DungeonSplitTracker {
         }
         if (!DungeonLifecycleSignals.isVictoryForFloor(message, floor, masterMode)) return false;
         pendingVictory = null;
+        PhaseMessage notice = phaseMessage(pending.split());
         if (pending.bestEligible()) {
-            PhaseMessage notice = phaseMessage(pending.split());
-            config.get().recordPersonalBests(floor, masterMode,
-                Map.of(pending.split().name(), pending.split().splitDurationMillis()));
-            phaseMessages.accept(notice);
+            personalBestCandidates.put(pending.split().name(), pending.split().splitDurationMillis());
         }
+        saveMeasurements(true);
+        if (pending.bestEligible()) phaseMessages.accept(notice);
         // Confirm the existing score-boundary sample; never append a split or resume either clock.
         predictedFinishMillis = stoppedElapsedMillis;
         traceStopped("run-victory-confirmed", message);
@@ -495,6 +506,7 @@ public final class DungeonSplitTracker {
         }
         return " pbFloor=" + (hasKnownFloor() ? floor == 0 ? "Entrance" : (masterMode ? "M" : "F") + floor : "unknown")
             + " pbTracking=" + settings.enabled() + " predictionMode=" + settings.predictionMode()
+            + " predictionSource=" + settings.predictionSource() + " avgRuns=" + settings.recentRunCount(floor, masterMode)
             + " pbKnown=" + (splitNames.length - missing.size()) + "/" + splitNames.length
             + " pbMissing=\"" + String.join("|", missing) + "\"";
     }

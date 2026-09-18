@@ -165,22 +165,26 @@ public final class DungeonStaticChestTest {
         }
     }
 
-    @Test public void capturedButtonsAndDuecesLoadFromResourcesAndCannotBeUndone() throws Exception {
+    @Test public void capturedFixedChestsLoadFromResourcesAndCannotBeUndone() throws Exception {
         var catalog = new DungeonStaticChestCatalog();
         catalog.load();
-        assertEquals(2, catalog.bundledCount());
-        assertEquals(Set.of("buttons", "dueces"), catalog.patterns().stream()
+        assertEquals(3, catalog.bundledCount());
+        assertEquals(Set.of("buttons", "dueces", "redstonekey"), catalog.patterns().stream()
             .map(DungeonStaticChestPattern::room).collect(java.util.stream.Collectors.toSet()));
         for (var pattern : catalog.patterns()) {
             assertEquals(48, pattern.probes().size());
             assertEquals(pattern.room().equals("buttons") ? 4 : 1, pattern.cells().size());
-            var expected = pattern.room().equals("buttons")
-                ? new DungeonStaticChestPattern.Point(48, 81, 59) : new DungeonStaticChestPattern.Point(15, 79, 12);
+            var expected = switch (pattern.room()) {
+                case "buttons" -> new DungeonStaticChestPattern.Point(48, 81, 59);
+                case "dueces" -> new DungeonStaticChestPattern.Point(15, 79, 12);
+                case "redstonekey" -> new DungeonStaticChestPattern.Point(18, 69, 29);
+                default -> throw new AssertionError(pattern.room());
+            };
             assertEquals(expected, pattern.chest());
         }
         assertEquals(0, catalog.sessionCount());
         assertNull(catalog.undo());
-        assertEquals(2, catalog.patterns().size());
+        assertEquals(3, catalog.patterns().size());
         var restarted = new DungeonStaticChestCatalog();
         restarted.load();
         assertEquals(catalog.patterns(), restarted.patterns());
@@ -200,7 +204,7 @@ public final class DungeonStaticChestTest {
                 for (var cell : observed.cells()) {
                     var cores = cell.cores().stream().sorted().toList();
                     cells.add(new DungeonStaticChestPattern.Cell(cell.x(), cell.z(),
-                        hashMode == 2 ? Set.of() : Set.of(cores.get(hashMode)),
+                        hashMode == 2 ? Set.of() : Set.of(cores.get(hashMode % cores.size())),
                         hashMode == 2 ? cell.stableCores() : Set.of()));
                 }
                 var room = new DungeonStaticChestPattern.Room(pattern.room(), origin, -168, cells);
@@ -227,7 +231,8 @@ public final class DungeonStaticChestTest {
                 boolean compatible = false;
                 for (var entry : json.getAsJsonObject().getAsJsonArray("rooms")) {
                     var room = entry.getAsJsonObject();
-                    if (!room.get("name").getAsString().equalsIgnoreCase(pattern.room())) continue;
+                    String name = room.get("name").getAsString().toLowerCase(java.util.Locale.ROOT).replaceAll("[^a-z0-9]", "");
+                    if (!name.equals(pattern.room())) continue;
                     for (var variant : room.getAsJsonArray("variants")) {
                         var cells = new ArrayList<DungeonStaticChestPattern.Cell>();
                         for (var element : variant.getAsJsonObject().getAsJsonArray("components")) {

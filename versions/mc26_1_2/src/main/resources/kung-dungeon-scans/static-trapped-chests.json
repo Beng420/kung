@@ -847,6 +847,412 @@
           "block": "minecraft:polished_andesite"
         }
       ]
+    },
+    {
+      "room": "redstonekey",
+      "cells": [
+        {
+          "x": 0,
+          "z": 0,
+          "cores": [
+            1786984420
+          ],
+          "stableCores": [
+            1448328045
+          ]
+        }
+      ],
+      "chest": {
+        "x": 18,
+        "y": 69,
+        "z": 29
+      },
+      "probes": [
+        {
+          "pos": {
+            "x": 14,
+            "y": 77,
+            "z": 2
+          },
+          "block": "minecraft:stone_bricks"
+        },
+        {
+          "pos": {
+            "x": 2,
+            "y": 89,
+            "z": 26
+          },
+          "block": "minecraft:stone"
+        },
+        {
+          "pos": {
+            "x": 18,
+            "y": 61,
+            "z": 18
+          },
+          "block": "minecraft:stone"
+        },
+        {
+          "pos": {
+            "x": 22,
+            "y": 97,
+            "z": 26
+          },
+          "block": "minecraft:stone"
+        },
+        {
+          "pos": {
+            "x": 14,
+            "y": 85,
+            "z": 10
+          },
+          "block": "minecraft:stone"
+        },
+        {
+          "pos": {
+            "x": 18,
+            "y": 77,
+            "z": 14
+          },
+          "block": "minecraft:stone_bricks"
+        },
+        {
+          "pos": {
+            "x": 14,
+            "y": 81,
+            "z": 2
+          },
+          "block": "minecraft:stone"
+        },
+        {
+          "pos": {
+            "x": 2,
+            "y": 85,
+            "z": 26
+          },
+          "block": "minecraft:stone"
+        },
+        {
+          "pos": {
+            "x": 18,
+            "y": 81,
+            "z": 14
+          },
+          "block": "minecraft:stone"
+        },
+        {
+          "pos": {
+            "x": 22,
+            "y": 93,
+            "z": 26
+          },
+          "block": "minecraft:stone"
+        },
+        {
+          "pos": {
+            "x": 14,
+            "y": 65,
+            "z": 6
+          },
+          "block": "minecraft:stone"
+        },
+        {
+          "pos": {
+            "x": 14,
+            "y": 89,
+            "z": 10
+          },
+          "block": "minecraft:stone"
+        },
+        {
+          "pos": {
+            "x": 2,
+            "y": 97,
+            "z": 26
+          },
+          "block": "minecraft:stone"
+        },
+        {
+          "pos": {
+            "x": 14,
+            "y": 93,
+            "z": 10
+          },
+          "block": "minecraft:stone"
+        },
+        {
+          "pos": {
+            "x": 14,
+            "y": 61,
+            "z": 6
+          },
+          "block": "minecraft:stone"
+        },
+        {
+          "pos": {
+            "x": 22,
+            "y": 89,
+            "z": 26
+          },
+          "block": "minecraft:stone"
+        },
+        {
+          "pos": {
+            "x": 2,
+            "y": 93,
+            "z": 26
+          },
+          "block": "minecraft:stone"
+        },
+        {
+          "pos": {
+            "x": 18,
+            "y": 65,
+            "z": 18
+          },
+          "block": "minecraft:stone"
+        },
+        {
+          "pos": {
+            "x": 14,
+            "y": 97,
+            "z": 10
+          },
+          "block": "minecraft:stone"
+        },
+        {
+          "pos": {
+            "x": 22,
+            "y": 85,
+            "z": 26
+          },
+          "block": "minecraft:stone"
+        },
+        {
+          "pos": {
+            "x": 14,
+            "y": 81,
+            "z": 6
+          },
+          "block": "minecraft:stone"
+        },
+        {
+          "pos": {
+            "x": 18,
+            "y": 65,
+            "z": 14
+          },
+          "block": "minecraft:stone"
+        },
+        {
+          "pos": {
+            "x": 18,
+            "y": 85,
+            "z": 22
+          },
+          "block": "minecraft:stone"
+        },
+        {
+          "pos": {
+            "x": 14,
+            "y": 65,
+            "z": 2
+          },
+          "block": "minecraft:stone"
+        },
+        {
+          "pos": {
+            "x": 18,
+            "y": 89,
+            "z": 22
+          },
+          "block": "minecraft:stone"
+        },
+        {
+          "pos": {
+            "x": 18,
+            "y": 93,
+            "z": 22
+          },
+          "block": "minecraft:stone"
+        },
+        {
+          "pos": {
+            "x": 18,
+            "y": 81,
+            "z": 18
+          },
+          "block": "minecraft:stone"
+        },
+        {
+          "pos": {
+            "x": 18,
+            "y": 97,
+            "z": 22
+          },
+          "block": "minecraft:stone"
+        },
+        {
+          "pos": {
+            "x": 18,
+            "y": 61,
+            "z": 14
+          },
+          "block": "minecraft:stone"
+        },
+        {
+          "pos": {
+            "x": 14,
+            "y": 61,
+            "z": 2
+          },
+          "block": "minecraft:stone"
+        },
+        {
+          "pos": {
+            "x": 18,
+            "y": 77,
+            "z": 18
+          },
+          "block": "minecraft:cobblestone"
+        },
+        {
+          "pos": {
+            "x": 18,
+            "y": 89,
+            "z": 18
+          },
+          "block": "minecraft:stone"
+        },
+        {
+          "pos": {
+            "x": 2,
+            "y": 61,
+            "z": 26
+          },
+          "block": "minecraft:stone"
+        },
+        {
+          "pos": {
+            "x": 22,
+            "y": 69,
+            "z": 26
+          },
+          "block": "minecraft:stone_bricks"
+        },
+        {
+          "pos": {
+            "x": 14,
+            "y": 97,
+            "z": 6
+          },
+          "block": "minecraft:stone"
+        },
+        {
+          "pos": {
+            "x": 18,
+            "y": 85,
+            "z": 18
+          },
+          "block": "minecraft:stone"
+        },
+        {
+          "pos": {
+            "x": 14,
+            "y": 93,
+            "z": 6
+          },
+          "block": "minecraft:stone"
+        },
+        {
+          "pos": {
+            "x": 14,
+            "y": 61,
+            "z": 10
+          },
+          "block": "minecraft:stone"
+        },
+        {
+          "pos": {
+            "x": 22,
+            "y": 65,
+            "z": 26
+          },
+          "block": "minecraft:polished_andesite"
+        },
+        {
+          "pos": {
+            "x": 2,
+            "y": 69,
+            "z": 26
+          },
+          "block": "minecraft:stone_bricks"
+        },
+        {
+          "pos": {
+            "x": 18,
+            "y": 97,
+            "z": 18
+          },
+          "block": "minecraft:stone"
+        },
+        {
+          "pos": {
+            "x": 18,
+            "y": 77,
+            "z": 22
+          },
+          "block": "minecraft:cobblestone"
+        },
+        {
+          "pos": {
+            "x": 22,
+            "y": 61,
+            "z": 26
+          },
+          "block": "minecraft:stone"
+        },
+        {
+          "pos": {
+            "x": 14,
+            "y": 65,
+            "z": 10
+          },
+          "block": "minecraft:stone"
+        },
+        {
+          "pos": {
+            "x": 14,
+            "y": 89,
+            "z": 6
+          },
+          "block": "minecraft:stone"
+        },
+        {
+          "pos": {
+            "x": 18,
+            "y": 93,
+            "z": 18
+          },
+          "block": "minecraft:stone"
+        },
+        {
+          "pos": {
+            "x": 2,
+            "y": 65,
+            "z": 26
+          },
+          "block": "minecraft:stone"
+        },
+        {
+          "pos": {
+            "x": 18,
+            "y": 81,
+            "z": 22
+          },
+          "block": "minecraft:stone"
+        }
+      ]
     }
   ]
 }

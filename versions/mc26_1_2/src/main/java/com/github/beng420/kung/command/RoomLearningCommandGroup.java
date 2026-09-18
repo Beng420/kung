@@ -4,6 +4,7 @@ import static net.fabricmc.fabric.api.client.command.v2.ClientCommands.argument;
 import static net.fabricmc.fabric.api.client.command.v2.ClientCommands.literal;
 
 import com.github.beng420.kung.feature.dungeon.DungeonStateTracker;
+import com.mojang.brigadier.arguments.BoolArgumentType;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
@@ -23,6 +24,15 @@ final class RoomLearningCommandGroup {
                     .then(argument("type", StringArgumentType.word())
                         .suggests((context, builder) -> SharedSuggestionProvider.suggest(KungCommandActions.roomTypeNames(), builder))
                         .executes(context -> KungCommandActions.learnRoomType(context, tracker))))
+                .then(literal("prince")
+                    .then(argument("prince", BoolArgumentType.bool())
+                        .executes(context -> KungCommandActions.updateCurrentRoomPrince(context, tracker))))
+                .then(literal("project")
+                    .executes(KungCommandActions::roomProjectStatus)
+                    .then(literal("status").executes(KungCommandActions::roomProjectStatus))
+                    .then(literal("off").executes(KungCommandActions::disableRoomProject))
+                    .then(argument("path", StringArgumentType.greedyString())
+                        .executes(KungCommandActions::setRoomProject)))
                 .then(literal("debug").executes(context -> KungCommandActions.debugRooms(context, tracker)))
                 .then(literal("mapdebug").executes(context -> KungCommandActions.debugMapDecorations(context, tracker)))
                 .then(literal("undo").executes(KungCommandActions::undoLastRoomLearn))

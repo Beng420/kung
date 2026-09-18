@@ -36,6 +36,42 @@ or dead entities are not rendered. There are at most 256 retained markers and
 highlighted targets, and 128 eligible candidates per local query; exceeding a
 limit leaves the observation unknown rather than selecting from a truncated set.
 
+### Missing boss box, 2026-09-18 16:20:57
+
+The supplied screenshot shows ice cubes beside a wither labelled Goldor, without
+a visible blue box. The user describes a very short-lived boss and spraying from
+inside its model, so the first visible highlight frame is not established.
+`kung-trace-20260918-162057.log` records four markers at 16:20:46.349 / tick 6219,
+all matched to UUID `558ba449-78cf-bac2-1e89-7bff01ba1802`. Under the current rule
+they expire at tick 6319, or are hidden earlier if the target dies or disappears.
+The trace lacks the matched entity's type/health and render state; the UUID alone
+does not prove the match belongs to that boss. The saved profile enables Ice Spray
+Highlight with 150% Box Size; this is the inspected config, not a capture-time snapshot.
+
+The same trace has four successful marker matches at 16:18:09 and 52 rejected
+markers at 16:18:31 with 12 nearby candidates. Those rejected queries cannot be
+classified further without their distances and entity types. No matching radius,
+ambiguity rule, expiry, dead-target filter or rendering geometry was changed.
+
+Diagnostics now add the matched target's entity ID/type/name, position, bounds,
+health and expiry tick, plus the two nearest candidate descriptions for rejected
+matches using the matching algorithm's distances. `ice-highlight` records changes
+between ready, missing, removed, dead and inactive; `ice-boxes` records changes in
+extracted target IDs/bounds and draw-stage box counts. Draw-stage entry is not proof
+of visible pixels. These reuse bounded observations and queries, add no world scan,
+and emit no per-frame steady-state messages. Reproduce with the new JAR and save
+immediately: live rendering and the cause of this missing box remain unconfirmed.
+
+The follow-up reports missing boxes on Skeletors and Withermancers as well, and
+a possible brief flash on Maxor. Death is therefore not an established explanation.
+The 16:42:56 trace still uses the old marker-only format: four markers at
+16:42:44.515 / tick 3104 match UUID `72bc59b5-677c-8029-423b-48617b64c606`.
+The profile JAR inspected during this follow-up is the 15:08 build, while the
+diagnostic JAR was built at 16:29 and has not been installed. These new reports
+cannot yet distinguish target selection, lifecycle filtering and rendering.
+Inspecting the active 26.1.2 Fabric extraction/render hooks and vanilla render
+types did not establish a rendering defect; no speculative geometry change is made.
+
 ## M7 Dragon Debuff
 
 Confirmed Catacombs M7 context and an observed Ender Dragon spawn in a recognized

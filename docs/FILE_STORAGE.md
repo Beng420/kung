@@ -2,7 +2,8 @@
 
 Kung writes its own persistent data below `config/kung/` and traces below
 `logs/kung/`. The mod JAR lives in `mods/`. These paths are relative to the game
-profile; a custom Fabric config directory is respected.
+profile; a custom Fabric config directory is respected. The explicit development
+project link described below is the user-selected exception for room resources.
 
 Optional native OneConfig settings use the same Kung config and validated setters.
 Their `custom_save` hook prevents OneConfig from loading or writing a separate
@@ -13,11 +14,11 @@ resizes and visibility edits persist through Kung's existing config setters.
 
 | Location | Created / used when |
 | --- | --- |
-| `config/kung/kung.json` | First successful config load and settings changes. Also stores `splitsOverlay.personalBests`: real phase milliseconds per Entrance/F1–F7/M1–M7, saved in batches at run end/exit when a record improves. A victory banner following Team Score can additionally confirm/save the frozen final-phase PB. Old configs start with no PBs. Old `config/kung.json` remains a readable migration source. |
+| `config/kung/kung.json` | First successful config load and settings changes. Also stores `splitsOverlay.personalBests`: real phase milliseconds per Entrance/F1–F7/M1–M7, saved in batches at run end/exit when a record improves. `splitsOverlay.recentRuns` stores the last 20 confirmed runs per floor/mode for AVG prediction, oldest first, sharing the PB save at completion. A victory banner following Team Score can additionally confirm/save the frozen final-phase PB and completed run. `/kung splits` > Reset AVG immediately clears only the selected floor's history. Old configs start with no PB/history and PB prediction. Old `config/kung.json` remains a readable migration source. |
 | `config/kung/feast-progress.json` | Enabled Feast Progress: bounded cache per Minecraft account/SkyBlock profile, containing event-bound donations/goals, independent Kernel balances, confirmed gains not yet reflected in the sidebar and the last full-precision `kernelRatePerHour` estimate. Older files without `pendingKernelGains` default to zero; missing rates stay unknown. Rate estimates survive restarts/Feast changes; unfinished measurement blocks are not saved. Updates use one background writer and temporary sibling replacement; shutdown saves the latest estimate before flushing pending writes. Normal builds never touch profile data. |
 | `config/kung/custom-sounds/` | Custom Sounds initialization/index refresh. Four bundled WAV presets are copied here if absent; user audio files also live here. |
 | `config/kung/dungeon-data/` | Explicit room learning/deletion/type commands, enabled Local Data learning, or enabled Room Sync persistence. Normal bundled recognition does not require this directory. |
-| `config/kung/updates/` | Session/installer locks, verified downloads, temporary staging, atomic `pending.properties`, rejected legacy/stale markers, content-addressed standalone installer JAR and `previous.jar` backup. Modrinth starts cannot self-install. `release-notes.properties` stores the displayed (`lastSeenVersion`) and explicitly dismissed (`lastDismissedVersion`) installed versions, written through a temporary sibling. Checking for an update does not download a file. See [safe installation](UPDATES.md#safe-installation-and-launcher-ownership--2026-09-16). |
+| `config/kung/updates/` | Session/installer locks, verified downloads, temporary staging, atomic `pending.properties`, rejected legacy/stale markers, content-addressed standalone installer JAR and `previous.jar` backup. Modrinth and other launchers use the same verified post-exit installation and pending-recovery path. `release-notes.properties` stores the displayed (`lastSeenVersion`) and explicitly dismissed (`lastDismissedVersion`) installed versions, written through a temporary sibling. Checking for an update does not download a file. See [safe installation](UPDATES.md#safe-installation-and-launcher-ownership--2026-09-16). |
 | `config/kung/legacy/` | Only if relocation encounters different existing files: preserves the old content without replacing the current destination. |
 | `logs/kung/kung-trace-*.log` | `/kung log save`. Routine diagnostic events remain in a bounded memory buffer. Normal logger messages still use Minecraft's `logs/latest.log`. |
 | `logs/kung/update-installer.log` | Append-only result/error output from the separate post-exit installer. |
@@ -28,6 +29,22 @@ Dungeon-data filenames are `known-rooms.json`, `known-rooms-remote.json`,
 learning/undo JSONL formats when those commands need them. The ordinary user
 does not need to supply these files. Do not replace the bundled room database
 with profile content without reviewing its room/hash evidence.
+
+`/kung room prince true|false` stores explicit per-room corrections in the existing
+`config/kung/kung.json` as `dungeonMap.princeRoomOverrides`. These settings use
+name/type/secret-count identity and apply with Local Data off. With a linked project,
+the command also saves the exact project record and linked data takes precedence.
+See [manual Prince corrections](ROOM_DATA.md#manual-prince-corrections).
+
+`/kung room project <checkout>` persists `dungeonMap.roomDataProjectDirectory` in
+the same config (default blank/off). While linked, `DungeonRoomProject` routes room
+JSON, type hints and preload observations into that checkout's active
+`versions/mc26_1_2/src/main/resources/kung-dungeon-scans/` directory. These writes
+use atomic sibling replacement and require a valid existing project database.
+Remote-cache and undo-history files continue to use `KungPaths` in the profile.
+The project is authoritative rather than a mirror of the profile; normal builds
+still perform no synchronization or installation. See
+[automatic project saving](ROOM_DATA.md#automatic-project-saving).
 
 Static trapped-chest exclusions are different: Buttons/Dueces templates are
 resources inside the JAR, never extracted to a profile file. Additional explicit

@@ -114,6 +114,10 @@ public final class KungSettingsTest {
         prediction.intConsumer().accept(1);
         assertEquals(PredictionMode.LIVE, config.splits.predictionMode());
         assertEquals("Live", prediction.choiceSupplier().get());
+        SettingEntry source = setting(splits, "Time Prediction").children().get(1);
+        assertEquals(List.of("PB", "AVG"), source.choices());
+        source.intConsumer().accept(1);
+        assertEquals("AVG", config.splits.predictionSource().label());
 
         FeatureEntry updater = categories.getLast().features().getFirst();
         assertTrue(updater.actionOnly());

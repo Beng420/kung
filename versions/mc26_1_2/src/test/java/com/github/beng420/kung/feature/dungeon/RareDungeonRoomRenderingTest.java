@@ -77,13 +77,42 @@ public final class RareDungeonRoomRenderingTest {
         assertEquals(2, plan.hintAt(0, 0).secrets());
     }
 
-    @Test public void mistakenRareLavaPitFromAnOlderPeerRendersBrownWithoutLocalChunks() {
+    @Test public void remoteRareLavaPitIsNotDowngradedByItsNameWithoutLocalChunks() {
         DungeonMapSnapshot snapshot = new DungeonMapSnapshot();
         snapshot.replaceRemoteLiveData(List.of(new DungeonMapSnapshot.RemoteRoom(0, 0,
             "Lava Pit", RoomType.RARE, 3, 1, 1, 3, true, false, false, "older peer", 1L)), List.of());
         var plan = DungeonLiveMapWriter.MatchRenderPlan.from(snapshot, repository(null));
-        assertEquals(RoomType.NORMAL, plan.roomTypeAt(0, 0));
-        assertEquals(RoomType.NORMAL, DungeonRoomRenderLayout.from(plan).rooms().getFirst().template().type());
+        assertEquals(RoomType.RARE, plan.roomTypeAt(0, 0));
+        assertEquals(RoomType.RARE, DungeonRoomRenderLayout.from(plan).rooms().getFirst().template().type());
+    }
+
+    @Test public void localNormalHashesCorrectStalePeerTypeWhileRareHashesStayBlue() {
+        for (boolean rare : new boolean[] {false, true}) {
+            DungeonMapSnapshot snapshot = new DungeonMapSnapshot();
+            snapshot.addScan(0, 0L, 5, 5, List.of(new DungeonScanPoint(0, 0, -185, -185,
+                DungeonScanPointKind.ROOM, true, rare ? -1005518830 : 1192954774,
+                rare ? 1296131753 : -408192692, 0, DungeonDoorKind.NONE)));
+            snapshot.replaceRemoteLiveData(List.of(new DungeonMapSnapshot.RemoteRoom(0, 0,
+                "Lava Pit", RoomType.RARE, 3, 1, 1, 3, true, false, false, "peer", 1L)), List.of());
+            var plan = DungeonLiveMapWriter.MatchRenderPlan.from(snapshot, repository(null));
+            assertEquals(rare ? RoomType.RARE : RoomType.NORMAL, plan.roomTypeAt(0, 0));
+        }
+    }
+
+    @Test public void bundledNamesakesRemainSeparateRoomsAndRetainClearCredit() {
+        DungeonKnownRoomCatalog.reload();
+        var snapshot = snapshot();
+        snapshot.addScan(1, 1L, 5, 5, List.of(new DungeonScanPoint(2, 0, -153, -185,
+            DungeonScanPointKind.ROOM, true, 1192954774, -408192692, 0, DungeonDoorKind.NONE)));
+        snapshot.observeRoomClearState(0, 0, DungeonMapClearState.CLEARED);
+        snapshot.observeRoomClearState(1, 0, DungeonMapClearState.CLEARED);
+        var plan = DungeonLiveMapWriter.MatchRenderPlan.from(snapshot);
+        assertEquals(2, plan.matches().size());
+        assertEquals(RoomType.RARE, plan.roomTypeAt(0, 0));
+        assertEquals(RoomType.NORMAL, plan.roomTypeAt(1, 0));
+        assertFalse(plan.sameRoomOwner(new DungeonLiveMapWriter.CellKey(0, 0), new DungeonLiveMapWriter.CellKey(1, 0)));
+        assertEquals(2, DungeonRoomProgress.from(plan).cleared());
+        for (var room : DungeonRoomRenderLayout.from(plan).rooms()) assertEquals("Lava Pit", room.template().name());
     }
 
     @Test public void staleLocalTypeFileCannotTurnCorrectedLavaPitBlueAgain() throws Exception {

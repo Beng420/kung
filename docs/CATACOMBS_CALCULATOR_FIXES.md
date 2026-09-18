@@ -2,6 +2,43 @@
 
 Active module: `versions/mc26_1_2`.
 
+## Editable player and custom targets — 2026-09-18
+
+The manually routed `UiTextField` now gives its underlying EditBox keyboard
+focus after an accepted click. In 26.1.2 the widget's click handler positions
+the cursor but leaves focus to its containing screen; the calculator never
+performed that step, so its focused-only typing path was unreachable. The screen
+also retains the entered name across reinitialization/resizing and releases
+text focus when closed. Enter and Load continue to request that player's profile.
+
+The calculator has independent Catacombs and **each class** target controls,
+both defaulting to 50 and ranging from 1 to 200. The class target occupies the
+unused control position beside Catacombs Explorer. As explicitly selected by the
+user, CA51/CA52 means every class must reach the chosen level: a higher class
+does not offset a lower class. The existing solver still includes passive class
+XP, skips completed classes and allocates a minimal total number of runs.
+The result rows and copied `cN`/`caN` summaries use the selected targets and floor.
+`!c50` and `!ca50` retain their level-50 targets.
+
+GUI and calculator now share the cumulative XP table and inverse level function.
+Level 51 onward uses 200,000,000 additional XP per overflow level, matching the
+[NEU leveling constants](https://raw.githubusercontent.com/NotEnoughUpdates/NotEnoughUpdates-REPO/master/constants/leveling.json).
+Existing player XP and level bars retain progress above 50. These are overflow
+milestones, not additional in-game class bonuses.
+Regressions cover exact C45/C51/C53/200 XP, fractional overflow levels, rounded
+remaining runs, CA51/CA52 passive XP, higher-class non-compensation, already
+completed and lower targets, and dynamic summary targets. Focus, name replacement,
+Enter/Load, resize and both controls still need a live game check.
+
+## Chat and copied summaries — 2026-09-18
+
+`!ca50` replies use `Name is 2539 M7 runs away from ca50 (Arch 191 | Bers 402 | Heal 640 | Mage 625 | Tank 681)`.
+All five classes remain present, including zero-run classes; run counts have no
+thousands separators. `!c50` uses `Name is 123 M7 runs away from c50`.
+The calculator screen and its copy buttons use the same formatters with their
+selected floor and Catacombs target level. The shared `[Kung]` message prefix,
+calculation, API selection and GUI layout are unchanged.
+
 ## Wrong profile and obsolete GUI API
 
 The screenshot's HTTP 403 came from the calculator screen's old PixelStats

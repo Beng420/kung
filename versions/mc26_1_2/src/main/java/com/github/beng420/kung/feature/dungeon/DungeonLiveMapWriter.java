@@ -182,7 +182,8 @@ public final class DungeonLiveMapWriter {
                 RoomType current = roomTypes.getOrDefault(roomCell, RoomType.UNKNOWN);
                 RoomIdentity identity = roomIdentities.get(roomCell);
                 if ((current == RoomType.NORMAL || current == RoomType.UNKNOWN)
-                    && (identity == null || DungeonKnownRoomCatalog.canonicalRoomType(identity.name(), RoomType.RARE) == RoomType.RARE)
+                    && (identity == null || DungeonKnownRoomCatalog.canonicalRoomType(identity.name(), RoomType.RARE,
+                        observed.point().coreHash(), observed.point().stableCoreHash()) == RoomType.RARE)
                     && DungeonRoomClassifier.classifyRoom(observed.point().coreHash()) == RoomType.RARE) {
                     roomTypes.put(roomCell, RoomType.RARE);
                     if (identity != null) {
@@ -196,7 +197,10 @@ public final class DungeonLiveMapWriter {
                 remoteRoomCells.add(roomCell);
                 RoomType remoteType = remoteRoom.type() == null ? RoomType.UNKNOWN : remoteRoom.type();
                 String remoteName = remoteRoom.name() == null ? "" : remoteRoom.name().trim();
-                remoteType = DungeonKnownRoomCatalog.canonicalRoomType(remoteName, remoteType);
+                DungeonMapSnapshot.ObservedPoint observed = snapshot.pointAt(roomCell.x() * 2, roomCell.z() * 2);
+                int coreHash = observed == null ? 0 : observed.point().coreHash();
+                int stableHash = observed == null ? 0 : observed.point().stableCoreHash();
+                remoteType = DungeonKnownRoomCatalog.canonicalRoomType(remoteName, remoteType, coreHash, stableHash);
                 int remoteSecretsMax = remoteRoom.roomSecretsMax() > 0
                     ? remoteRoom.roomSecretsMax()
                     : remoteRoom.secrets();
@@ -237,7 +241,8 @@ public final class DungeonLiveMapWriter {
                 RoomIdentity localIdentity = roomIdentities.get(roomCell);
                 if (remoteType == RoomType.RARE && roomTypes.get(roomCell) == RoomType.NORMAL
                     && (localIdentity == null
-                        || DungeonKnownRoomCatalog.canonicalRoomType(localIdentity.name(), RoomType.RARE) == RoomType.RARE)) {
+                        || DungeonKnownRoomCatalog.canonicalRoomType(localIdentity.name(), RoomType.RARE,
+                            coreHash, stableHash) == RoomType.RARE)) {
                     roomTypes.put(roomCell, RoomType.RARE);
                     RoomIdentity identity = roomIdentities.get(roomCell);
                     if (identity != null) {

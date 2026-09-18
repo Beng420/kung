@@ -10,6 +10,34 @@ import org.junit.Test;
 
 public final class DungeonExtraScoreMessagesTest {
     @Test
+    public void september18ScoreGapMatchesMissingMimicEvidenceWithoutInventingAKill() {
+        var stats = new DungeonRunStats();
+        stats.configureForFloor(7, true);
+        stats.observeTabLine(null, "Completed Rooms: 35/36", null);
+        stats.observeScoreboardLine(null, "Cleared: 97%");
+        stats.observeTabLine(null, "Crypts: 9", null);
+        stats.observeStatLine(null, "Secrets: 45/57");
+        stats.observeTabLine(null, "Secrets Found: 78.9%", null);
+        stats.observeMessage(null, "[BOSS] The Watcher: You have proven yourself. You may pass.", 1L);
+        stats.observeMessage(null, "A Bat has been slain. +1 Bonus Score", 2L);
+        stats.observeMessage(null, "A Prince falls. +1 Bonus Score", 3L);
+        // 16:42:19 in kung-trace-20260918-164256.log, before Noamm's 300 announcement.
+        assertFalse(stats.mimicKilled());
+        assertEquals(298, stats.score(null, 57));
+        assertEquals(48, stats.sPlusSecretTarget(null, 57));
+
+        stats.observeStatLine(null, "Secrets: 46/57");
+        stats.observeTabLine(null, "Secrets Found: 80.7%", null);
+        assertEquals(299, stats.score(null, 57));
+        stats.observeTabLine(null, "Team Deaths: 1", null);
+        assertEquals(298, stats.score(null, 57));
+        // The final server result wins, but does not identify which missing input caused the gap.
+        stats.observeStatLine(null, "Team Score: 300 (S+)");
+        assertEquals(300, stats.score(null, 57));
+        assertFalse(stats.mimicKilled());
+    }
+
+    @Test
     public void livePrinceReportWithoutExclamationRestoresMissingPointAndSecretTarget() throws Exception {
         var stats = new DungeonRunStats();
         stats.configureForFloor(7, true);

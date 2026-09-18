@@ -1,9 +1,12 @@
 package com.github.beng420.kung.config.category;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 
 public final class SplitsConfig extends ConfigCategory {
+    public static final int RECENT_RUN_LIMIT = 20;
     private boolean enabled = false;
     private int x = 226;
     private int y = 8;
@@ -12,8 +15,12 @@ public final class SplitsConfig extends ConfigCategory {
     private boolean timeLost = true;
     private boolean timePrediction = true;
     private PredictionMode predictionMode = PredictionMode.PHASE_END;
+    private PredictionSource predictionSource = PredictionSource.PB;
     /** Real phase durations in milliseconds, keyed by Entrance/F1–F7/M1–M7 and phase name. */
     private Map<String, Map<String, Long>> personalBests = new TreeMap<>();
+    /** Oldest to newest confirmed runs, using the same floor keys and real milliseconds as PBs. */
+    private Map<String, List<Map<String, Long>>> recentRuns = new TreeMap<>();
+    private transient long predictionRevision;
 
     public boolean enabled() {
         return enabled;
@@ -89,6 +96,53 @@ public final class SplitsConfig extends ConfigCategory {
     public String predictionModeLabel() { return predictionMode().label(); }
     public void cyclePredictionMode() { setPredictionMode(predictionMode().next()); }
 
+    public PredictionSource predictionSource() {
+        return predictionSource == null ? PredictionSource.PB : predictionSource;
+    }
+
+    public void setPredictionSource(PredictionSource source) {
+        predictionSource = source == null ? PredictionSource.PB : source;
+        predictionRevision++;
+        save();
+    }
+
+    public long predictionRevision() { return predictionRevision; }
+
+    public long predictionMillis(int floor, boolean masterMode, String phase) {
+        return predictionSource() == PredictionSource.AVG
+            ? averageMillis(floor, masterMode, phase) : personalBestMillis(floor, masterMode, phase);
+    }
+
+    public long averageMillis(int floor, boolean masterMode, String phase) {
+        if (phase == null) return -1L;
+        double total = 0D;
+        int count = 0;
+        for (Map<String, Long> run : recentRunsFor(floor, masterMode)) {
+            Long duration = run == null ? null : run.get(phase);
+            if (duration == null || duration <= 0L) continue;
+            total += duration;
+            count++;
+        }
+        return count == 0 ? -1L : Math.round(total / count);
+    }
+
+    public int recentRunCount(int floor, boolean masterMode) {
+        return recentRunsFor(floor, masterMode).size();
+    }
+
+    private List<Map<String, Long>> recentRunsFor(int floor, boolean masterMode) {
+        String key = floorKey(floor, masterMode);
+        List<Map<String, Long>> runs = key == null || recentRuns == null ? null : recentRuns.get(key);
+        return runs == null ? List.of() : runs.subList(Math.max(0, runs.size() - RECENT_RUN_LIMIT), runs.size());
+    }
+
+    public void clearRecentRuns(int floor, boolean masterMode) {
+        String key = floorKey(floor, masterMode);
+        if (key == null || recentRuns == null || recentRuns.remove(key) == null) return;
+        predictionRevision++;
+        save();
+    }
+
     public long personalBestMillis(int floor, boolean masterMode, String phase) {
         String key = floorKey(floor, masterMode);
         if (key == null || phase == null || personalBests == null) return -1L;
@@ -104,6 +158,7 @@ public final class SplitsConfig extends ConfigCategory {
         if (personalBestMillis(floor, masterMode, phase) == millis) return;
         if (personalBests == null) personalBests = new TreeMap<>();
         personalBests.computeIfAbsent(key, ignored -> new TreeMap<>()).put(phase, millis);
+        predictionRevision++;
         save();
     }
 
@@ -114,11 +169,17 @@ public final class SplitsConfig extends ConfigCategory {
         if (phases == null || !phases.containsKey(phase)) return;
         phases.remove(phase);
         if (phases.isEmpty()) personalBests.remove(key);
+        predictionRevision++;
         save();
     }
 
     /** Coalesce a batch of measured phases into one save, only when a best improves. */
     public void recordPersonalBests(int floor, boolean masterMode, Map<String, Long> measurements) {
+        recordRun(floor, masterMode, measurements, Map.of());
+    }
+
+    /** Flush PB candidates and, only for a confirmed finish, the run's AVG samples in one save. */
+    public void recordRun(int floor, boolean masterMode, Map<String, Long> measurements, Map<String, Long> completedRun) {
         String key = floorKey(floor, masterMode);
         if (key == null || measurements == null) return;
         boolean changed = false;
@@ -132,12 +193,33 @@ public final class SplitsConfig extends ConfigCategory {
             personalBests.computeIfAbsent(key, ignored -> new TreeMap<>()).put(phase, duration);
             changed = true;
         }
-        if (changed) save();
+        Map<String, Long> sample = new TreeMap<>();
+        if (completedRun != null) completedRun.forEach((phase, duration) -> {
+            if (phase != null && !phase.isBlank() && duration != null && duration > 0L) sample.put(phase, duration);
+        });
+        if (!sample.isEmpty()) {
+            List<Map<String, Long>> runs = new ArrayList<>(recentRunsFor(floor, masterMode));
+            runs.add(sample);
+            if (runs.size() > RECENT_RUN_LIMIT) runs.removeFirst();
+            if (recentRuns == null) recentRuns = new TreeMap<>();
+            recentRuns.put(key, runs);
+            changed = true;
+        }
+        if (changed) {
+            predictionRevision++;
+            save();
+        }
     }
 
     private static String floorKey(int floor, boolean masterMode) {
         if (floor < 0 || floor > 7) return null;
         return floor == 0 ? "Entrance" : (masterMode ? "M" : "F") + floor;
+    }
+
+    public enum PredictionSource {
+        PB, AVG;
+
+        public String label() { return name(); }
     }
 
     public enum PredictionMode {

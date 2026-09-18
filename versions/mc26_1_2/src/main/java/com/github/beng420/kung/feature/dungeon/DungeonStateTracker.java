@@ -1179,6 +1179,32 @@ public final class DungeonStateTracker {
                 || hint.secrets() != secrets);
     }
 
+    public LearnRoomResult updateCurrentRoomPrince(Minecraft client, boolean prince) {
+        if (client == null || client.level == null || client.player == null) {
+            return LearnRoomResult.failed("You are not currently in a world.");
+        }
+        if (!isInDungeonArea() || !isInsideDungeonGrid(client)) {
+            return LearnRoomResult.failed("Stand in a Catacombs room to update its Prince setting.");
+        }
+        DungeonScanUtils.GridPosition roomGrid = DungeonScanUtils.getRoomGridPosition(client.player.blockPosition());
+        DungeonKnownRoomCatalog.MatchedRoom match = matchedRoomAt(roomGrid.gridX(), roomGrid.gridZ());
+        if (match == null) {
+            return LearnRoomResult.failed("The current room has not been uniquely identified yet.");
+        }
+        var room = match.template();
+        try {
+            DungeonKnownRoomCatalog.updateRoomPrince(room.name(), room.type(), room.secrets(), prince);
+        } catch (IOException exception) {
+            KungMod.LOGGER.warn("Failed to update dungeon room Prince setting.", exception);
+            return LearnRoomResult.failed("Could not save the Prince setting for this room. See latest.log.");
+        } catch (IllegalArgumentException exception) {
+            return LearnRoomResult.failed("The current room has not been uniquely identified yet.");
+        }
+        return new LearnRoomResult(true,
+            "Prince for \"" + room.name() + "\" (" + room.type() + "): " + prince + ".",
+            room.name(), 0, roomGrid.gridX(), roomGrid.gridZ(), room.type(), room.secrets(), room.crypts());
+    }
+
     public LearnRoomResult updateCurrentRoomCrypts(Minecraft client, int crypts) {
         if (client.level == null || client.player == null) {
             return LearnRoomResult.failed("You are not currently in a world.");

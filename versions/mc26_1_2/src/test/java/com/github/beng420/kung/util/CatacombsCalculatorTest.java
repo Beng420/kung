@@ -104,6 +104,70 @@ public final class CatacombsCalculatorTest {
     }
 
     @Test
+    public void customCatacombsTargetsUseOverflowXpAndRoundUpRemainingRuns() {
+        assertEquals(177_559_640L, CatacombsAverageCalculator.xpForLevel(45));
+        assertEquals(769_809_640L, CatacombsAverageCalculator.xpForLevel(51));
+        assertEquals(1_169_809_640L, CatacombsAverageCalculator.xpForLevel(53));
+        assertEquals(30_569_809_640L, CatacombsAverageCalculator.xpForLevel(200));
+        assertEquals(0, CatacombsAverageCalculator.runsToCatacombs(LEVEL_50_XP, 45, 534_000));
+        assertEquals(375, CatacombsAverageCalculator.runsToCatacombs(LEVEL_50_XP, 51, 534_000));
+        assertEquals(1124, CatacombsAverageCalculator.runsToCatacombs(LEVEL_50_XP, 53, 534_000));
+        assertEquals(0, CatacombsAverageCalculator.runsToCatacombs(1_169_809_640, 53, 0));
+        assertEquals(Long.MAX_VALUE, CatacombsAverageCalculator.runsToCatacombs(LEVEL_50_XP, 53, 0));
+    }
+
+    @Test
+    public void displayedLevelsRetainOverflowProgressBeyondFifty() {
+        for (int level : new int[] {0, 1, 45, 49, 50, 51, 52, 53, 200}) {
+            long xp = CatacombsAverageCalculator.xpForLevel(level);
+            long next = CatacombsAverageCalculator.xpForLevel(level + 1);
+            assertEquals(level, CatacombsAverageCalculator.levelFromXp(xp), 0.0);
+            assertEquals(level + 0.25, CatacombsAverageCalculator.levelFromXp(xp + (next - xp) * 0.25), 0.000001);
+        }
+        assertEquals(0, CatacombsAverageCalculator.levelFromXp(-1), 0.0);
+    }
+
+    @Test
+    public void ca51AndCa52RequireEveryClassToReachTheTargetWithPassiveXp() {
+        var current = new EnumMap<DungeonClass, Double>(DungeonClass.class);
+        var xp = new EnumMap<DungeonClass, Double>(DungeonClass.class);
+        for (DungeonClass dungeonClass : DungeonClass.values()) {
+            current.put(dungeonClass, LEVEL_50_XP);
+            xp.put(dungeonClass, 400_000.0);
+        }
+        for (int target : new int[] {51, 52}) {
+            Breakdown result = CatacombsAverageCalculator.calculateBreakdown(current, xp, target);
+            assertEquals(1250L * (target - 50), result.total());
+            for (DungeonClass dungeonClass : DungeonClass.values()) {
+                assertEquals(250L * (target - 50), result.perClass(dungeonClass));
+            }
+            assertCompletes(current, xp, result, CatacombsAverageCalculator.xpForLevel(target));
+            assertTrue(CatacombsAverageCalculator.classAverageSummaryLine("Beng114", "M7", target, result)
+                .contains("runs away from ca" + target + " (Arch "));
+        }
+        // An uncapped average of 52 is not completion: the other four classes are still 50.
+        current.put(DungeonClass.ARCHER, (double) CatacombsAverageCalculator.xpForLevel(60));
+        Breakdown result = CatacombsAverageCalculator.calculateBreakdown(current, xp, 51);
+        assertTrue(result.total() > 0);
+        assertEquals(0, result.perClass(DungeonClass.ARCHER));
+        assertCompletes(current, xp, result, CatacombsAverageCalculator.xpForLevel(51));
+    }
+
+    @Test
+    public void lowerAndAlreadyCompletedClassTargetsDoNotUseTheOldFiftyThreshold() {
+        var current = new EnumMap<DungeonClass, Double>(DungeonClass.class);
+        var xp = selectedXp(Map.of(), 1);
+        long targetXp = CatacombsAverageCalculator.xpForLevel(45);
+        for (DungeonClass dungeonClass : DungeonClass.values()) current.put(dungeonClass, (double) targetXp);
+        assertEquals(0, CatacombsAverageCalculator.calculateBreakdown(current, xp, 45).total());
+        current.put(DungeonClass.MAGE, targetXp - xp.get(DungeonClass.MAGE) - 1);
+        Breakdown result = CatacombsAverageCalculator.calculateBreakdown(current, xp, 45);
+        assertEquals(2, result.total());
+        assertEquals(2, result.perClass(DungeonClass.MAGE));
+        assertCompletes(current, xp, result, targetXp);
+    }
+
+    @Test
     public void explorerMatchesAdjectilsCatacombsDefaultsAcrossMayorBonuses() {
         assertEquals(534_000, CatacombsAverageCalculator.catacombsXpPerRun(300_000, true, 0.02, 10, 0, 1));
         assertEquals(759_000, CatacombsAverageCalculator.catacombsXpPerRun(300_000, true, 0.02, 10, 0, 1.5));
@@ -151,12 +215,17 @@ public final class CatacombsCalculatorTest {
     }
 
     private static void assertCompletes(Map<DungeonClass, Double> current, Map<DungeonClass, Double> xp, Breakdown result) {
+        assertCompletes(current, xp, result, LEVEL_50_XP);
+    }
+
+    private static void assertCompletes(Map<DungeonClass, Double> current, Map<DungeonClass, Double> xp,
+                                        Breakdown result, double targetXp) {
         assertEquals(result.total(), result.perClass().values().stream().mapToLong(Long::longValue).sum());
         for (DungeonClass dungeonClass : DungeonClass.values()) {
             double selected = result.perClass(dungeonClass);
             double passive = (result.total() - selected) / 4.0;
             assertTrue(dungeonClass.label(), current.getOrDefault(dungeonClass, 0.0)
-                + xp.get(dungeonClass) * (selected + passive) >= LEVEL_50_XP);
+                + xp.get(dungeonClass) * (selected + passive) >= targetXp);
         }
     }
 

@@ -3,6 +3,7 @@ package com.github.beng420.kung.config;
 import com.github.beng420.kung.config.category.DungeonConfig.DragonDebuffScope;
 import com.github.beng420.kung.config.category.SlayerConfig.EggSacPredictionRenderMode;
 import com.github.beng420.kung.config.category.SplitsConfig.PredictionMode;
+import com.github.beng420.kung.config.category.SplitsConfig.PredictionSource;
 import com.github.beng420.kung.config.category.SplitsConfig.TimeFormat;
 import com.github.beng420.kung.feature.dungeon.DungeonKnownRoomCatalog;
 import com.github.beng420.kung.feature.dungeon.DungeonRoomClassifier;
@@ -175,7 +176,10 @@ public final class KungSettings {
                         SettingEntry.toggle("Time Prediction", config.splits::timePrediction,
                             () -> config.splits.setTimePrediction(!config.splits.timePrediction())).withChildren(List.of(
                                 SettingEntry.choice("Update", PredictionMode.values(), config.splits::predictionMode,
-                                    config.splits::setPredictionMode, PredictionMode::label)
+                                    config.splits::setPredictionMode, PredictionMode::label),
+                                SettingEntry.choice("Source", PredictionSource.values(), config.splits::predictionSource,
+                                    config.splits::setPredictionSource, PredictionSource::label)
+                                    .withTooltip("PB uses personal best splits. AVG uses the last 20 finished runs on this floor. Reset AVG in /kung splits.")
                             )),
                         SettingEntry.toggle("Time Lost", config.splits::timeLost,
                             () -> config.splits.setTimeLost(!config.splits.timeLost()))
@@ -332,7 +336,8 @@ public final class KungSettings {
                         SettingEntry.dynamicLabel(KungUpdater.INSTANCE::latestVersionLabel),
                         SettingEntry.button("Changelogs", "Open", openChangelog)
                     )
-                ).pinnedOpen(),
+                ).pinnedOpen().withTooltip("Download and verify the latest compatible update from GitHub.",
+                    "Close Minecraft to apply it automatically, then start the game again."),
                 new FeatureEntry("Debug Messages", config.debug::enabled,
                     () -> config.debug.setEnabled(!config.debug.enabled()),
                     List.of(

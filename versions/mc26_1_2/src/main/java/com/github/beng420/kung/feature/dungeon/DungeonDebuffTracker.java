@@ -172,8 +172,7 @@ final class DungeonDebuffTracker {
         double nearest = Double.POSITIVE_INFINITY;
         double second = Double.POSITIVE_INFINITY;
         for (Target target : targets) {
-            double distance = target.dragon ? target.position.distanceTo(marker)
-                : Math.sqrt(target.bounds.distanceToSqr(marker));
+            double distance = target.distanceTo(marker);
             if (distance > (target.dragon ? 8 : 1.5)) continue;
             if (distance < nearest) {
                 second = nearest;
@@ -196,7 +195,11 @@ final class DungeonDebuffTracker {
         return null;
     }
 
-    record Target(UUID uuid, Vec3 position, AABB bounds, boolean dragon) { }
+    record Target(UUID uuid, Vec3 position, AABB bounds, boolean dragon) {
+        double distanceTo(Vec3 marker) {
+            return dragon ? position.distanceTo(marker) : Math.sqrt(bounds.distanceToSqr(marker));
+        }
+    }
 
     static final class Dragon {
         final String name;

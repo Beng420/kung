@@ -32,6 +32,8 @@ public final class DungeonSplitCompletionOrderTest {
             }
         }
         assertEquals(13_736L, config.personalBestMillis(1, false, "Bonzo Phase 2"));
+        assertEquals(1, config.recentRunCount(1, false));
+        assertEquals(13_736L, config.averageMillis(1, false, "Bonzo Phase 2"));
         assertEquals(5, tracker.completedSplits().size());
         assertEquals(140_699L, tracker.currentTotalDurationMillis());
         assertEquals(140_699L, tracker.predictedFinishMillis());
@@ -71,6 +73,7 @@ public final class DungeonSplitCompletionOrderTest {
         var completed = tracker.completedSplits();
         assertEquals(-1L, config.personalBestMillis(1, false, "Bonzo Phase 2"));
         assertEquals(0, writes.get());
+        assertEquals(0, config.recentRunCount(1, false));
         assertTrue(events.stream().anyMatch(line -> line.startsWith("run-finished")
             && line.contains("pbFloor=F1") && line.contains("Bonzo Phase 2")));
         tracker.configureKnownFloor(7, true); // Reward metadata must not reassign this result.
@@ -81,6 +84,8 @@ public final class DungeonSplitCompletionOrderTest {
         assertFalse(tracker.observeMessage("Team Score: 177 (B)", 0L));
         assertFalse(tracker.observeMessage("☠ Defeated Bonzo in 8s", 0L));
         assertEquals(1, writes.get());
+        assertEquals(1, config.recentRunCount(1, false));
+        assertEquals(3_000L, config.averageMillis(1, false, "Bonzo Phase 2"));
         assertEquals(3_000L, config.personalBestMillis(1, false, "Bonzo Phase 2"));
         assertEquals(-1L, config.personalBestMillis(7, true, "Bonzo Phase 2"));
         assertEquals(timings, tracker.currentTimings());
@@ -109,6 +114,7 @@ public final class DungeonSplitCompletionOrderTest {
         clock.set(13_001L);
         assertFalse(tracker.observeMessage("Defeated Bonzo in 8s", 0L));
         assertEquals(20_000L, config.personalBestMillis(1, false, "Bonzo Phase 2"));
+        assertEquals(0, config.recentRunCount(1, false));
     }
 
     @Test public void resetAndNewCountdownDiscardUnconfirmedFinalMeasurements() {
@@ -127,6 +133,7 @@ public final class DungeonSplitCompletionOrderTest {
             tracker.observeMessage("Defeated Bonzo in 8s", 0L);
             assertEquals(-1L, config.personalBestMillis(1, false, "Bonzo Phase 2"));
             assertEquals(-1L, config.personalBestMillis(6, true, "Bonzo Phase 2"));
+            assertEquals(0, config.recentRunCount(1, false));
         }
     }
 
@@ -145,6 +152,7 @@ public final class DungeonSplitCompletionOrderTest {
             clock.set(8_003L);
             tracker.observeMessage("Defeated Bonzo in 8s", 0L);
             assertEquals(enabledAtScore ? 3_000L : -1L, config.personalBestMillis(1, false, "Bonzo Phase 2"));
+            assertEquals(enabledAtScore ? 1 : 0, config.recentRunCount(1, false));
         }
     }
 
@@ -163,6 +171,7 @@ public final class DungeonSplitCompletionOrderTest {
             assertFalse(tracker.observeMessage("Defeated Bonzo in 8s", 0L));
             assertEquals(-1L, config.personalBestMillis(1, false, "Bonzo Phase 2"));
             assertEquals(-1L, config.personalBestMillis(1, false, "Blood Clear"));
+            assertEquals(0, config.recentRunCount(1, false));
         }
     }
 
