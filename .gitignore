@@ -14,3 +14,11 @@ runs/
 .vscode/
 
 !.github/
+
+# graphify: generated outputs are rebuilt by `graphify update` in ~35s for free.
+# The semantic cache is the exception — it cost real LLM tokens, so it is kept
+# so a fresh clone replays the doc extraction instead of paying for it again.
+graphify-out/*
+!graphify-out/cache/
+graphify-out/cache/*
+!graphify-out/cache/semantic/

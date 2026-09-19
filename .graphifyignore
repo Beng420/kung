@@ -1,0 +1,11 @@
+# Agent/tool scratch dirs — not project source, they swamp the graph.
+.agents/
+.codex/
+.codex_tmp/
+.codex-video-frames/
+.claude/
+
+# Build output and the graph's own outputs.
+build/
+.gradle/
+graphify-out/
