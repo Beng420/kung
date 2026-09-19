@@ -109,4 +109,15 @@ public final class HypixelDungeonFloorStateTest {
         state.observe(CATACOMBS, List.of("The Catacombs"), 1_007L);
         assertEquals(HypixelDungeonFloor.UNKNOWN, state.current());
     }
+
+    @Test public void failedWarpThroughAnotherLobbyDoesNotClassifyALatePartySummon() {
+        // A delayed summon has no fresh entry banner and cannot reuse an expired failed warp.
+        HypixelDungeonFloorState state = new HypixelDungeonFloorState();
+        state.entryMessage("[MVP+] Beng114 entered MM The Catacombs, Floor VII!", 0L);
+        state.worldChanged(16_000L);
+        state.observe(HypixelLocation.UNKNOWN, List.of("Prototype Lobby"), 17_000L);
+        state.worldChanged(101_000L);
+        state.observe(CATACOMBS, List.of("The Catacombs"), 101_001L);
+        assertEquals(HypixelDungeonFloor.UNKNOWN, state.current());
+    }
 }

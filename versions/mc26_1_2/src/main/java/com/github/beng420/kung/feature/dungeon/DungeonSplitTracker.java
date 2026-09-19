@@ -56,6 +56,8 @@ public final class DungeonSplitTracker {
     private String[] splitNames = DEFAULT_SPLITS;
     private int floor = -1;
     private boolean masterMode;
+    /** Shared boss dialogue identifies the phase layout, but cannot distinguish normal/master PBs. */
+    private boolean floorModeKnown;
     private boolean running;
     private boolean started;
     private boolean timerStartConfirmed;
@@ -137,14 +139,20 @@ public final class DungeonSplitTracker {
 
     /** Authoritative metadata distinguishes Entrance (0) from an unknown floor (-1). */
     public void configureKnownFloor(int floor, boolean masterMode) {
+        configureFloor(floor, masterMode, true);
+    }
+
+    private void configureFloor(int floor, boolean masterMode, boolean modeKnown) {
         // Reward/sidebar updates belong to the same world but must not rewrite its frozen result.
         if (started && !running) return;
         if (floor < 0 || floor > 7) return;
         if (floor == 0) masterMode = false;
         boolean nextMasterMode = masterMode || (started && this.floor == floor && this.masterMode);
-        if (this.floor == floor && this.masterMode == nextMasterMode) return;
+        boolean nextModeKnown = modeKnown || (this.floor == floor && floorModeKnown);
+        if (this.floor == floor && this.masterMode == nextMasterMode && floorModeKnown == nextModeKnown) return;
         this.floor = floor;
         this.masterMode = nextMasterMode;
+        floorModeKnown = nextModeKnown;
         splitNames = namesFor(floor, nextMasterMode);
         // Late M7 metadata must turn Necron's death into the beginning of Relics.
         if (running && floor == 7 && nextMasterMode && "Necron".equals(awaitingCompletionAfter)) {
@@ -176,6 +184,7 @@ public final class DungeonSplitTracker {
         splitNames = DEFAULT_SPLITS;
         floor = -1;
         masterMode = false;
+        floorModeKnown = false;
         started = false;
         timerStartConfirmed = false;
         running = false;
@@ -267,7 +276,7 @@ public final class DungeonSplitTracker {
             clean = clean.replace("[BOSS] The Wither King:", "[BOSS] Wither King:");
         }
         if (clean.equals("[BOSS] Necron: All this, for nothing...")) {
-            configureForFloor(7, masterMode);
+            configureFloor(7, masterMode, false);
             if (!masterMode) return completeBoss("Necron", clean);
         }
         if (clean.equals("[BOSS] Wither King: Incredible. You did what I couldn't do myself.")) {
@@ -275,7 +284,7 @@ public final class DungeonSplitTracker {
         }
         if (!hasCurrentSplit()) return false;
         int entryFloor = bossEntryFloor(clean);
-        if (entryFloor > 0) configureForFloor(entryFloor, masterMode);
+        if (entryFloor > 0) configureFloor(entryFloor, masterMode, false);
         String next = nextSplitFromMessage(clean);
         if (next == null) return false;
         if (next.equals("Boss Start")) {
@@ -295,7 +304,7 @@ public final class DungeonSplitTracker {
     public boolean started() { return started; }
     /** Boss progress remains evidence after completion; this does not establish instance membership. */
     public boolean hasEnteredBoss() { return started && indexOf(currentSplitName) >= DEFAULT_SPLITS.length; }
-    public boolean hasKnownFloor() { return floor >= 0 && floor <= 7; }
+    public boolean hasKnownFloor() { return floorModeKnown && floor >= 0 && floor <= 7; }
     public boolean hasCurrentSplit() { return running && awaitingCompletionAfter == null; }
     public String currentSplitName() { return currentSplitName; }
     public long currentSplitDurationMillis() {
@@ -438,12 +447,13 @@ public final class DungeonSplitTracker {
 
     private PhaseMessage phaseMessage(CompletedSplit split) {
         SplitsConfig settings = config.get();
-        long previous = settings.personalBestMillis(floor, masterMode, split.name());
-        Long candidate = personalBestCandidates.get(split.name());
+        int recordFloor = hasKnownFloor() ? floor : -1;
+        long previous = settings.personalBestMillis(recordFloor, masterMode, split.name());
+        Long candidate = hasKnownFloor() ? personalBestCandidates.get(split.name()) : null;
         if (candidate != null && (previous < 0L || candidate < previous)) previous = candidate;
         boolean personalBest = hasKnownFloor() && split.splitDurationMillis() > 0L
             && (previous < 0L || split.splitDurationMillis() < previous);
-        return new PhaseMessage(floor, masterMode, split.name(), split.splitDurationMillis(),
+        return new PhaseMessage(recordFloor, masterMode, split.name(), split.splitDurationMillis(),
             previous, personalBest, settings.format());
     }
 
@@ -471,7 +481,7 @@ public final class DungeonSplitTracker {
         traceStopped("run-finished", boundary);
         SplitsConfig settings = config.get();
         if (!manualRun && settings.enabled() && settings.runEndChat()) {
-            runSummaries.accept(DungeonSplitMessages.summary(this, floor, masterMode, settings));
+            runSummaries.accept(DungeonSplitMessages.summary(this, hasKnownFloor() ? floor : -1, masterMode, settings));
         }
     }
 
@@ -527,13 +537,14 @@ public final class DungeonSplitTracker {
 
     private String personalBestDiagnostics() {
         SplitsConfig settings = config.get();
+        int recordFloor = hasKnownFloor() ? floor : -1;
         List<String> missing = new ArrayList<>();
         for (String name : splitNames) {
-            if (settings.personalBestMillis(floor, masterMode, name) < 0L) missing.add(name);
+            if (settings.personalBestMillis(recordFloor, masterMode, name) < 0L) missing.add(name);
         }
         return " pbFloor=" + (hasKnownFloor() ? floor == 0 ? "Entrance" : (masterMode ? "M" : "F") + floor : "unknown")
             + " pbTracking=" + settings.enabled() + " predictionMode=" + settings.predictionMode()
-            + " predictionSource=" + settings.predictionSource() + " avgRuns=" + settings.recentRunCount(floor, masterMode)
+            + " predictionSource=" + settings.predictionSource() + " avgRuns=" + settings.recentRunCount(recordFloor, masterMode)
             + " pbKnown=" + (splitNames.length - missing.size()) + "/" + splitNames.length
             + " pbMissing=\"" + String.join("|", missing) + "\"";
     }

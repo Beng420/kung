@@ -11,7 +11,9 @@
     "FontAccessor",
     "LocalPlayerMixin",
     "MultiPlayerGameModeMixin",
-    "SkyblockerDungeonScoreMixin"
+    "RenderSectionRegionMixin",
+    "SkyblockerDungeonScoreMixin",
+    "SodiumLevelSliceMixin"
   ],
   "injectors": {
     "defaultRequire": 1

@@ -10,6 +10,38 @@ import org.junit.Test;
 
 public final class DungeonExtraScoreMessagesTest {
     @Test
+    public void september19MiddayBonusGapKeepsOverlappingReportsWithoutGuessingExtraCredit() {
+        KungDebugRecorder.clear();
+        try {
+            var stats = new DungeonRunStats();
+            stats.configureForFloor(7, true);
+            stats.observeTabLine(null, "Completed Rooms: 36/36", null);
+            stats.observeScoreboardLine(null, "Cleared: 100%");
+            stats.observeTabLine(null, "Crypts: 8", null);
+            stats.observeStatLine(null, "Secrets: 46/50");
+            stats.observeTabLine(null, "Secrets Found: 92.0%", null);
+            stats.observeTabLine(null, "Team Deaths: 1", null);
+            // Accepted sync and party report at 12:27:34; server message at 12:27:44.
+            stats.observeSkyblockerBonus(DungeonBonusContribution.BAT);
+            stats.observeMessage(null, "Party > [MVP+] omeowdy: Bat dead!", 1L);
+            stats.observeMessage(null, "A Bat has been slain. +1 Bonus Score", 201L);
+            assertEquals(301, stats.score(null, 50)); // Captured estimate; the four-point gap is unresolved.
+            assertFalse(stats.mimicKilled());
+            assertFalse(stats.princeKilled());
+            String trace = KungDebugRecorder.dump();
+            assertTrue(trace.contains("source=skyblocker bonus=BAT"));
+            assertTrue(trace.contains("message=\"Party > [MVP+] omeowdy: Bat dead!\""));
+            assertTrue(trace.contains("message=\"A Bat has been slain. +1 Bonus Score\""));
+            stats.observeStatLine(null, "Team Score: 305 (S+)");
+            assertEquals(305, stats.score(null, 50));
+            stats.observeStatLine(null, "Score: 301");
+            assertEquals(305, stats.score(null, 50));
+        } finally {
+            KungDebugRecorder.clear();
+        }
+    }
+
+    @Test
     public void september19SkyblockerSyncRestoresTheThreeMissingBonusPoints() throws Exception {
         var stats = new DungeonRunStats();
         stats.configureForFloor(7, true);

@@ -1125,7 +1125,7 @@ public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> 
         if (secrets > 0 && textState.showSecrets()) {
             textLines.add(new RoomTextLine(Math.min(secretsFound, secrets) + "/" + secrets, ROOM_SECRET_SCALE));
         }
-        if (KungConfig.get().dungeon.debugRoomCrypts()) {
+        if (KungConfig.get().dungeon.debugRoomCrypts() && crypts >= 0) {
             textLines.add(new RoomTextLine("Crypts " + Math.max(0, crypts), ROOM_SECRET_SCALE));
         }
         if (KungConfig.get().dungeon.debugRoomMatches()) {

@@ -28,8 +28,11 @@ public final class DungeonLifecycleTest {
             assertFalse(tracker.realRunStarted());
             assertFalse(tracker.isRecording());
             tracker.mapSnapshot().observeStartRoom(1, 5);
+            tracker.runStats().observeFloorMetadata("[BOSS] Maxor: WELL! WELL! WELL! LOOK WHO'S HERE!");
+            assertEquals(7, tracker.runStats().floor());
 
             lifecycle(tracker, "restartDungeonRun");
+            assertFalse(tracker.splitTracker().hasKnownFloor());
             assertTrue(tracker.canScanDungeon());
             assertTrue(tracker.realRunStarted());
             assertEquals(new DungeonMapSnapshot.GridKey(2, 10), tracker.mapSnapshot().startRoom());

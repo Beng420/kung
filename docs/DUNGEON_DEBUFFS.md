@@ -9,12 +9,20 @@ an item, aim, attack or send party chat.
 
 An applied equipment packet giving an invisible armor stand Packed Ice is the
 effect marker. This includes markers caused by other players; the caster is not
-transmitted. The nearest unambiguous living non-player/non-armor-stand entity is
-matched: at most 1.5 blocks from an ordinary mob's box, or 8 blocks from a dragon's
+transmitted. Living mobs, including NPC Player bodies such as Shadow Assassin,
+are eligible; armor stands and real Player accounts (version-4 UUIDs under
+Hypixel's NPC convention) are excluded. A marker contained by exactly one ordinary
+mob's original box wins if every other eligible box is more than 1/32 block away,
+allowing for quantized marker coordinates. Otherwise the nearest unambiguous target
+must be at most 1.5 blocks from an ordinary mob's box, or 8 blocks from a dragon's
 origin. A second eligible candidate within 0.5 blocks of the best distance makes
-the match unknown. Once a populated query is ambiguous, later movement cannot
-turn it into a successful match. Missing entities/invisibility metadata allow up
-to four resolution attempts, retaining the original equipment-packet tick.
+that fallback unknown. Immediate unique matches are retained; rejected queries
+can retry after the current client packet batch, so later movement/metadata packets
+in that batch can settle. Once a populated end-of-batch query is ambiguous, later
+movement cannot turn it into a successful match. Missing nearby candidates or
+invisibility metadata allow up to four resolution attempts, retaining the original
+equipment-packet tick. Separate markers can highlight multiple targets at once;
+one ambiguous marker never marks every nearby mob.
 Matching uses each entity's received interpolation destination while it is moving,
 otherwise its current position. The original bounds are translated to that same
 position for the marker query and candidate distances. Render interpolation and
@@ -22,7 +30,8 @@ the display-only Box Size setting cannot change the matching distances.
 
 This is **spatial inference**, not an explicit server target ID. Crowds can cause
 missed highlights, and decorations or another mob near a marker can still be
-ambiguous. Normal-mob marker layout has not yet been verified in this profile.
+ambiguous. Normal-mob marker geometry has partial trace evidence, but no explicit
+server target ID or exact marker-cloud-to-mob mapping has been established.
 Do not replace this with the user's right-click, held item or a forward cone:
 those prove neither a hit nor another player's successful spray.
 
@@ -39,6 +48,32 @@ Repeated equipment packets for the same loaded marker do not extend it. Removed
 or dead entities are not rendered. There are at most 256 retained markers and
 highlighted targets, and 128 eligible candidates per local query; exceeding a
 limit leaves the observation unknown rather than selecting from a truncated set.
+
+### NPCs and crowded mobs, 2026-09-19
+
+The prior unconditional `Player` exclusion prevented NPC player bodies from ever
+matching. The distinction follows the inspected
+[NoFrills miniboss implementation](https://github.com/WhatYouThing/NoFrills/blob/main/src/main/java/nofrills/features/dungeons/MinibossHighlight.java)
+and [player discriminator](https://github.com/WhatYouThing/NoFrills/blob/main/src/main/java/nofrills/misc/Utils.java).
+This is a Hypixel convention, not a universal Minecraft NPC protocol flag.
+
+`kung-trace-20260919-123326.log` contains 60 rejected Packed Ice markers at tick
+3545, 16 at 3622 and 52 at 4015, with dense Wither Skeleton candidates near the
+Storm yellow-pad area in the last group. For marker 86167 the nearest translated
+box contains it while the second is 0.10264 blocks away: the old 0.5-block gap
+rule rejected it. The containment preference recovers three distinct targets at
+3545, two at 3622 and one at 4015 based on the recorded nearest candidates. The
+3622 group can coexist with its already matched Maxor. Actual overlapping boxes
+remain ambiguous; these recoveries do not imply every reported miss is resolved.
+
+That trace successfully matches and extracts Goldor's box at tick 6097, so it does
+not reproduce the user's intermittent Goldor failure. The packet-batch retry is
+covered with simulated later movement, not a claim about unrecorded packet order.
+Regressions fail before the matching changes and pass after: NPC eligibility,
+the recorded containment case, independent simultaneous highlights/expiry,
+same-batch correction and terminal ambiguity. Live NPC, crowd and Goldor appearance
+still need checking. Renderer geometry, effect duration and candidate limits stay
+unchanged.
 
 ### Missing boss box, 2026-09-18 16:20:57
 

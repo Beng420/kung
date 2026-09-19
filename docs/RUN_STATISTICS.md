@@ -154,6 +154,40 @@ workload. It sets the existing per-run flags without guessing a contributor or
 echoing party announcements. It does not poll another mod's retained state or open
 a new network connection; Skyblocker remains optional.
 
+### Four-point bonus gap — 2026-09-19, 12:33 trace
+
+`kung-trace-20260919-123326.log` and the supplied result-map screenshot isolate
+the discrepancy to Bonus. Kung has 46/50 secrets (92%), full room/puzzle credit,
+one death and eight crypts: Skill 99 + Explorer 96 + Speed 100 + Bonus 6 = 301.
+The server reports 305 with the same first three components and Bonus 10; final
+Team Score correctly overrides the estimate. Kung has Bat, but no Mimic or Prince.
+Even enabling both missing flags would yield Bonus 9 and total 304, so those
+flags alone cannot explain all four points. Secret rounding and death penalties
+agree with the server breakdown and remain unchanged.
+
+The matching Minecraft log records an accepted Skyblocker Bat sync and party
+report at 12:27:34, followed by the server Bat bonus line at 12:27:44. These
+overlapping reports do not establish separate bonus awards. No accepted Mimic
+or Prince report is present. Rejected sync messages from foreign UUIDs do not
+prove that a teammate's valid report was lost. The installed Kung 0.4.2 JAR
+already contains the optional Skyblocker bridge; a missing installation of that
+bridge is not the explanation for this run.
+
+To preserve the next run's inputs, traces retain a separate bounded history of
+256 `score-calc`, `score-bonus` and `mimic-kill` records alongside the existing
+128 split records. Recognized bonus chat inputs are logged even when a previous
+sync/chat report already set the flag. This changes diagnostic retention only;
+it adds no score points, scans or outgoing messages. Regressions replay
+the captured 301/final-305 transition without guessed bonuses and check overlap
+logging and retention under trace-ring churn. Both new diagnostic regressions
+fail before the change and pass afterward. Focused tests and the full Java 25
+build pass: 736 cases, 735 passed, one Windows symlink skip, no failures/errors.
+`git diff --check` passes. The existing 0.4.2 version is rebuilt, not installed.
+
+The cause of the four missing bonus points remains unresolved. A further live
+run with retained bonus inputs and its server component breakdown is required;
+this investigation does not claim a score-formula fix.
+
 ### Missing synchronized bonuses — 2026-09-19, 00:02 result
 
 The user's `kung-trace-20260918-235726.log` and
@@ -320,6 +354,12 @@ the client cannot infer it from a Prince room or an ordinary entity death.
   Equal/slower times only post the ordinary result. Comparison uses that phase's
   PB for the floor/mode known at the boundary, before merging the new candidate.
   An unknown floor may report measured time but cannot claim a floor-specific PB.
+  This also applies when the boss identifies the floor number but normal/master
+  mode is still unknown. Common boss dialogue selects phases only; it cannot
+  assume F7 from Maxor/Storm/Goldor/Necron or read F7 prediction baselines. Exact
+  shared floor metadata, structured SYSTEM floor fields, or M7-specific Wither
+  King dialogue confirm the record bucket. Earlier measured candidates remain
+  available for that later confirmation.
   Minutes/Seconds formatting applies, and Time Prediction off does not mute the
   messages. The Splits master off does; manual, interrupted, unknown-duration and
   zero-duration phases stay silent. Messages never go to party/server chat.
@@ -349,7 +389,7 @@ the client cannot infer it from a Prince room or an ordinary entity death.
   save at finish, transfer/abort or reset, and only for improvements. Waiting until
   then allows late M7 metadata to classify the early phases correctly. Completed
   phases from an aborted run still count; interrupted, skipped/unknown and zero-time
-  phases do not. Unknown floors and runs changed with manual debug splits cannot
+  phases do not. Unknown floors/modes and runs changed with manual debug splits cannot
   write records. A score-only banner cannot prove the final boss phase completed;
   that PB requires a boss-death boundary or the `Defeated ... in ...` banner.
   The server may send Team Score before its victory text. The score freezes both
@@ -469,6 +509,40 @@ tests cover single insertion after score-before-victory, duplicate/expired banne
 and tracking eligibility. The focused suite and full Java 25 build pass: 708 cases,
 707 passed, one Windows symlink skip, no failures/errors. The JAR is built, not
 installed; live Source clicks, run count/reset and next-run HUD remain unchecked.
+
+### Missing mode after a failed M7 warp — 2026-09-19, 16:47:40 trace
+
+The supplied trace and matching profile `latest.log` show an M7 entry at
+16:42:29, a failed transfer/read timeout, return to Prototype Lobby, and a summon
+into the dungeon at 16:44:10 without a new entry banner. The old entry hint had
+expired; retaining it across those unrelated transfers would be unsafe. Clear
+split messages had no floor. At Maxor's dialogue, both run statistics and the
+split tracker inferred floor 7 but incorrectly treated the default
+`masterMode=false` as evidence for F7. Incorrect F7 PB announcements continue
+from Portal Entry at 16:46:40 through Necron at 16:49:58.
+
+Wither King dialogue corrects the mode, with an M7 Relics notice at 16:50:08 and
+the correct M7 summary at 16:51:08. The inspected profile contains this run's
+exact measurements under M7, only F1/M7 PB buckets, and no F7 PB or AVG bucket.
+Every phase is slower than its stored M7 PB. No profile repair was needed or
+performed; deferred final-mode persistence already prevented contamination here.
+
+Splits now distinguish the inferred phase layout from a confirmed floor/mode.
+Generic run-statistics floor inference no longer becomes PB metadata at ticks,
+messages or countdown. Exact shared metadata and SYSTEM floor headers remain
+accepted. Without mode confirmation, timing continues with `PB: --`, no F7/M7
+label, no borrowed predictions and no PB/AVG save on abort. Later M7 confirmation
+keeps all accurate preceding measurements and saves only to M7. Two regressions
+failed before the correction and pass afterward, covering the supplied timing
+prefix, unknown-mode aborts and late Wither King confirmation through a complete
+run. The countdown lifecycle regression also rejects inferred mode.
+
+Separately, entry metadata now observes original non-overlay `ALLOW_GAME` text
+before display formatting/filtering. Its regression fails on the old post-filter
+`GAME` route. This closes another reproducible entry-loss path; it does not
+explain or bypass the stale failed-warp hint in this particular run. The 30-second
+limit and packet-confirmed instance gate are unchanged. Live rejoin classification
+and phase messages remain to verify with the rebuilt JAR.
 
 ### Score-before-victory PB correction — 2026-09-15
 

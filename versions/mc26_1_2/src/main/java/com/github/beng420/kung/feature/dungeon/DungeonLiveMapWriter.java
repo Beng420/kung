@@ -168,7 +168,8 @@ public final class DungeonLiveMapWriter {
 
             for (DungeonMapSnapshot.GridKey mapRoom : snapshot.mapVisibleRooms()) {
                 CellKey roomCell = new CellKey(mapRoom.gridX(), mapRoom.gridZ());
-                roomTypes.putIfAbsent(roomCell, RoomType.UNKNOWN);
+                roomTypes.putIfAbsent(roomCell, snapshot.isMapTrapRoom(mapRoom.gridX(), mapRoom.gridZ())
+                    ? RoomType.TRAP : RoomType.UNKNOWN);
                 roomOwners.putIfAbsent(roomCell, "map:" + mapRoom.gridX() + "," + mapRoom.gridZ());
             }
 
@@ -1280,6 +1281,8 @@ public final class DungeonLiveMapWriter {
                     if (matchedRoomCells.contains(roomCell) || hints.containsKey(roomCell)) {
                         continue;
                     }
+
+                    if (snapshot.isMapTrapRoom(roomGridX, roomGridZ)) return true;
 
                     int scanGridX = roomGridX * 2;
                     int scanGridZ = roomGridZ * 2;

@@ -56,6 +56,33 @@ public final class RareDungeonRoomCatalogTest {
         assertEquals(RoomType.NORMAL, DungeonKnownRoomCatalog.knownRoomInfos("Quad Lava").getFirst().type());
     }
 
+    @Test public void september19TombstoneTraceIsRecognizedFromBundledRawAndStableHashes() {
+        DungeonKnownRoomCatalog.reload();
+        for (int hash : new int[] {1351532750, -195425460}) {
+            var hint = DungeonKnownRoomCatalog.knownCoreHint(hash);
+            assertNotNull("The user-identified Tombstone needs direct bundled hash evidence", hint);
+            assertEquals("Tombstone", hint.name());
+            assertEquals(RoomType.RARE, hint.type());
+            assertEquals(2, hint.secrets());
+            assertEquals(0, hint.crypts());
+            assertFalse(hint.prince());
+        }
+        var snapshot = new DungeonMapSnapshot();
+        snapshot.observeMapVisibleRoom(1, 1);
+        // message (1).txt, 16:37:34.049: the later run's unknown cell, identified by the user.
+        snapshot.addScan(1, 1789828654049L, 5, 5, List.of(new DungeonScanPoint(2, 2, -153, -153,
+            DungeonScanPointKind.ROOM, true, 1351532750, -195425460, 0, DungeonDoorKind.NONE, true)));
+        var plan = DungeonLiveMapWriter.MatchRenderPlan.from(snapshot);
+        assertEquals(1, plan.matches().size());
+        assertEquals(RoomType.RARE, plan.roomTypeAt(1, 1));
+        var room = DungeonRoomRenderLayout.from(plan).rooms().getFirst();
+        assertEquals("Tombstone", room.template().name());
+        assertEquals(RoomType.RARE, room.template().type());
+        assertEquals(2, room.template().secrets());
+        assertEquals(1, room.components().size());
+        assertTrue(room.contains(1, 1));
+    }
+
     @Test public void legacyNormalJsonImportsPromoteVerifiedRareNamesWithoutChangingOtherMetadata() throws Exception {
         JsonArray rooms = new JsonArray();
         int core = 10_000;

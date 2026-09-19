@@ -4,9 +4,15 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
+import com.github.beng420.kung.config.KungConfig;
+import com.github.beng420.kung.config.category.BRHelperConfig;
 import com.github.beng420.kung.feature.dungeon.room.RoomType;
+import com.github.beng420.kung.runtime.AppServices;
+import com.github.beng420.kung.util.KungDebugRecorder;
+import com.google.gson.Gson;
 import java.io.IOException;
 import java.util.List;
+import java.util.function.Consumer;
 import org.junit.Test;
 
 public final class BloodRushHelperReliabilityTest {
@@ -39,6 +45,83 @@ public final class BloodRushHelperReliabilityTest {
             return false;
         }
     };
+
+    @Test
+    public void lateDoorScansCannotResumeTitlesAfterTheBloodOpenMessage() throws Exception {
+        for (boolean exact : List.of(false, true)) withBloodRush(tracker -> {
+            var helper = BloodRushHelperFeature.INSTANCE;
+            var snapshot = tracker.mapSnapshot();
+            var rooms = remoteBloodRushSnapshot();
+            snapshot.replaceRemoteLiveData(rooms.remoteRooms(), rooms.remoteDoors());
+            if (exact) for (int x = 0; x < 4; x++) snapshot.observeMapVisibleRoom(x, 0);
+            snapshot.addScan(0, 0, 0, 0,
+                List.of(door(3, 0, DungeonDoorKind.WITHER), door(5, 0, DungeonDoorKind.BLOOD)));
+            helper.observeProgress(null, tracker);
+            assertTrue(KungDebugRecorder.dump().contains("baseline opened=0 remaining=2"));
+
+            helper.observeMessage(null, "The BLOOD DOOR has been opened!", true, tracker);
+            assertTrue(KungDebugRecorder.dump().contains("blood done subtitle="));
+            KungDebugRecorder.clear();
+
+            // Trace: opening confirmed at 17:07:15; Wither scans catch up at 17:07:35.
+            snapshot.addScan(1, 1, 0, 0, List.of(door(3, 0, DungeonDoorKind.OPEN)));
+            var plan = tracker.renderPlan();
+            var estimate = BloodRushDoorEstimate.remaining(plan, snapshot);
+            assertEquals(1, estimate.count());
+            assertEquals(exact ? "Blood next" : "1+ door left", estimate.remainingTitle(plan.bloodIsNext()));
+            helper.observeProgress(null, tracker);
+            helper.maybeShowDoorTitle(null, tracker);
+            helper.observeMessage(null, "The BLOOD DOOR has been opened!", true, tracker);
+            assertFalse("Finished rush must ignore late progress and duplicate completion",
+                KungDebugRecorder.dump().contains("[door-title]"));
+
+            helper.clear(100);
+            helper.scheduleInitial(101);
+            assertTrue(helper.doorTitlePending(101));
+            helper.observeProgress(null, tracker);
+            assertTrue("A new run must accept progress again", KungDebugRecorder.dump().contains("baseline opened=1"));
+        });
+    }
+
+    @Test
+    public void bloodOpenCancelsAnInitialTitleStillWaitingForScans() throws Exception {
+        withBloodRush(tracker -> {
+            var helper = BloodRushHelperFeature.INSTANCE;
+            assertTrue(helper.doorTitlePending(0));
+            helper.observeMessage(null, "The BLOOD DOOR has been opened!", false, tracker);
+            assertTrue("Messages before the run must not finish it", helper.doorTitlePending(0));
+            helper.observeMessage(null, "§cThe BLOOD DOOR has been opened!", true, tracker);
+            assertFalse(helper.doorTitlePending(0));
+            assertFalse(helper.shouldFastScanDoors(0));
+            KungDebugRecorder.clear();
+            helper.maybeShowDoorTitle(null, tracker);
+            assertFalse(KungDebugRecorder.dump().contains("[door-title]"));
+        });
+    }
+
+    private static void withBloodRush(Consumer<DungeonStateTracker> check) throws Exception {
+        var config = KungConfig.get();
+        var previous = config.bloodRush;
+        var helper = BloodRushHelperFeature.INSTANCE;
+        boolean initialized = helper.initialized();
+        config.bloodRush = new Gson().fromJson("{\"enabled\":true}", BRHelperConfig.class);
+        try {
+            var tracker = new DungeonStateTracker(EMPTY_REPOSITORY);
+            helper.initialize(AppServices.create(config, tracker));
+            var started = DungeonStateTracker.class.getDeclaredField("realRunStarted");
+            started.setAccessible(true);
+            started.setBoolean(tracker, true);
+            helper.clear(0);
+            helper.scheduleInitial(0);
+            KungDebugRecorder.clear();
+            check.accept(tracker);
+        } finally {
+            helper.clear(0);
+            if (!initialized) helper.shutdown();
+            config.bloodRush = previous;
+            KungDebugRecorder.clear();
+        }
+    }
 
     @Test
     public void lockedDoorDisappearingStillCountsAsOpened() {

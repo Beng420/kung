@@ -138,7 +138,7 @@ public final class BloodRushHelperFeature extends ConfigurableFeature<BRHelperCo
     }
 
     void observeProgress(Minecraft client, DungeonStateTracker tracker) {
-        if (!enabled() || !tracker.realRunStarted()) {
+        if (!enabled() || bloodRushDoneShown || !tracker.realRunStarted()) {
             return;
         }
 
@@ -422,6 +422,8 @@ public final class BloodRushHelperFeature extends ConfigurableFeature<BRHelperCo
             return;
         }
         bloodRushDoneShown = true;
+        // Server confirmation wins over door scans that arrive after Blood has opened.
+        initialTitleScheduled = false;
         String subtitle = "took "
             + formatServerTickTime(serverTicksSinceRunStart)
             + " | "

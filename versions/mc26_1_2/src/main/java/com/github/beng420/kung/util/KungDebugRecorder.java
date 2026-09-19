@@ -20,6 +20,8 @@ import net.minecraft.client.Minecraft;
 public final class KungDebugRecorder {
     private static final int MAX_EVENTS = 2500;
     private static final int MAX_SPLIT_EVENTS = 128;
+    private static final int MAX_SCORE_EVENTS = 256;
+    private static final int MAX_ROOM_EVENTS = 128;
     private static final int MAX_EVENT_LENGTH = 900;
     private static final long DEFAULT_DEDUPE_MILLIS = 15_000L;
     private static final DateTimeFormatter CLOCK_FORMAT =
@@ -29,6 +31,8 @@ public final class KungDebugRecorder {
     private static final ArrayDeque<String> EVENTS = new ArrayDeque<>(MAX_EVENTS);
     /** Preserve low-volume timing boundaries when room/map traffic fills the general ring. */
     private static final ArrayDeque<String> SPLIT_EVENTS = new ArrayDeque<>(MAX_SPLIT_EVENTS);
+    private static final ArrayDeque<String> SCORE_EVENTS = new ArrayDeque<>(MAX_SCORE_EVENTS);
+    private static final ArrayDeque<String> ROOM_EVENTS = new ArrayDeque<>(MAX_ROOM_EVENTS);
     private static final Map<String, AreaState> AREA_STATES = new HashMap<>();
 
     private static long sequence;
@@ -83,6 +87,14 @@ public final class KungDebugRecorder {
                 SPLIT_EVENTS.addLast(line);
                 while (SPLIT_EVENTS.size() > MAX_SPLIT_EVENTS) SPLIT_EVENTS.removeFirst();
             }
+            if (cleanArea.equals("score-calc") || cleanArea.equals("score-bonus") || cleanArea.equals("mimic-kill")) {
+                SCORE_EVENTS.addLast(line);
+                while (SCORE_EVENTS.size() > MAX_SCORE_EVENTS) SCORE_EVENTS.removeFirst();
+            }
+            if (initialRoomPoint(cleanArea, cleanMessage)) {
+                ROOM_EVENTS.addLast(line);
+                while (ROOM_EVENTS.size() > MAX_ROOM_EVENTS) ROOM_EVENTS.removeFirst();
+            }
             state.recorded++;
             state.lastFingerprint = fingerprint;
             state.lastRecordedAtMillis = nowMillis;
@@ -96,6 +108,8 @@ public final class KungDebugRecorder {
         synchronized (EVENTS) {
             EVENTS.clear();
             SPLIT_EVENTS.clear();
+            SCORE_EVENTS.clear();
+            ROOM_EVENTS.clear();
             AREA_STATES.clear();
             sequence = 0L;
             suppressedTotal = 0L;
@@ -104,30 +118,23 @@ public final class KungDebugRecorder {
     }
 
     public static String dump() {
-        return dump(MAX_EVENTS, true);
+        return dump(MAX_EVENTS + MAX_SPLIT_EVENTS + MAX_SCORE_EVENTS + MAX_ROOM_EVENTS);
     }
 
     public static String dump(int maxLines) {
-        return dump(maxLines, false);
-    }
-
-    private static String dump(int maxLines, boolean includeSplitHistory) {
         int limit = Math.max(1, maxLines);
         List<String> snapshot;
         int storedCount;
         synchronized (EVENTS) {
-            snapshot = new ArrayList<>(EVENTS);
+            // Sequence keys deduplicate retained evidence still in the general ring.
+            var ordered = new TreeMap<Long, String>();
+            for (String line : EVENTS) ordered.put(eventSequence(line), line);
+            for (String line : SPLIT_EVENTS) ordered.put(eventSequence(line), line);
+            for (String line : SCORE_EVENTS) ordered.put(eventSequence(line), line);
+            for (String line : ROOM_EVENTS) ordered.put(eventSequence(line), line);
+            snapshot = new ArrayList<>(ordered.values());
             storedCount = snapshot.size();
             snapshot = new ArrayList<>(snapshot.subList(Math.max(0, storedCount - limit), storedCount));
-            if (includeSplitHistory) {
-                // Sequence keys deduplicate boundaries still in the general ring
-                // and keep older retained entries in their original packet order.
-                var ordered = new TreeMap<Long, String>();
-                for (String line : snapshot) ordered.put(eventSequence(line), line);
-                for (String line : SPLIT_EVENTS) ordered.put(eventSequence(line), line);
-                snapshot = new ArrayList<>(ordered.values());
-                storedCount = snapshot.size();
-            }
         }
 
         StringBuilder builder = new StringBuilder(snapshot.size() * 96);
@@ -136,6 +143,8 @@ public final class KungDebugRecorder {
         builder.append("entries=").append(snapshot.size()).append('/').append(storedCount).append('\n');
         builder.append("storedLimit=").append(MAX_EVENTS).append('\n');
         builder.append("reservedSplitLimit=").append(MAX_SPLIT_EVENTS).append('\n');
+        builder.append("reservedScoreLimit=").append(MAX_SCORE_EVENTS).append('\n');
+        builder.append("reservedRoomLimit=").append(MAX_ROOM_EVENTS).append('\n');
         builder.append("suppressed=").append(suppressedTotal).append('\n');
         builder.append("focus=door-title,map-change,map-check,map-discovery,map-topology,mimic-esp,player-markers,player-slots,dungeon-state,context-state\n");
         appendAreaSummary(builder);
@@ -256,6 +265,8 @@ public final class KungDebugRecorder {
     }
 
     private static boolean important(String area, String message) {
+        // The snapshot emits one first nonempty hash per cell, at most 36 per instance.
+        if (initialRoomPoint(area, message)) return true;
         String haystack = (area + " " + message).toLowerCase(Locale.ROOT);
         return haystack.contains("error")
             || haystack.contains("exception")
@@ -277,6 +288,10 @@ public final class KungDebugRecorder {
             || haystack.contains("left dungeons")
             || haystack.contains("entered dungeons")
             || haystack.contains("entered the catacombs");
+    }
+
+    private static boolean initialRoomPoint(String area, String message) {
+        return area.equals("map-change") && message.startsWith("initial-room-point ");
     }
 
     private record AreaPolicy(

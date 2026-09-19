@@ -1,5 +1,6 @@
 package com.github.beng420.kung.config.category;
 
+import com.github.beng420.kung.runtime.KungDeveloperAccess;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.HashMap;
@@ -25,6 +26,13 @@ public final class DungeonConfig extends ConfigCategory {
     private int dragonDebuffX = 8;
     private int dragonDebuffY = 230;
     private int dragonDebuffScale = 85;
+    private boolean m7DragonHelperEnabled = false;
+    private boolean dragonSpawnMarkersEnabled = true;
+    private boolean dragonStatueBoxesEnabled = true;
+    private boolean dragonCountNotificationsEnabled = true;
+    private boolean devDragonDiagnosticsEnabled = false;
+    private boolean coloredPillarsEnabled = false;
+    private PillarMaterial pillarMaterial = PillarMaterial.WOOL;
     private boolean forcePaulScoreEnabled = false;
     private boolean playerTrackingEnabled = false;
     private boolean deathMessagesEnabled = false;
@@ -90,6 +98,20 @@ public final class DungeonConfig extends ConfigCategory {
     public void setDragonDebuffX(int value) { dragonDebuffX = value; save(); }
     public void setDragonDebuffY(int value) { dragonDebuffY = value; save(); }
     public void setDragonDebuffScale(int value) { dragonDebuffScale = Math.clamp(value, 25, 300); save(); }
+    public boolean m7DragonHelperEnabled() { return m7DragonHelperEnabled; }
+    public void setM7DragonHelperEnabled(boolean value) { m7DragonHelperEnabled = value; save(); }
+    public boolean dragonSpawnMarkersEnabled() { return dragonSpawnMarkersEnabled; }
+    public void setDragonSpawnMarkersEnabled(boolean value) { dragonSpawnMarkersEnabled = value; save(); }
+    public boolean dragonStatueBoxesEnabled() { return dragonStatueBoxesEnabled; }
+    public void setDragonStatueBoxesEnabled(boolean value) { dragonStatueBoxesEnabled = value; save(); }
+    public boolean dragonCountNotificationsEnabled() { return dragonCountNotificationsEnabled; }
+    public void setDragonCountNotificationsEnabled(boolean value) { dragonCountNotificationsEnabled = value; save(); }
+    public boolean devDragonDiagnosticsEnabled() { return devDragonDiagnosticsEnabled && KungDeveloperAccess.allowed(); }
+    public void setDevDragonDiagnosticsEnabled(boolean value) { devDragonDiagnosticsEnabled = value; save(); }
+    public boolean coloredPillarsEnabled() { return coloredPillarsEnabled; }
+    public void setColoredPillarsEnabled(boolean value) { coloredPillarsEnabled = value; save(); }
+    public PillarMaterial pillarMaterial() { return pillarMaterial == null ? PillarMaterial.WOOL : pillarMaterial; }
+    public void setPillarMaterial(PillarMaterial value) { pillarMaterial = value == null ? PillarMaterial.WOOL : value; save(); }
     public boolean forcePaulScoreEnabled() { return forcePaulScoreEnabled; }
     public void setForcePaulScoreEnabled(boolean value) { forcePaulScoreEnabled = value; save(); }
     public boolean playerTrackingEnabled() { return playerTrackingEnabled; }
@@ -171,6 +193,14 @@ public final class DungeonConfig extends ConfigCategory {
     public void setRoomSyncToken(String token) {
         this.roomSyncToken = token == null ? "" : token.trim();
         save();
+    }
+
+    public enum PillarMaterial {
+        WOOL("Wool"), GLASS("Glass"), TERRACOTTA("Terracotta");
+
+        private final String label;
+        PillarMaterial(String label) { this.label = label; }
+        public String label() { return label; }
     }
 
     public enum DragonDebuffScope {

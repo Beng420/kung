@@ -22,6 +22,70 @@ public final class DungeonSplitMessagesTest {
     private final List<List<DungeonSplitMessages.Notice>> summaries = new ArrayList<>();
     private final DungeonSplitTracker tracker = new DungeonSplitTracker(clock::get, ignored -> { }, config, phases::add, summaries::add);
 
+    @Test public void september19RejoinWithoutModeDoesNotClaimNormalSevenRecords() {
+        config.setEnabled(true);
+        config.setRunEndChat(true);
+        config.recordPersonalBests(7, false, Map.of("Portal Entry", 30_000L, "Maxor", 30_000L));
+        tracker.startRun(0L, -1, false);
+        clock.set(36_519L);
+        tracker.observeMessage(BLOOD, 0L);
+        clock.set(112_346L);
+        tracker.observeMessage(CLEAR, 0L);
+        clock.set(135_541L);
+        tracker.observeMessage("[BOSS] Maxor: WELL! WELL! WELL! LOOK WHO'S HERE!", 0L);
+        clock.set(162_080L);
+        tracker.observeMessage("[BOSS] Storm: Pathetic Maxor, just like expected.", 0L);
+        assertEquals("Storm", tracker.currentSplitName());
+        assertFalse(tracker.hasKnownFloor());
+        for (var phase : phases) {
+            assertEquals(-1, phase.floor());
+            assertFalse(phase.personalBest());
+            assertEquals(-1L, phase.previousBestMillis());
+        }
+        assertEquals(-1L, tracker.predictedFinishMillis());
+        clock.set(170_000L);
+        tracker.observeMessage("Team Score: 100 (D)", 0L);
+        assertEquals("Run Splits (server time in parentheses)", summaries.getFirst().getFirst().text());
+        assertEquals(30_000L, config.personalBestMillis(7, false, "Portal Entry"));
+        assertEquals(30_000L, config.personalBestMillis(7, false, "Maxor"));
+        assertEquals(-1L, config.personalBestMillis(7, false, "Blood Open"));
+        assertEquals(0, config.recentRunCount(7, false));
+    }
+
+    @Test public void lateMasterConfirmationKeepsEarlierMeasurementsWithoutNormalModeNotices() {
+        config.setEnabled(true);
+        tracker.startRun(0L, -1, false);
+        String[] messages = {BLOOD, CLEAR, "[BOSS] Maxor: WELL! WELL! WELL! LOOK WHO'S HERE!",
+            "[BOSS] Storm: Pathetic Maxor, just like expected.",
+            "[BOSS] Goldor: Who dares trespass into my domain?", "The Core entrance is opening!",
+            "[BOSS] Necron: You went further than any human before, congratulations.",
+            "[BOSS] Necron: All this, for nothing..."};
+        for (String message : messages) {
+            clock.addAndGet(1_000L);
+            tracker.observeMessage(message, 0L);
+        }
+        assertFalse(tracker.hasKnownFloor());
+        assertTrue(phases.stream().noneMatch(DungeonSplitTracker.PhaseMessage::personalBest));
+        clock.addAndGet(1_000L);
+        tracker.observeMessage("[BOSS] Wither King: You... again?", 0L);
+        assertTrue(tracker.hasKnownFloor());
+        assertEquals("Relics", phases.getLast().phase());
+        assertTrue(phases.getLast().masterMode());
+        assertTrue(phases.getLast().personalBest());
+        clock.addAndGet(1_000L);
+        tracker.observeMessage("[BOSS] Wither King: We will decide it all, here, now.", 0L);
+        clock.addAndGet(1_000L);
+        tracker.observeMessage("[BOSS] Wither King: Incredible. You did what I couldn't do myself.", 0L);
+        clock.addAndGet(1_000L);
+        tracker.observeMessage("Team Score: 300 (S+)", 0L);
+        for (String phase : DungeonSplitTracker.namesFor(7, true)) {
+            assertEquals(1_000L, config.personalBestMillis(7, true, phase));
+            assertEquals(-1L, config.personalBestMillis(7, false, phase));
+        }
+        assertEquals(1, config.recentRunCount(7, true));
+        assertEquals(0, config.recentRunCount(7, false));
+    }
+
     @Test public void eachFinishedPhaseReportsTimeAndOnlyNewOrStrictlyFasterTimesCelebrate() {
         config.setEnabled(true);
         for (long duration : new long[] {30_000L, 30_000L, 31_000L, 29_000L}) {

@@ -135,14 +135,24 @@ with the rebuilt JAR remains to check.
 
 ## Unique partial room completion — 2026-09-18
 
-Two direct matching cells of an L or three of a 1x4 can reveal the remaining cell
-before the room is fully visible. `DungeonRoomPrediction` compares compatible
-template placements, including rotations/mirrors, complete alternatives and larger
-variants. It requires at least two exact observed cells and draws one unseen cell
-only when exactly one placement remains. Two possible L sides or line ends stay
-unpredicted. Existing room cores, narrow map doors, physical doors, map-visible cells,
-fully loaded empty cells and the dungeon grid bounds rule out conflicting placements.
-A fully observed room needs no synthetic extension.
+At least two direct matching cells can reveal every remaining cell of a uniquely
+placed room before it is fully visible. This includes two of four cells in a 2x2
+or 1x4, as well as the remaining cell of an L. `DungeonRoomPrediction` compares
+compatible template placements, including rotations/mirrors, complete alternatives
+and larger variants. Only one room identity and footprint may remain;
+transformations of the same room with the same footprint do not make the drawing
+ambiguous. Two possible sides or
+line ends stay unpredicted. Existing room cores, narrow map doors, physical doors,
+map-visible cells, fully loaded empty cells and the dungeon grid bounds rule out
+conflicting placements. A fully observed room needs no synthetic extension.
+
+The September 19 correction removes an output filter that required exactly one
+unseen cell even though candidate matching already supported all missing cells.
+Both unseen cells now render together when two observed hashes uniquely locate a
+four-cell room; the existing ambiguity, visibility and ownership guards remain.
+An empty cell becoming fully loaded also invalidates the cached prediction even
+when its hashes are unchanged. This visibility persists through later chunk
+unloads; repeated loaded observations do not invalidate the cache again.
 
 Predictions are cached separately alongside catalog matching and used only by the
 render layout and its viewport. They never become scan evidence, learning records,
@@ -150,8 +160,61 @@ logical owners, score/clear credit or synchronized room data. Rendering rejects 
 prediction that would cut up an existing logical room or overwrite remote cells or
 doors. Real scans replace/remove predictions through the normal matching revision.
 This restores early connections while retaining the Bridges four-cell safeguard.
-Regression tests cover unique L/1x4 completion, ambiguity, larger/complete variants,
-conflicts, unchanged factual state, real bundled Museum data and cache invalidation.
+Regression tests cover unique L/1x4/2x2 completion, adjacent or diagonal square
+observations, ambiguity, larger/complete variants, conflicts in either unseen cell,
+unchanged factual state, real bundled Museum data and cache invalidation. Live
+early-room rendering remains to verify; synthetic predictions remain presentation
+only as further cells are observed.
+
+## Trap first loaded after completion — 2026-09-19, 16:53:48
+
+The supplied 16:53:48 trace contains an unidentified room after the reported Trap
+was completed before it rendered. Cell `1,0` is the likely candidate: its first
+retained scan at 16:51:20.621 is empty (`-318865360` in both hashes), it is visited
+by 16:51:47.117 and changes from map-only ownership to physical unknown ownership
+at 16:52:17.879. Its first nonempty hash was suppressed by the shared map-change
+rate limit. The same profile's Skyblocker log reports `trap-very-hard-3` at
+16:51:47 and secret collections at 16:51:49/57, but this does not establish a Kung
+hash identity. No catalog variant or metadata is added from this trace.
+
+The map reader previously observed visibility/completion without room type.
+It now recognizes generic Trap from a majority of exact palette byte `62` in the
+bounded room interior. Installed Skyblocker 6.10.4+26.1.2 independently confirms
+`DungeonMapUtils.getRoomType`: 62 is TRAP and 63 is a normal room; both share the
+same base orange color. Checkmarks use separate 18/30/34 pixels. This source
+establishes map interpretation, not Old/New identity or catalog metadata.
+
+Map type survives later unknown physical hashes within the instance. Known
+matches/hints take precedence; otherwise the render layout shows `Trap` with
+the existing completion state and unknown secret/crypt totals. No learned identity
+or secret count is inferred. The original trace has no retained map pixel data,
+so this fallback still needs a live check on a completed Trap.
+
+First nonempty room observations now bypass noisy map-change rate limits and have
+a bounded 128-record reserve, also included in `/kung log copy`. This preserves
+the evidence needed to add a verified changed-state hash if the case recurs.
+Regression tests cover checkmark colors, normal-color rejection, late unknown
+scans, known-identity precedence, unknown totals, reset and diagnostic retention.
+
+## Tombstone first observed hashes — 2026-09-19, 16:38:42
+
+The user identifies the question-mark room in `D:/Downloads/message (1).txt` as
+Tombstone. In the later run, the 16:37:34.049 first scan records room cell `1,1`
+(scan grid `2,2`, world `-153,-153`) with core `1351532750` and stable
+`-195425460`. The next discovery record has `owner=cell:1,1`, `type=UNKNOWN` and
+no hint. The player is in that cell at capture time, with a `1/2 Secrets` message.
+The earlier run's Cage at the same coordinates belongs to a different instance.
+
+Tombstone already had canonical RARE/2-secret metadata but an empty `variants`
+array, so there was no identity evidence to match. Its new 1x1 variant contains
+only the supplied observed hash pair, attributed to the user's identification.
+The existing crypts=0 and prince=false remain unchanged; the saved selected Wiki
+reference lists those fields as blank, not independently verified zero/absence.
+No other room metadata/hashes, matching code or profile data changes.
+
+The regression fails without the new pair and passes with it, checking raw/stable
+lookup plus visible-cell recognition and the RARE render layout using bundled
+resources. Live recognition on the next encounter remains to verify.
 
 ## Ice Fill first-scan variant — 2026-09-19, 00:10:01
 

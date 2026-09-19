@@ -5,6 +5,102 @@ Read the [code map](CODE_MAP.md), then only the topic needed for the task.
 
 ## Current state — 2026-09-19
 
+- **M7 Dragon Helper** adds colored spawn points, estimated statue outlines and
+  evidence-based local count notifications, with its master off by default.
+  Gray/green/red outlines track the identified living dragon's received origin
+  against community bounds; they do not promise the exact server range. Exact
+  Wither King confirmations or observed statue destruction confirm a count;
+  missing evidence remains unknown. Beng114-only developer diagnostics are hidden
+  from other accounts and guarded by the local session UUID, with bounded samples
+  and `/kung dev dragons on|off|sample|copy`. Existing public tools are unchanged.
+  Focused tests and full Java 25 build pass: 782 cases, 781 passed, one Windows
+  symlink skip, no failures/errors; `git diff --check` passes. The 0.4.3 JAR is
+  rebuilt, not installed. Live M7 geometry, confirmation ordering and transition
+  checks remain open. See [M7 Dragon Helper](M7_DRAGONS.md).
+
+- The 17:08:10 trace's late Blood Rush notifications are fixed. Blood open was
+  already confirmed at 17:07:15, but delayed Wither scans at 17:07:35 still emitted
+  remaining-door titles. Completion now stops all automatic progress titles and
+  cancels any pending initial title; new runs rearm normally. The log confirms
+  `3+`, `2+`, `1+ door left`, not the reported literal `Blood next`; tests cover
+  both exact/inexact estimates. Both new regressions fail before the fix. Focused
+  tests and full Java 25 build pass: 766 cases, 765 passed, one Windows symlink
+  skip, no failures/errors; `git diff --check` passes. The 0.4.3 JAR is rebuilt,
+  not installed. Live suppression with delayed scans remains to verify.
+  See [Blood Rush completion](DUNGEON_ARCHITECTURE.md#late-door-scans-after-blood-opened--2026-09-19-170810).
+
+- The 16:53:48 Trap report now has a map-based fallback: exact orange palette 62
+  confirms generic Trap, including a room first physically loaded after completion.
+  A bounded interior majority tolerates checkmarks and rejects normal-room color 63.
+  Known identity wins; otherwise the render layout shows `Trap` with unknown
+  secrets/crypts, without catalog learning. The supplied trace lacks the first
+  nonempty hash, so no variant was invented. First room-hash events now bypass
+  map rate limits and have a 128-record reserve; copy and save include all reserves
+  while explicit tail limits remain bounded. Both behavior/retention regressions
+  fail with their fixes disabled. Focused tests and full Java 25 build pass:
+  764 cases, 763 passed, one Windows symlink skip, no failures/errors;
+  `git diff --check` passes. The 0.4.3 JAR is rebuilt, not installed. Live completed
+  Trap recognition and a verified Old/New changed-state hash remain to check.
+  See [late Trap evidence](ROOM_DATA.md#trap-first-loaded-after-completion--2026-09-19-165348).
+
+- The same 16:47:40 M7 trace's false F7 PB notices are corrected. A failed warp,
+  lobby return and delayed summon left mode unknown; common boss dialogue then
+  incorrectly promoted default `masterMode=false` into confirmed F7. Splits now
+  retain the phase layout separately from confirmed mode, avoiding false labels,
+  PB comparisons, predictions and saves until exact metadata or Wither King
+  dialogue confirms the bucket. Countdown/tick/message routing no longer imports
+  inferred RunStats mode; exact SYSTEM floor headers remain accepted. The inspected
+  profile already saved this run under M7 with no F7 PB/AVG bucket, so no profile
+  repair was needed. Original entry metadata also now survives display formatting/
+  filtering through ALLOW_GAME; its 30-second transfer limit is unchanged.
+  Both new PB regressions and the entry-routing regression failed before their
+  fixes. Focused tests and full Java 25 build pass: 758 cases, 757 passed, one
+  Windows symlink skip, no failures/errors; `git diff --check` passes. The 0.4.3
+  JAR is rebuilt, not installed. Live rejoin classification/messages remain to verify.
+  See [missing mode after a failed warp](RUN_STATISTICS.md#missing-mode-after-a-failed-m7-warp--2026-09-19-164740-trace).
+
+- Tombstone's missing identity is supplied by the user's `message (1).txt` trace:
+  the later run's unknown cell `1,1` has core `1351532750` / stable `-195425460`
+  at 16:37:34.049. Its existing RARE/2 entry had no variants; the observed pair is
+  now bundled as one 1x1 variant. All 140 other room records and existing metadata
+  are unchanged. The new recognition/layout regression fails before the data
+  addition and passes afterward. Focused tests and full Java 25 build pass:
+  752 cases, 751 passed, one Windows symlink skip, no failures/errors;
+  `git diff --check` passes. The pair is verified in the rebuilt 0.4.3 JAR.
+  Built, not installed; live recognition remains to verify.
+  See [Tombstone evidence](ROOM_DATA.md#tombstone-first-observed-hashes--2026-09-19-163842).
+
+- **Colored F7/M7 Pillars** is available in Dungeon settings and native OneConfig,
+  off by default with Wool selected; Glass and Terracotta are the other materials.
+  The 16:47:40 trace follow-up fixes the missing-floor gate: original Maxor/Storm/
+  Goldor/Necron dialogue now confirms the arena within the current Catacombs epoch
+  when shared floor metadata is unknown. Explicit other floors still win; shared
+  master-mode metadata stays untouched. The trace shows run-statistics floor 0 until
+  Maxor's message, then 7; its retained window does not prove why shared metadata
+  was missing. Installed Sodium bytecode reaches our getter, so renderer hooks stay
+  unchanged. Vanilla/Sodium snapshots still replace only bounded pillar diorite,
+  reloading terrain once on material/context changes, with no world writes or scans.
+  New fallback/lifecycle regressions and full Java 25 build pass: 754 cases, 753 passed,
+  one Windows symlink skip, no failures/errors. `git diff --check` passes and the
+  rebuilt 0.4.3 JAR contains the fallback. Built, not installed. Live F7/M7 appearance,
+  complete coverage, crush motion and toggling with vanilla/Sodium remain to verify.
+  See [Colored Pillars](COLORED_PILLARS.md).
+
+- The 12:33 score trace remains unresolved: Kung's 301 is Skill 99 + Explorer 96
+  + Speed 100 + Bonus 6, while the server's 305 differs only in Bonus 10.
+  Bat sync/party evidence at 12:27:34 and the server Bat line at 12:27:44 overlap;
+  no accepted Mimic/Prince report is present. Both missing flags would only yield
+  304. Installed Kung 0.4.2 already contains the Skyblocker bridge; rejected
+  foreign-UUID reports do not prove a lost teammate report. Formula and flags
+  remain unchanged. Diagnostics retain 256 score/bonus/Mimic records separately
+  from the existing 128 split records and log recognized overlapping bonus chat
+  inputs. Both new diagnostic regressions fail before the change and pass afterward;
+  focused tests and the full Java 25 build pass: 736 cases, 735 passed, one Windows
+  symlink skip, no failures/errors. `git diff --check` passes. The existing 0.4.2
+  version is rebuilt, not installed. Another live run with retained bonus evidence
+  and the final breakdown is needed; the score discrepancy is not fixed.
+  See [four-point bonus gap](RUN_STATISTICS.md#four-point-bonus-gap--2026-09-19-1233-trace).
+
 - Ice Fill's `?` in the 00:10:01 trace is a missing first-scan variant: cell `3,0`
   first contains core `1904169381` / stable `578676452` at 00:08:56.515, with no
   earlier known Ice Fill to retain. The user-identified pair is now bundled under
@@ -30,19 +126,18 @@ Read the [code map](CODE_MAP.md), then only the topic needed for the task.
   the registered bridge. Built, not installed; live callback delivery remains to
   verify. See [sync bonus evidence](RUN_STATISTICS.md#missing-synchronized-bonuses--2026-09-19-0002-result).
 
-- Corrected the over-broad room-visibility restriction after the user's L/1x4
-  clarification. Visible/loaded cells connect early again; absent connector pixels
-  no longer manufacture a room boundary. Explicit narrow/special doors and the
-  four-cell union limit remain. New cached render-only predictions add one unseen
-  cell when at least two exact hashes leave a unique template placement across
-  rotations/mirrors; complete/larger alternatives and conflicting evidence block it.
-  The layout draws connectors and expands its viewport without adding scans, owners,
-  learning records or score/clear credit. Preload identity gating and the Blaze fix
-  remain. Nine new regressions include both requested shapes, ambiguity, real Museum
-  data, conflicts and cache invalidation; existing early-join expectations were fixed.
-  Full Java 25 build passes: 731 cases, 730 passed, one Windows symlink skip, no
-  failures/errors; `git diff --check` passes. The 0.4.1 JAR is rebuilt, not installed.
-  Live rendering remains to verify. See [partial completion](ROOM_DATA.md#unique-partial-room-completion--2026-09-18).
+- Room prediction now completes every uniquely implied unseen cell, including
+  two missing cells of a 2x2 or 1x4. The old output filter allowed exactly one
+  missing cell despite candidate matching already supporting more. Five failing
+  cases (including bundled Museum data) reproduce that restriction. A sixth
+  failure exposed stale predictions when unchanged empty hashes became fully
+  loaded; that visibility now invalidates the cache once. All pass after the fixes.
+  Ambiguous footprints, real boundaries and contradictory evidence still block
+  predictions; owners, scans, learning and score remain factual. Full Java 25 build:
+  751 cases, 750 passed, one Windows symlink skip, no failures/errors;
+  `git diff --check` passes. The existing 0.4.2 JAR is rebuilt, not installed.
+  Live early-room rendering remains to verify.
+  See [partial completion](ROOM_DATA.md#unique-partial-room-completion--2026-09-18).
 
 - Run End Chat now shares the Splits overlay's phase/summary label colors,
   light real times, muted server times and red losses. Every phase, Boss Entry
@@ -110,18 +205,21 @@ Read the [code map](CODE_MAP.md), then only the topic needed for the task.
   No formula change was made.
   See [one-point score gap](RUN_STATISTICS.md#one-point-score-gap--2026-09-18-2212-result).
 
-- Latest Ice Spray report is Goldor (the user corrected Maxor). The 22:02:11 trace
-  proves all four markers at 22:02:04 were rejected: the alive wither was
-  2.19–2.41 blocks from them by client bounds, outside the 1.5-block limit.
-  Matching used interpolated positions. It now uses vanilla's received movement
-  destination for both marker and candidate and translates the matching bounds;
-  rendering, thresholds, ambiguity and expiry are preserved. Diagnostics add
-  `matchPosition`. The original trace lacks that destination, so tests simulate
-  it using the recorded marker/current coordinates; exact live resolution remains
-  unconfirmed. Two new regressions, the focused debuff/recorder tests and full
-  Java 25 build pass: 711 cases, 710 passed, one Windows symlink skip, no failures
-  or errors. `git diff --check` passes. The 0.4.0 JAR includes Run End Chat and
-  this correction; built, not installed. See [Goldor rejection](DUNGEON_DEBUFFS.md#goldor-marker-rejection-2026-09-18-220211).
+- Ice Spray follow-up fixes the unconditional Player exclusion that prevented
+  NPC miniboss bodies such as Shadow Assassin from matching. Real Player UUIDs
+  remain excluded. A marker uniquely inside a mob's original translated box can
+  now beat a nearby outside competitor, with 1/32-block coordinate slack. Actual
+  overlaps stay unknown. The latest 12:33 trace demonstrates rejected containment
+  cases and simultaneous recoverable targets; it successfully draws Goldor, so
+  intermittent Goldor failure is not fully explained. Immediate unique matches
+  remain; rejected queries can retry once after the packet batch before populated
+  ambiguity becomes final. That ordering correction has a synthetic regression.
+  Multi-target storage/rendering already existed and independent expiry is now
+  explicitly tested. Five new regressions fail before and pass after matching fixes.
+  Full Java 25 build: 751 cases, 750 passed, one Windows symlink skip, no failures/
+  errors; `git diff --check` passes. Existing 0.4.2 rebuilt, not installed. NPC/crowd/
+  Goldor appearance still needs live checking; no claim of universal hit detection.
+  See [NPC and crowded-mob evidence](DUNGEON_DEBUFFS.md#npcs-and-crowded-mobs-2026-09-19).
 
 - Splits Overlay now has **Run End Chat**, off by default in the shared settings
   catalog. With Splits enabled, the first run-end signal prints all canonical

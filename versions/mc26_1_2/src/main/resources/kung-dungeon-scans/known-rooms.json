@@ -6401,7 +6401,25 @@
       "type": "RARE",
       "secrets": 2,
       "crypts": 0,
-      "variants": [],
+      "variants": [
+        {
+          "components": [
+            {
+              "dx": 0,
+              "dz": 0,
+              "hashes": [
+                {
+                  "core": 1351532750,
+                  "stable": -195425460,
+                  "seen": 1,
+                  "updatedAt": 1789828654049,
+                  "source": "user-identified-tombstone-trace-2026-09-19"
+                }
+              ]
+            }
+          ]
+        }
+      ],
       "prince": false
     },
     {

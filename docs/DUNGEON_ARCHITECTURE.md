@@ -22,11 +22,17 @@ location row, and unrelated packets cannot revive the other source's stale state
 UI rows may retain confirmed context only within that epoch; explicit other
 locations replace it. Kuudra and Dungeon Hub are not Catacombs.
 
-Floor selection is separate: `HypixelDungeonFloorState` may carry exact GAME entry
-metadata across a transfer for 30 seconds, but it still requires independently
+Floor selection is separate: `HypixelDungeonFloorState` observes original non-overlay
+`ALLOW_GAME` entry metadata before display filtering and may carry it across a
+transfer for 30 seconds, but it still requires independently
 confirmed Catacombs context. Current structured floor fields win. Entrance (0)
 differs from unknown (-1). Map items, coordinates, countdowns and warp chat do not
 prove membership. `positionKnown` only gates use of world coordinates.
+Boss-name inference in run statistics supplies a floor number, not normal/master
+mode. Splits accept exact shared metadata or structured SYSTEM floor fields; common
+boss dialogue selects the phase layout without enabling PB/AVG comparisons or
+saves. Wither King dialogue can independently confirm M7. Missing mode stays
+unknown, including after failed transfers or summons without a new entry banner.
 
 `DungeonEventRouter.observeInstanceChanged()` synchronizes the dungeon state.
 Preparing a run scans rooms and records floor/roster metadata before the timer;
@@ -99,16 +105,25 @@ applies. See [split PB ordering](RUN_STATISTICS.md#score-before-victory-pb-corre
   both sides have identical room metadata; broad connectors can still join
   fragments of one room. See [Bridges merge](ROOM_DATA.md#bridges-owner-merge--2026-09-18-222334).
 - `DungeonRoomPrediction` supplies a separate cached render-only list: at least two
-  exact cell hashes may imply one unseen cell only when all compatible template
-  rotations/mirrors leave one placement. Complete and larger compatible variants
+  exact cell hashes may imply every remaining unseen cell of a room only when all
+  compatible template rotations/mirrors leave one footprint. This includes two of
+  four cells completing a 2x2 or 1x4 room. Complete and larger compatible variants
   count as alternatives. Conflicting cores, explicit doors, visible cells and fully
-  loaded empty cells constrain candidates. Reuse predictions across player/checkmark
-  updates; invalidate with matching inputs. `DungeonRoomRenderLayout` alone adds
+  loaded empty cells constrain candidates. Becoming fully loaded advances matching
+  inputs even when an empty cell's hashes do not change; that visibility survives
+  chunk unloads. Reuse predictions across player/checkmark updates and repeated
+  observations. `DungeonRoomRenderLayout` alone adds
   their cells/connectors and the viewport includes them. Predicted cells never enter
   scan points, learning matches, logical owners, score/clear credit or live room sync.
 - `DungeonMapItems` caches the last real map data per client level. Checkmark
   anchoring accepts PLAYER/BLUE_MARKER when FRAME is absent. Inspect `map-check`
   and `map-change` before assuming a drawing defect.
+  The bounded map reader also recognizes Trap from a majority of exact palette
+  value 62 in the room interior; normal rooms use 63, so base color alone is unsafe.
+  Type evidence lasts for the current snapshot and invalidates the plan once.
+  Existing identity matches/hints win. Without identity, only the render layout
+  supplies a generic `Trap` label with unknown secret/crypt totals; it never adds
+  a catalog match or learning hint. Completion still comes from the map checkmark.
 
 Map Scale and Text Scale are independent controls in `/kung hud` and the optional
 OneConfig HUD editor. Both editors share Kung's stored position/scale; the native
@@ -146,6 +161,31 @@ locked Fairy exits. Exclude START-touching doors and the established Fairy entra
 Fairy's render color does not exempt its locked exit. A locked door becoming OPEN,
 or losing its coal/red blocks, updates `openedLockedDoors()` and triggers progress
 even when the rendered path count stays unchanged.
+
+The server's Blood Door opened message ends automatic Blood Rush titles for the
+run. Completion cancels a pending initial title/fast-door scan request and stops
+progress updates; later world scans cannot resume remaining-door announcements.
+New-run scheduling and instance exit reset this state. Explicit debug titles are
+unchanged.
+
+### Late door scans after Blood opened — 2026-09-19, 17:08:10
+
+The supplied trace confirms Blood open and Kung's completion title at 17:07:15.592.
+Watcher dialogue follows immediately. At 17:07:35.556–.759, three Wither-door scans
+catch up, while the stored Blood Door stays locked until 17:07:55.357. There is no
+intervening lifecycle reset. The same profile's Minecraft log confirms late
+`3+ doors left`, `2+ doors left`, and `1+ door left` messages; it does not contain
+the reported literal `Blood next` for that interval. Path visibility remains
+incomplete in this trace.
+
+`observeProgress` previously checked completion only in its zero-remaining branch.
+Positive counts still emitted titles after `bloodRushDoneShown` was set. The
+completion guard now covers the entire automatic progress path. Two regressions
+fail before the fix and pass afterward: late scans with both exact/inexact
+estimates, and completion while the initial title is still pending. They also
+cover duplicate completion, ignoring pre-run messages and rearming the next run.
+The reason the world scans arrived late is not established by this trace; the
+fix uses the already confirmed server event without expanding scan budgets.
 
 ## Mimic lifetime
 

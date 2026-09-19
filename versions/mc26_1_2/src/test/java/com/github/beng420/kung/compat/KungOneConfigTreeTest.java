@@ -34,6 +34,12 @@ public final class KungOneConfigTreeTest {
         long keybinds = tree.map.values().stream().filter(node -> node.getMetadata("visualizer") == Visualizer.KeybindVisualizer.class).count();
         assertEquals(12, keybinds);
         assertEquals(Property.Display.DISABLED, property(tree, "Crypts", "Enabled").getDisplay());
+        assertEquals(false, property(tree, "Colored F7/M7 Pillars", "Enabled").get());
+        assertArrayEquals(new String[] {"Wool", "Glass", "Terracotta"},
+            property(tree, "Colored F7/M7 Pillars", "Material").getMetadata("options"));
+        assertEquals(false, property(tree, "M7 Dragon Helper", "Enabled").get());
+        assertEquals(true, property(tree, "M7 Dragon Helper", "Spawn Markers").get());
+        assertFalse(tree.map.values().stream().anyMatch(node -> "Developer Diagnostics".equals(node.getTitle())));
         // Global OneConfig search reads searchTags, but ignores category/subcategory headings.
         assertEquals(List.of("Kung", "Garden", "6th Visitor Alarm"),
             property(tree, "6th Visitor Alarm", "Enabled").getMetadata("searchTags"));

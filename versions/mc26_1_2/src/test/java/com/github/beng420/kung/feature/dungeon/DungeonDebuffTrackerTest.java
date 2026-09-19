@@ -139,6 +139,41 @@ public final class DungeonDebuffTrackerTest {
         assertNull(DungeonDebuffTracker.uniqueTarget(new Vec3(15, 0, 0), List.of(dragon)));
     }
 
+    @Test public void markerInsideOneMobIsNotLostToNearbyOutsideCompetitor() {
+        // 2026-09-19 12:29:06.340, tick 3545, marker 86167: distances 0 and 0.10264.
+        var first = new DungeonDebuffTracker.Target(new UUID(0, 85901), new Vec3(76.412841796875, 221, 39.008544921875),
+            new AABB(76.0628418, 221, 38.6585449, 76.7628418, 223.4000001, 39.3585449), false);
+        var second = new DungeonDebuffTracker.Target(new UUID(0, 85957), new Vec3(76.5380859375, 221.0263671875, 38.45361328125),
+            new AABB(76.1880859, 221.0263672, 38.1036133, 76.8880859, 223.4263673, 38.8036133), false);
+        assertEquals(first.uuid(), DungeonDebuffTracker.uniqueTarget(new Vec3(76.46875, 222.59375, 38.90625), List.of(first, second)));
+        // Marker 86168 is inside BOTH translated boxes and remains unknown.
+        assertNull(DungeonDebuffTracker.uniqueTarget(new Vec3(76.53125, 222.3125, 38.75), List.of(first, second)));
+        var nearBoundary = new DungeonDebuffTracker.Target(UUID.randomUUID(), Vec3.ZERO,
+            new AABB(76.48, 221, 38.8, 77.18, 223.4, 39.5), false);
+        assertNull(DungeonDebuffTracker.uniqueTarget(new Vec3(76.46875, 222.59375, 38.90625), List.of(first, nearBoundary)));
+    }
+
+    @Test public void simultaneousSprayedMobsKeepIndependentHighlightsAndExpiry() {
+        var first = new DungeonDebuffTracker.Target(UUID.randomUUID(), Vec3.ZERO, new AABB(-.3, 0, -.3, .3, 2, .3), false);
+        var second = new DungeonDebuffTracker.Target(UUID.randomUUID(), new Vec3(.7, 0, 0), new AABB(.4, 0, -.3, 1, 2, .3), false);
+        var unsprayed = new DungeonDebuffTracker.Target(UUID.randomUUID(), new Vec3(0, 0, 1.5), new AABB(-.3, 0, 1.2, .3, 2, 1.8), false);
+        var candidates = List.of(first, second, unsprayed);
+        var tracker = new DungeonDebuffTracker();
+        UUID a = DungeonDebuffTracker.uniqueTarget(new Vec3(0, 1, 0), candidates);
+        UUID b = DungeonDebuffTracker.uniqueTarget(new Vec3(.7, 1, 0), candidates);
+        assertEquals(first.uuid(), a);
+        assertEquals(second.uuid(), b);
+        tracker.spray(a, 0);
+        tracker.spray(b, 0);
+        assertEquals(java.util.Set.of(a, b), tracker.highlighted());
+        for (int tick = 0; tick < 50; tick++) tracker.advance();
+        tracker.spray(a, tracker.tick());
+        for (int tick = 0; tick < 50; tick++) tracker.advance();
+        assertEquals(java.util.Set.of(a), tracker.highlighted());
+        for (int tick = 0; tick < 50; tick++) tracker.advance();
+        assertTrue(tracker.highlighted().isEmpty());
+    }
+
     @Test
     public void locationAndMemoryBoundsDoNotInventDragonState() {
         assertEquals("Purple", DungeonDebuffTracker.dragonName(new Vec3(56, 14, 125)));

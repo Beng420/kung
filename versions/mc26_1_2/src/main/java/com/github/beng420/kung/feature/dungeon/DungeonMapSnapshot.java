@@ -20,6 +20,7 @@ public final class DungeonMapSnapshot {
     private final Set<GridKey> completedRooms = new HashSet<>();
     private final Set<GridKey> mapPlayerRooms = new HashSet<>();
     private final Set<GridKey> mapVisibleRooms = new HashSet<>();
+    private final Set<GridKey> mapTrapRooms = new HashSet<>();
     private final Set<GridKey> fullyLoadedRooms = new HashSet<>();
     private final Set<GridKey> mapOpenDoors = new HashSet<>();
     private final Set<GridKey> mapRoomConnections = new HashSet<>();
@@ -48,6 +49,7 @@ public final class DungeonMapSnapshot {
         completedRooms.clear();
         mapPlayerRooms.clear();
         mapVisibleRooms.clear();
+        mapTrapRooms.clear();
         fullyLoadedRooms.clear();
         mapOpenDoors.clear();
         mapRoomConnections.clear();
@@ -84,8 +86,7 @@ public final class DungeonMapSnapshot {
             }
 
             GridKey key = new GridKey(point.gridX(), point.gridZ());
-            if (point.kind() == DungeonScanPointKind.ROOM && point.roomFullyLoaded()
-                && !DungeonRoomClassifier.isEmptyCore(point.coreHash())) {
+            if (point.kind() == DungeonScanPointKind.ROOM && point.roomFullyLoaded()) {
                 GridKey room = new GridKey(point.gridX() / 2, point.gridZ() / 2);
                 if (fullyLoadedRooms.add(room)) {
                     changed = true;
@@ -201,6 +202,21 @@ public final class DungeonMapSnapshot {
             logMapChange("map-visible-room room=" + gridText(room)
                 + " revision=" + revision);
         }
+    }
+
+    void observeMapTrapRoom(int roomGridX, int roomGridZ) {
+        if (!isValidRoomGrid(roomGridX, roomGridZ)) return;
+        observeMapVisibleRoom(roomGridX, roomGridZ);
+        GridKey room = new GridKey(roomGridX, roomGridZ);
+        if (mapTrapRooms.add(room)) {
+            revision++;
+            scanRevision++;
+            logMapChange("map-room-type room=" + gridText(room) + " type=TRAP");
+        }
+    }
+
+    boolean isMapTrapRoom(int roomGridX, int roomGridZ) {
+        return mapTrapRooms.contains(new GridKey(roomGridX, roomGridZ));
     }
 
     public void observeMapOpenDoor(int scanGridX, int scanGridZ) {

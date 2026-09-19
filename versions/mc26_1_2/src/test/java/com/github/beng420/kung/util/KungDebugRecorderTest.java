@@ -76,4 +76,70 @@ public final class KungDebugRecorderTest {
         assertTrue(dump.contains("boundary-id=1;"));
         assertTrue(dump.contains("boundary-id=128;"));
     }
+
+    @Test
+    public void scoreEvidenceSurvivesMapTrafficWithoutEvictingSplitBoundaries() {
+        KungDebugRecorder.clear();
+        KungDebugRecorder.event("dungeon-splits", "run-start score-fixture");
+        for (int event = 0; event < 257; event++) {
+            KungDebugRecorder.event("score-calc", "score-sample=" + event + ";");
+        }
+        KungDebugRecorder.event("score-bonus", "source=skyblocker bonus=BAT");
+        KungDebugRecorder.event("mimic-kill", "evidence source=chat first=true");
+        for (int event = 0; event < 2600; event++) KungDebugRecorder.event("test-traffic", "event=" + event);
+        KungDebugRecorder.event("score-calc", "score=305 scoreSource=team");
+        String dump = KungDebugRecorder.dump();
+        assertTrue(dump.contains("run-start score-fixture"));
+        assertFalse(dump.contains("score-sample=3;"));
+        assertTrue(dump.contains("score-sample=4;"));
+        assertTrue(dump.contains("source=skyblocker bonus=BAT"));
+        assertTrue(dump.contains("evidence source=chat first=true"));
+        assertTrue(dump.indexOf("score-sample=4;") < dump.indexOf("score=305 scoreSource=team"));
+        assertEquals(dump.indexOf("score=305 scoreSource=team"), dump.lastIndexOf("score=305 scoreSource=team"));
+        assertFalse(KungDebugRecorder.dump(10).contains("score-sample=4;"));
+        KungDebugRecorder.clear();
+        assertFalse(KungDebugRecorder.dump().contains("source=skyblocker bonus=BAT"));
+    }
+
+    @Test
+    public void firstNonemptyRoomHashSurvivesEmptyScansDoorNoiseAndLaterTraffic() {
+        KungDebugRecorder.clear();
+        for (int index = 0; index < 130; index++) {
+            KungDebugRecorder.event("map-change", "point scan=" + index + " grid=2,0 previous=none "
+                + "next=ROOM:loaded=true:core=-318865360:stable=-318865360:type=UNKNOWN");
+        }
+        String observation = "initial-room-point scan=131 grid=2,0 "
+            + "point=ROOM:loaded=true:world=-153,-185:core=827369333:stable=-1936872710:type=NORMAL";
+        KungDebugRecorder.event("map-change", observation);
+        for (int index = 0; index < 140; index++) {
+            KungDebugRecorder.event("map-change", "point scan=" + index + " grid=2,1 previous=none "
+                + "next=DOOR:loaded=true:door=NONE:block=" + index);
+        }
+        String beforeEviction = KungDebugRecorder.dump();
+        assertTrue(beforeEviction.contains(observation));
+        assertTrue(beforeEviction.contains("map-change seen=271 kept=121 suppressed=150"));
+        for (int event = 0; event < 2600; event++) KungDebugRecorder.event("test-traffic", "event=" + event);
+        String dump = KungDebugRecorder.dump();
+        assertTrue(dump.contains(observation));
+        assertEquals(dump.indexOf(observation), dump.lastIndexOf(observation));
+        assertTrue(KungDebugRecorder.dump(5000).contains(observation));
+        String tail = KungDebugRecorder.dump(10);
+        assertFalse(tail.contains(observation));
+        assertEquals(10L, tail.lines().filter(line -> line.matches("\\d+ .*\\[.*")).count());
+        KungDebugRecorder.clear();
+        assertFalse(KungDebugRecorder.dump().contains(observation));
+    }
+
+    @Test
+    public void reservedFirstRoomHashesStayBounded() {
+        KungDebugRecorder.clear();
+        for (int event = 0; event < 129; event++) {
+            KungDebugRecorder.event("map-change", "initial-room-point fixture=" + event + "; core=" + event);
+        }
+        for (int event = 0; event < 2600; event++) KungDebugRecorder.event("test-traffic", "event=" + event);
+        String dump = KungDebugRecorder.dump();
+        assertFalse(dump.contains("initial-room-point fixture=0;"));
+        assertTrue(dump.contains("initial-room-point fixture=1;"));
+        assertTrue(dump.contains("initial-room-point fixture=128;"));
+    }
 }

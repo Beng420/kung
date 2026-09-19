@@ -25,10 +25,10 @@ import net.minecraft.resources.Identifier;
 import net.minecraft.network.protocol.game.ClientboundSoundPacket;
 import net.minecraft.network.protocol.game.ClientboundSetEquipmentPacket;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.boss.enderdragon.EnderDragon;
 import net.minecraft.world.entity.decoration.ArmorStand;
-import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.phys.Vec3;
 
@@ -128,10 +128,10 @@ public final class DungeonDebuffFeature extends ConfigurableFeature<DungeonConfi
         if (markers.containsKey(stand.getUUID()) || markers.size() >= DungeonDebuffTracker.MAX_MARKERS) return;
         IceMarker marker = new IceMarker(stand, tracker.tick());
         markers.put(stand.getUUID(), marker);
-        resolve(marker);
+        resolve(marker, false);
     }
 
-    private void resolve(IceMarker marker) {
+    private void resolve(IceMarker marker, boolean settledBatch) {
         if (marker.resolved || marker.attempts >= 4 || marker.entity.isRemoved()) return;
         marker.attempts++;
         if (!marker.entity.isInvisible()) return;
@@ -141,16 +141,15 @@ public final class DungeonDebuffFeature extends ConfigurableFeature<DungeonConfi
         Vec3 markerPosition = markerTarget.position();
         List<DungeonDebuffTracker.Target> candidates = new ArrayList<>();
         for (LivingEntity entity : level.getEntitiesOfClass(LivingEntity.class, markerTarget.bounds().inflate(8))) {
-            if (entity instanceof ArmorStand || entity instanceof Player || !entity.isAlive()) continue;
+            if (!sprayCandidate(entity.getType(), entity.getUUID(), entity.isAlive())) continue;
             if (candidates.size() >= 128) return; // In a crowded query, retain unknown rather than truncate the competition.
             candidates.add(matchingTarget(entity));
         }
-        UUID target = DungeonDebuffTracker.uniqueTarget(markerPosition, candidates);
-        // Once candidates exist, later mob movement must not turn ambiguity into a guessed hit.
-        if (!candidates.isEmpty()) marker.resolved = true;
+        UUID target = marker.match(markerPosition, candidates, settledBatch);
         if (target == null) {
             trace("ice-marker id=" + marker.entity.getId() + " position=" + marker.entity.position()
                 + " matchPosition=" + markerPosition
+                + " settledBatch=" + settledBatch
                 + " target=ambiguous-or-missing candidates=" + candidates.size()
                 + " nearest=" + candidates.stream()
                     .sorted(Comparator.comparingDouble(candidate -> candidate.distanceTo(markerPosition)))
@@ -158,7 +157,6 @@ public final class DungeonDebuffFeature extends ConfigurableFeature<DungeonConfi
                         + " " + describeTarget(level.getEntity(candidate.uuid()))).toList());
             return;
         }
-        marker.resolved = true;
         tracker.spray(target, marker.observedTick);
         trace("ice-marker id=" + marker.entity.getId() + " target=" + target + " matchPosition=" + markerPosition
             + " observedTick=" + marker.observedTick
@@ -192,7 +190,7 @@ public final class DungeonDebuffFeature extends ConfigurableFeature<DungeonConfi
     private void tick(Minecraft client) {
         if (!ready()) return;
         markers.values().removeIf(marker -> marker.entity.isRemoved());
-        for (IceMarker marker : markers.values()) resolve(marker);
+        for (IceMarker marker : markers.values()) resolve(marker, true);
         for (var entry : dragons.entrySet()) {
             if (entry.getValue().isRemoved()) endings.putIfAbsent(entry.getKey(), false);
         }
@@ -261,11 +259,16 @@ public final class DungeonDebuffFeature extends ConfigurableFeature<DungeonConfi
             entity.getBoundingBox().move(position.subtract(entity.position())), entity instanceof EnderDragon);
     }
 
+    static boolean sprayCandidate(EntityType<?> type, UUID uuid, boolean alive) {
+        // Hypixel minibosses use NPC Player bodies; real player accounts have version-4 UUIDs.
+        return alive && type != EntityType.ARMOR_STAND && (type != EntityType.PLAYER || uuid.version() != 4);
+    }
+
     private void trace(String message) {
         KungDebugRecorder.event("dungeon-debuff", "tick=" + tracker.tick() + " " + message);
     }
 
-    private static final class IceMarker {
+    static final class IceMarker {
         final ArmorStand entity;
         final long observedTick;
         int attempts;
@@ -274,6 +277,15 @@ public final class DungeonDebuffFeature extends ConfigurableFeature<DungeonConfi
         IceMarker(ArmorStand entity, long observedTick) {
             this.entity = entity;
             this.observedTick = observedTick;
+        }
+
+        UUID match(Vec3 position, List<DungeonDebuffTracker.Target> candidates, boolean settledBatch) {
+            if (resolved) return null;
+            UUID target = DungeonDebuffTracker.uniqueTarget(position, candidates);
+            // Equipment can precede movement/metadata in this batch. After it settles, do not
+            // reinterpret an ambiguous marker because unrelated mobs moved away on later ticks.
+            if (target != null || settledBatch && !candidates.isEmpty()) resolved = true;
+            return target;
         }
     }
 }

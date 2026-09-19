@@ -2,6 +2,7 @@ package com.github.beng420.kung.mixin;
 
 import com.github.beng420.kung.feature.dungeon.DungeonEventRouter;
 import com.github.beng420.kung.feature.dungeon.DungeonDebuffFeature;
+import com.github.beng420.kung.feature.dungeon.M7DragonFeature;
 import com.github.beng420.kung.feature.garden.FeastOverlayFeature;
 import com.github.beng420.kung.feature.misc.CustomSoundsFeature;
 import com.github.beng420.kung.feature.misc.SuperpairsHelperFeature;
@@ -25,6 +26,7 @@ import net.minecraft.network.protocol.game.ClientboundSoundEntityPacket;
 import net.minecraft.network.protocol.game.ClientboundAddEntityPacket;
 import net.minecraft.network.protocol.game.ClientboundSetEntityDataPacket;
 import net.minecraft.network.protocol.game.ClientboundSetEquipmentPacket;
+import net.minecraft.network.protocol.game.ClientboundLevelParticlesPacket;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityEvent;
 import org.spongepowered.asm.mixin.Mixin;
@@ -53,7 +55,10 @@ public abstract class ClientPacketListenerMixin {
     @Inject(method = "handleAddEntity", at = @At("TAIL"))
     private void kung$onEntityAdded(ClientboundAddEntityPacket packet, CallbackInfo callbackInfo) {
         var level = Minecraft.getInstance().level;
-        if (level != null) DungeonDebuffFeature.INSTANCE.observeSpawn(level.getEntity(packet.getId()));
+        if (level != null) {
+            DungeonDebuffFeature.INSTANCE.observeSpawn(level.getEntity(packet.getId()));
+            M7DragonFeature.INSTANCE.observeSpawn(level.getEntity(packet.getId()));
+        }
     }
 
     @Inject(method = "handleSetEquipment", at = @At("TAIL"))
@@ -64,7 +69,15 @@ public abstract class ClientPacketListenerMixin {
     @Inject(method = "handleSetEntityData", at = @At("TAIL"))
     private void kung$onEntityData(ClientboundSetEntityDataPacket packet, CallbackInfo callbackInfo) {
         var level = Minecraft.getInstance().level;
-        if (level != null) DungeonDebuffFeature.INSTANCE.observeData(level.getEntity(packet.id()));
+        if (level != null) {
+            DungeonDebuffFeature.INSTANCE.observeData(level.getEntity(packet.id()));
+            M7DragonFeature.INSTANCE.observeData(level.getEntity(packet.id()));
+        }
+    }
+
+    @Inject(method = "handleParticleEvent", at = @At("TAIL"))
+    private void kung$onDragonParticles(ClientboundLevelParticlesPacket packet, CallbackInfo callbackInfo) {
+        M7DragonFeature.INSTANCE.observeParticles(packet);
     }
 
     @Inject(method = "handleContainerSetSlot", at = @At("TAIL"))
@@ -132,5 +145,6 @@ public abstract class ClientPacketListenerMixin {
         Entity entity = packet.getEntity(client.level);
         DungeonEventRouter.observeEntityDeath(entity);
         DungeonDebuffFeature.INSTANCE.observeDeath(entity);
+        M7DragonFeature.INSTANCE.observeDeath(entity);
     }
 }

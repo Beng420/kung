@@ -3,6 +3,7 @@ package com.github.beng420.kung.feature.dungeon;
 import static org.junit.Assert.*;
 
 import java.util.List;
+import java.util.UUID;
 import net.minecraft.SharedConstants;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.Bootstrap;
@@ -58,6 +59,51 @@ public final class DungeonDebuffPositionTest {
         marker.getInterpolation().cancel();
         assertEquals(marker.position(), DungeonDebuffFeature.matchingPosition(marker));
         assertEquals(bounds, DungeonDebuffFeature.matchingTarget(marker).bounds());
+    }
+
+    @Test public void npcPlayerBodiesCanBeSprayedButRealPlayersAndArmorStandsCannot() {
+        UUID npc = UUID.fromString("12345678-1234-2234-9234-123456789abc");
+        UUID player = UUID.randomUUID();
+        assertTrue(DungeonDebuffFeature.sprayCandidate(EntityType.PLAYER, npc, true));
+        assertFalse(DungeonDebuffFeature.sprayCandidate(EntityType.PLAYER, player, true));
+        assertFalse(DungeonDebuffFeature.sprayCandidate(EntityType.ARMOR_STAND, npc, true));
+        assertTrue(DungeonDebuffFeature.sprayCandidate(EntityType.WITHER, player, true));
+        assertTrue(DungeonDebuffFeature.sprayCandidate(EntityType.WITHER_SKELETON, player, true));
+        assertFalse(DungeonDebuffFeature.sprayCandidate(EntityType.PLAYER, npc, false));
+    }
+
+    @Test public void failedImmediateMatchCanUseMovementLaterInTheSamePacketBatch() {
+        var boss = wither();
+        boss.setPos(45.08095, 117.19359, 40.03959);
+        var stand = new ArmorStand(EntityType.ARMOR_STAND, null);
+        stand.setPos(47.84375, 119.5, 40);
+        var marker = new DungeonDebuffFeature.IceMarker(stand, 0);
+        assertNull(marker.match(stand.position(), List.of(DungeonDebuffFeature.matchingTarget(boss)), false));
+        assertFalse(marker.resolved);
+        // The ordering is simulated; the historical trace did not record later movement packets.
+        boss.moveOrInterpolateTo(new Vec3(47.875, 117.19359, 40.03959));
+        UUID target = marker.match(stand.position(), List.of(DungeonDebuffFeature.matchingTarget(boss)), true);
+        assertEquals(boss.getUUID(), target);
+        assertTrue(marker.resolved);
+        var tracker = new DungeonDebuffTracker();
+        tracker.advance();
+        tracker.spray(target, marker.observedTick);
+        while (tracker.tick() < 100) tracker.advance();
+        assertTrue(tracker.highlighted().isEmpty());
+    }
+
+    @Test public void settledAmbiguityCannotBeReassignedAfterMobsMoveAway() {
+        var stand = new ArmorStand(EntityType.ARMOR_STAND, null);
+        stand.setPos(0, 1, 0);
+        var first = wither();
+        var second = wither();
+        var marker = new DungeonDebuffFeature.IceMarker(stand, 0);
+        var overlapping = List.of(DungeonDebuffFeature.matchingTarget(first), DungeonDebuffFeature.matchingTarget(second));
+        assertNull(marker.match(stand.position(), overlapping, false));
+        assertFalse(marker.resolved);
+        assertNull(marker.match(stand.position(), overlapping, true));
+        assertTrue(marker.resolved);
+        assertNull(marker.match(stand.position(), List.of(DungeonDebuffFeature.matchingTarget(first)), true));
     }
 
     private static WitherBoss wither() {

@@ -64,6 +64,9 @@ final class DungeonMapCheckmarkReader {
                 DungeonMapClearState clearState = checkmarkState(map, mapX, mapZ, anchor.roomSize());
                 if (isVisibleRoom(map, mapX, mapZ, anchor.roomSize())) {
                     snapshot.observeMapVisibleRoom(roomGridX, roomGridZ);
+                    if (isTrapRoom(map, mapX, mapZ, anchor.roomSize())) {
+                        snapshot.observeMapTrapRoom(roomGridX, roomGridZ);
+                    }
                     visibleMapRooms.add(new DungeonMapSnapshot.GridKey(roomGridX, roomGridZ));
                     visibleRooms++;
                 }
@@ -633,6 +636,22 @@ final class DungeonMapCheckmarkReader {
             }
         }
         return sampledPixels > 0 && visiblePixels >= Math.max(3, sampledPixels / 4);
+    }
+
+    static boolean isTrapRoom(MapItemSavedData map, int roomX, int roomZ, int roomSize) {
+        int trapPixels = 0;
+        int sampledPixels = 0;
+        for (int z = roomZ + 1; z < roomZ + roomSize - 1; z++) {
+            for (int x = roomX + 1; x < roomX + roomSize - 1; x++) {
+                int color = colorAt(map, x, z);
+                if (color < 0) return false;
+                sampledPixels++;
+                // Hypixel uses 62 for Trap but 63 (the same base color) for normal rooms.
+                if (color == 62) trapPixels++;
+            }
+        }
+        // A majority tolerates the central completion glyph without trusting isolated pixels.
+        return sampledPixels >= 9 && trapPixels > sampledPixels / 2;
     }
 
     private static boolean isVisitedRoomColor(int color) {

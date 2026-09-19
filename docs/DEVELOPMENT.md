@@ -61,6 +61,10 @@ dependencies in the active module's Gradle file.
 - `/kung roomdata`: copy cell coordinates, core/stable/first hash, hints and match.
 - `/kung mimic`: current static-chest status; capture/undo details in
   [MIMIC_STATIC_CHESTS.md](MIMIC_STATIC_CHESTS.md).
+- Beng114 only: `/kung dev dragons on|off|sample|copy` controls the bounded,
+  in-memory M7 measurement capture and clipboard export. Enable before spawning;
+  see [M7 Dragon Helper](M7_DRAGONS.md#developer-measurements). Existing public
+  diagnostic commands remain available.
 
 Current play profile:
 `%APPDATA%/ModrinthApp/profiles/Dungeons 26.1.2/logs/kung`.
@@ -87,6 +91,15 @@ A separate boss-entry save is no longer necessary to preserve one run's split
 evidence. Do not clear the trace during the run. The diagnostics are automatic
 and need no extra chat debug. See [split timing](SPLITS_TIMING_FIXES.md).
 
+Full saves also retain the last 256 `score-calc`, `score-bonus` and `mimic-kill`
+records separately, so map traffic cannot discard early bonus inputs. Recognized
+bonus chat reports are recorded even when another source already set the flag;
+overlapping reports do not add score. A separate 128-record reserve retains the
+first nonempty hash per room cell (`map-change initial-room-point`); those at-most-36
+events per instance bypass noisy map rate limits. Save and copy merge all reserves
+chronologically without duplicates. Explicit line limits, including `/kung log tail`,
+still return at most that many event lines. See [score evidence](RUN_STATISTICS.md#four-point-bonus-gap--2026-09-19-1233-trace).
+
 Chat diagnostics belong behind Debug > Debug Messages. The passive ring buffer is
 separate. Existing throttled dungeon runtime errors should remain visible without
 flooding chat. Optional title debugging: `/kung test title <doors>` and
@@ -111,7 +124,7 @@ Native OneConfig owns its own text rendering and colors.
 ### Optional OneConfig / Mod Menu integration
 
 `config/KungSettings` is the shared catalog for the existing `KungConfigScreen`
-and native OneConfig controls. It exposes six categories and 26 feature entries,
+and native OneConfig controls. It exposes six categories and 28 feature entries,
 including enum choices, nested settings, actions, help and raw loadout bindings.
 Hitboxes uses dynamic entity rows and shared color/removal
 controls. Its native Add/Edit buttons open the complete Kung search/color editor;

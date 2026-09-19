@@ -14,7 +14,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-/** Cached, render-only completion of a room with one uniquely placed unseen cell. */
+/** Cached, render-only completion of every unseen cell in a uniquely placed room. */
 final class DungeonRoomPrediction {
     private DungeonRoomPrediction() { }
 
@@ -44,7 +44,7 @@ final class DungeonRoomPrediction {
         Map<CellKey, Integer> alternatives = new HashMap<>();
         candidates.keySet().forEach(key -> key.cells().forEach(cell -> alternatives.merge(cell, 1, Integer::sum)));
         return candidates.entrySet().stream()
-            .filter(entry -> entry.getValue().components().stream().filter(component -> component.coreHash() == 0).count() == 1)
+            .filter(entry -> entry.getValue().components().stream().anyMatch(component -> component.coreHash() == 0))
             .filter(entry -> entry.getKey().cells().stream().allMatch(cell -> alternatives.get(cell) == 1))
             .map(Map.Entry::getValue).toList();
     }

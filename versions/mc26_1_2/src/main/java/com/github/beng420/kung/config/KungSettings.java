@@ -1,6 +1,7 @@
 package com.github.beng420.kung.config;
 
 import com.github.beng420.kung.config.category.DungeonConfig.DragonDebuffScope;
+import com.github.beng420.kung.config.category.DungeonConfig.PillarMaterial;
 import com.github.beng420.kung.config.category.SlayerConfig.EggSacPredictionRenderMode;
 import com.github.beng420.kung.config.category.SplitsConfig.PredictionMode;
 import com.github.beng420.kung.config.category.SplitsConfig.PredictionSource;
@@ -10,6 +11,7 @@ import com.github.beng420.kung.feature.dungeon.DungeonRoomClassifier;
 import com.github.beng420.kung.feature.dungeon.DungeonRoomDataSyncClient;
 import com.github.beng420.kung.feature.misc.CustomSoundsFeature;
 import com.github.beng420.kung.feature.misc.LoadoutsAutoCloseFeature;
+import com.github.beng420.kung.runtime.KungDeveloperAccess;
 import com.github.beng420.kung.update.KungUpdater;
 import com.github.beng420.kung.util.HypixelSkyBlockProfileClient;
 import java.io.StringReader;
@@ -79,6 +81,17 @@ public final class KungSettings {
                         "Hover the chat report for first/fifth hits, rate and hit ticks.",
                         "Arrow feedback counts for the first 40 server ticks at your nearest spawning statue.",
                         "Other dragons show -- for arrows. Each respawn starts fresh."),
+                new FeatureEntry("M7 Dragon Helper", config.dungeon::m7DragonHelperEnabled,
+                    () -> config.dungeon.setM7DragonHelperEnabled(!config.dungeon.m7DragonHelperEnabled()),
+                    dragonHelperSettings(config, KungDeveloperAccess.allowed()))
+                    .withTooltip("Dragon spawn markers, statue boxes and local count notifications in M7.",
+                        "Statue boxes estimate the range; count results require server evidence."),
+                new FeatureEntry("Colored F7/M7 Pillars", config.dungeon::coloredPillarsEnabled,
+                    () -> config.dungeon.setColoredPillarsEnabled(!config.dungeon.coloredPillarsEnabled()), List.of(
+                        SettingEntry.choice("Material", PillarMaterial.values(), config.dungeon::pillarMaterial,
+                            config.dungeon::setPillarMaterial, PillarMaterial::label)
+                    ))
+                    .withTooltip("Show Storm's crush pillars in their matching colors in F7 and M7."),
                 new FeatureEntry("Player Stats", config.dungeon::playerTrackingEnabled,
                     () -> config.dungeon.setPlayerTrackingEnabled(!config.dungeon.playerTrackingEnabled()),
                     List.of()
@@ -385,6 +398,26 @@ public final class KungSettings {
                 )
             ))
         );
+    }
+
+    static List<SettingEntry> dragonHelperSettings(KungConfig config, boolean developer) {
+        List<SettingEntry> settings = new ArrayList<>(List.of(
+            SettingEntry.toggle("Spawn Markers", config.dungeon::dragonSpawnMarkersEnabled,
+                () -> config.dungeon.setDragonSpawnMarkersEnabled(!config.dungeon.dragonSpawnMarkersEnabled())),
+            SettingEntry.toggle("Statue Boxes", config.dungeon::dragonStatueBoxesEnabled,
+                () -> config.dungeon.setDragonStatueBoxesEnabled(!config.dungeon.dragonStatueBoxesEnabled()))
+                .withTooltip("Shows estimated dragon counting areas at the statues.",
+                    "Green means the origin is inside the estimate; red means outside."),
+            SettingEntry.toggle("Count Notifications", config.dungeon::dragonCountNotificationsEnabled,
+                () -> config.dungeon.setDragonCountNotificationsEnabled(!config.dungeon.dragonCountNotificationsEnabled()))
+                .withTooltip("Local notifications for server-confirmed dragon counts.")
+        ));
+        if (developer) {
+            settings.add(SettingEntry.toggle("Developer Diagnostics", config.dungeon::devDragonDiagnosticsEnabled,
+                () -> config.dungeon.setDevDragonDiagnosticsEnabled(!config.dungeon.devDragonDiagnosticsEnabled()))
+                .withTooltip("Extra local dragon capture diagnostics for Beng114 only."));
+        }
+        return List.copyOf(settings);
     }
 
     private static void toggleRoomSync(KungConfig config) {

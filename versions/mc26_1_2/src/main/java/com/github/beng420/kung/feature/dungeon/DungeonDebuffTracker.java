@@ -171,6 +171,7 @@ final class DungeonDebuffTracker {
         UUID result = null;
         double nearest = Double.POSITIVE_INFINITY;
         double second = Double.POSITIVE_INFINITY;
+        boolean insideMob = false;
         for (Target target : targets) {
             double distance = target.distanceTo(marker);
             if (distance > (target.dragon ? 8 : 1.5)) continue;
@@ -178,8 +179,12 @@ final class DungeonDebuffTracker {
                 second = nearest;
                 nearest = distance;
                 result = target.uuid;
+                insideMob = !target.dragon && distance == 0;
             } else second = Math.min(second, distance);
         }
+        // An ice marker inside only one mob's real box is stronger evidence than a nearby box.
+        // Keep 1/32 block of slack for the marker's quantized position; actual overlaps stay unknown.
+        if (insideMob && second > 1.0 / 32) return result;
         return second - nearest < 0.5 ? null : result;
     }
 

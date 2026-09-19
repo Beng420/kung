@@ -2176,12 +2176,12 @@ public final class DungeonRunStats {
     }
 
     private void observeScoreKillMessage(Minecraft client, String message) {
-        boolean hadPrince = princeKilled;
-        boolean hadBat = batScoreKilled;
+        boolean recognized = false;
         var claim = DungeonBonusContribution.namedClaim(message);
         if (claim != null) {
             UUID uuid = trackedPlayerUuid(claim.name());
             if (uuid != null) {
+                recognized = true;
                 recordBonusContributor(uuid, claim.bonus());
                 switch (claim.bonus()) {
                     case PRINCE -> markPrinceKilled(client, false);
@@ -2191,16 +2191,21 @@ public final class DungeonRunStats {
             }
         }
         if (MIMIC_KILL_PATTERN.matcher(message).matches()) {
+            recognized = true;
             markMimicKilled(client, false, "chat");
         }
         if (PRINCE_KILL_PATTERN.matcher(message).matches() || message.equals(HYPIXEL_PRINCE_KILL_MESSAGE)) {
+            recognized = true;
             markPrinceKilled(client, message.equals(HYPIXEL_PRINCE_KILL_MESSAGE));
         }
         if (BAT_KILL_PATTERN.matcher(message).matches() || message.equals(HYPIXEL_BAT_KILL_MESSAGE)) {
+            recognized = true;
             markBatScoreKilled(client, message.equals(HYPIXEL_BAT_KILL_MESSAGE));
         }
-        if (princeKilled != hadPrince || batScoreKilled != hadBat) {
+        // Keep overlapping inputs as evidence, even when another source set the flag first.
+        if (recognized) {
             KungDebugRecorder.event("score-bonus", "prince=" + princeKilled + " bat=" + batScoreKilled
+                + " mimic=" + mimicKilled
                 + " message=\"" + KungDebugRecorder.compact(message) + "\"");
         }
     }

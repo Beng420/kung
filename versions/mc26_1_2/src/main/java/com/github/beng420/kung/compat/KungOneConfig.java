@@ -3,6 +3,7 @@ package com.github.beng420.kung.compat;
 import com.github.beng420.kung.config.KungConfig;
 import com.github.beng420.kung.config.KungConfigScreen;
 import com.github.beng420.kung.config.KungSettings;
+import com.github.beng420.kung.runtime.KungDeveloperAccess;
 import java.util.ArrayList;
 import java.util.List;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
@@ -60,6 +61,7 @@ final class KungOneConfig {
     private static String dynamicSettings() {
         var config = KungConfig.get().misc;
         return config.customArrowHitSounds() + "\n" + config.customWitherShieldExpireSounds()
-            + "\n" + KungConfig.get().hitboxes.entities().keySet() + "\n" + config.bowDrawThresholds();
+            + "\n" + KungConfig.get().hitboxes.entities().keySet() + "\n" + config.bowDrawThresholds()
+            + "\n" + KungDeveloperAccess.allowed();
     }
 }

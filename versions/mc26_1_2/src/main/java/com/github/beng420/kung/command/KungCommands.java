@@ -22,6 +22,7 @@ public final class KungCommands {
             RoomSyncCommandGroup.register(root, tracker);
             DungeonDebugCommandGroup.register(root, tracker);
             UserCommandGroup.register(root, tracker);
+            DeveloperCommandGroup.register(root);
             dispatcher.register(root);
         });
     }

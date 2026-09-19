@@ -4,6 +4,7 @@ import com.github.beng420.kung.config.KungConfig;
 
 import com.github.beng420.kung.KungMod;
 import com.github.beng420.kung.feature.dungeon.room.RoomType;
+import com.github.beng420.kung.skyblock.HypixelDungeonFloor;
 import com.github.beng420.kung.skyblock.HypixelInstanceTracker;
 import com.github.beng420.kung.message.KungMessages;
 import com.github.beng420.kung.util.KungDebugRecorder;
@@ -811,7 +812,10 @@ public final class DungeonStateTracker {
         if (overlay && workload.rooms()) {
             runStats.observeRoomSecretOverlay(client, text, renderPlan());
         }
-        splitTracker.configureForFloor(runStats.floor(), runStats.masterMode());
+        if (source == DungeonDeathTracker.MessageSource.SYSTEM) {
+            var floor = HypixelDungeonFloor.fromLine(text);
+            splitTracker.configureKnownFloor(floor.floor(), floor.masterMode());
+        }
         splitTracker.observeMessage(text, dungeonTick);
         observeRunFinishedSignal(text);
     }
@@ -1622,7 +1626,6 @@ public final class DungeonStateTracker {
             if (shouldObserve(lastStatsObserveTick, STATS_OBSERVE_INTERVAL_TICKS)) {
                 lastStatsObserveTick = dungeonTick;
                 runStats.observePlayers(client, dungeonTick);
-                splitTracker.configureForFloor(runStats.floor(), runStats.masterMode());
             }
         }
         if (mapVisibleArea && workload.rooms()) {
@@ -1953,7 +1956,7 @@ public final class DungeonStateTracker {
         runEndMessageSent = false;
         realRunStarted = false;
         if (consumePendingRunStartSignal()) {
-            splitTracker.startRun(dungeonTick, runStats.floor(), runStats.masterMode());
+            startSplitRun();
             realRunStarted = true;
             bloodRushHelper.scheduleInitial(dungeonTick);
             scanRecorder.restartRecording();
@@ -1967,7 +1970,7 @@ public final class DungeonStateTracker {
         if (!dungeonInstanceActive) {
             KungDebugRecorder.event("dungeon", "restart requested without active instance");
             startDungeonInstance(client);
-            splitTracker.startRun(dungeonTick, runStats.floor(), runStats.masterMode());
+            startSplitRun();
             bloodRushHelper.scheduleInitial(dungeonTick);
             realRunStarted = true;
             scanRecorder.restartRecording();
@@ -1999,13 +2002,19 @@ public final class DungeonStateTracker {
         else runStats.reset();
         runStats.startRun(dungeonTick);
         runStats.configureForFloor(floor, masterMode);
-        splitTracker.startRun(dungeonTick, floor, masterMode);
+        startSplitRun();
         bloodRushHelper.scheduleInitial(dungeonTick);
         // The countdown belongs to the same instance. Keep pre-run cores and door evidence;
         // the bounded scanner will pick up changed columns after the run starts.
         sendRunStartedMessage(client);
         scanReady = true;
         scanRecorder.scanNow(client, this);
+    }
+
+    private void startSplitRun() {
+        // Run statistics also infer a floor from shared boss names, without knowing its mode.
+        var floor = HypixelInstanceTracker.INSTANCE.dungeonFloor();
+        splitTracker.startRun(dungeonTick, floor.floor(), floor.masterMode());
     }
 
     private void endDungeonInstance(Minecraft client) {

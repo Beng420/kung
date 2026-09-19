@@ -9,6 +9,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.function.Consumer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
@@ -37,11 +38,17 @@ public final class HypixelInstanceTracker {
     public static void initializeClient() {
         ClientTickEvents.END_CLIENT_TICK.register(INSTANCE::tick);
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> INSTANCE.disconnect(client));
-        ClientReceiveMessageEvents.GAME.register((message, overlay) -> {
-            recordMessage(message);
-            if (!overlay) INSTANCE.dungeonFloor.entryMessage(message.getString(), System.currentTimeMillis());
-        });
+        ClientReceiveMessageEvents.GAME.register((message, overlay) -> recordMessage(message));
+        registerFloorEntryObserver(message -> INSTANCE.dungeonFloor.entryMessage(message, System.currentTimeMillis()));
         ClientReceiveMessageEvents.CHAT.register((message, signed, sender, params, received) -> recordMessage(message));
+    }
+
+    static void registerFloorEntryObserver(Consumer<String> observer) {
+        // Entry metadata must survive chat filtering and display-only message formatting.
+        ClientReceiveMessageEvents.ALLOW_GAME.register((message, overlay) -> {
+            if (!overlay) observer.accept(message.getString());
+            return true;
+        });
     }
 
     public boolean tracking() { return observedLevel != null; }

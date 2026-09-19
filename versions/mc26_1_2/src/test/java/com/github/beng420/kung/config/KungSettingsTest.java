@@ -7,6 +7,7 @@ import static org.junit.Assert.assertTrue;
 import com.github.beng420.kung.config.KungSettings.CategoryEntry;
 import com.github.beng420.kung.config.KungSettings.FeatureEntry;
 import com.github.beng420.kung.config.category.DungeonConfig.DragonDebuffScope;
+import com.github.beng420.kung.config.category.DungeonConfig.PillarMaterial;
 import com.github.beng420.kung.config.category.SplitsConfig.PredictionMode;
 import com.github.beng420.kung.config.category.SplitsConfig.TimeFormat;
 import java.nio.file.Files;
@@ -27,7 +28,7 @@ public final class KungSettingsTest {
 
         assertEquals(List.of("Dungeon", "Garden", "Hunting", "Slayer", "Util", "Debug"),
             categories.stream().map(CategoryEntry::name).toList());
-        assertEquals(List.of(10, 2, 1, 1, 9, 3),
+        assertEquals(List.of(12, 2, 1, 1, 9, 3),
             categories.stream().map(category -> category.features().size()).toList());
         for (var category : categories) {
             for (var feature : category.features()) {
@@ -216,6 +217,66 @@ public final class KungSettingsTest {
             """));
         assertEquals(200, invalid.dungeon.iceSprayBoxSize());
         assertEquals(DragonDebuffScope.ALL_DRAGONS, invalid.dungeon.dragonDebuffScope());
+    }
+
+    @Test
+    public void coloredPillarsSettingsPersistIndependentlyAndFallbackToWool() {
+        Path file = temporary.getRoot().toPath().resolve("pillars.json");
+        KungConfig config = new KungConfig(file);
+        var pillars = feature(KungSettings.categories(config, () -> { }), "Colored F7/M7 Pillars");
+        var material = setting(pillars, "Material");
+        assertFalse(pillars.enabled());
+        assertEquals("Wool", material.choiceSupplier().get());
+        assertEquals(List.of("Material"), pillars.settings().stream().map(SettingEntry::label).toList());
+        assertEquals(List.of("Wool", "Glass", "Terracotta"), material.choices());
+
+        pillars.toggle().run();
+        for (var choice : PillarMaterial.values()) {
+            material.intConsumer().accept(choice.ordinal());
+            KungConfig restored = new KungConfig(file);
+            restored.load();
+            assertTrue(restored.dungeon.coloredPillarsEnabled());
+            assertEquals(choice, restored.dungeon.pillarMaterial());
+            assertFalse(restored.dungeon.enabled());
+        }
+        pillars.toggle().run();
+        config.dungeon.setPillarMaterial(null);
+        KungConfig restored = new KungConfig(file);
+        restored.load();
+        assertFalse(restored.dungeon.coloredPillarsEnabled());
+        assertEquals(PillarMaterial.WOOL, restored.dungeon.pillarMaterial());
+        for (String stored : List.of("{}", "{\"pillarMaterial\":null}", "{\"pillarMaterial\":\"unknown\"}")) {
+            var loaded = KungConfig.read(new java.io.StringReader("{\"dungeonMap\":" + stored + "}"));
+            assertFalse(loaded.dungeon.coloredPillarsEnabled());
+            assertEquals(PillarMaterial.WOOL, loaded.dungeon.pillarMaterial());
+        }
+    }
+
+    @Test
+    public void dragonHelperSettingsPersistIndependentlyAndHideDeveloperDiagnostics() {
+        Path file = temporary.getRoot().toPath().resolve("dragon-helper.json");
+        KungConfig config = new KungConfig(file);
+        var helper = feature(KungSettings.categories(config, () -> { }), "M7 Dragon Helper");
+        assertFalse(helper.enabled());
+        assertEquals(List.of("Spawn Markers", "Statue Boxes", "Count Notifications"),
+            helper.settings().stream().map(SettingEntry::label).toList());
+        for (var setting : helper.settings()) {
+            assertTrue(setting.booleanSupplier().getAsBoolean());
+            setting.toggle().run();
+        }
+        helper.toggle().run();
+        config.dungeon.setDevDragonDiagnosticsEnabled(true);
+        KungConfig restored = new KungConfig(file);
+        restored.load();
+        assertTrue(restored.dungeon.m7DragonHelperEnabled());
+        assertFalse(restored.dungeon.dragonSpawnMarkersEnabled());
+        assertFalse(restored.dungeon.dragonStatueBoxesEnabled());
+        assertFalse(restored.dungeon.dragonCountNotificationsEnabled());
+        assertFalse(restored.dungeon.devDragonDiagnosticsEnabled());
+        assertFalse(restored.dungeon.dragonDebuffEnabled());
+        assertFalse(restored.dungeon.enabled());
+        assertEquals(List.of("Spawn Markers", "Statue Boxes", "Count Notifications", "Developer Diagnostics"),
+            KungSettings.dragonHelperSettings(config, true).stream().map(SettingEntry::label).toList());
     }
 
     private static FeatureEntry feature(List<CategoryEntry> categories, String name) {
