@@ -264,24 +264,26 @@ public final class KungDebugRecorder {
         };
     }
 
+    /**
+     * Important lines bypass both dedupe and the rate limit, so this must stay narrow: anomalies
+     * and the handful of distinctive run-lifecycle phrases.
+     *
+     * <p>It deliberately does NOT look at the area name. Areas are called "deaths", "crypts",
+     * "score-calc" and five variants of "mimic-*", so matching topic words against the area made
+     * those areas permanently unthrottled. Topic words alone are gone for the same reason: they
+     * matched routine key=value fields ("secrets=4", "deaths=0") and the floor name, which pinned
+     * room-sync, map-topology and mimic-esp at 100% unthrottled. Those lines are still recorded -
+     * they just obey the per-area budget now, which is what the budget is for.
+     */
     private static boolean important(String area, String message) {
         // The snapshot emits one first nonempty hash per cell, at most 36 per instance.
         if (initialRoomPoint(area, message)) return true;
-        String haystack = (area + " " + message).toLowerCase(Locale.ROOT);
+        String haystack = message.toLowerCase(Locale.ROOT);
         return haystack.contains("error")
             || haystack.contains("exception")
             || haystack.contains("failed")
             || haystack.contains("crash")
             || haystack.contains("starting in 1 second")
-            || haystack.contains("catacombs")
-            || haystack.contains("blood")
-            || haystack.contains("wither")
-            || haystack.contains("secret")
-            || haystack.contains("mimic")
-            || haystack.contains("crypt")
-            || haystack.contains("death")
-            || haystack.contains(" died")
-            || haystack.contains("score")
             || haystack.contains("run-start")
             || haystack.contains("run-finished")
             || haystack.contains("world-change")

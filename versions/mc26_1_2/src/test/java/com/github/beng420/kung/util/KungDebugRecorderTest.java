@@ -142,4 +142,25 @@ public final class KungDebugRecorderTest {
         assertTrue(dump.contains("initial-room-point fixture=1;"));
         assertTrue(dump.contains("initial-room-point fixture=128;"));
     }
+
+    @Test
+    public void routineFieldsAndAreaNamesNoLongerBypassTheAreaBudget() {
+        // "mimic-esp" as an area and "secrets=4" as a field used to mark every line important,
+        // which meant no dedupe and no rate limit - room-sync and map-topology ran 100% unthrottled.
+        KungDebugRecorder.clear();
+        for (int event = 0; event < 400; event++) {
+            KungDebugRecorder.event("mimic-esp", "room owner=match:" + event + " secrets=4 deaths=0 score=12");
+        }
+        long recorded = KungDebugRecorder.dump().lines()
+            .filter(line -> line.contains("[mimic-esp]")).count();
+        assertTrue("expected the area budget to apply, got " + recorded, recorded < 400);
+
+        // Anomalies and run-lifecycle phrases must still get through untouched.
+        KungDebugRecorder.clear();
+        for (int event = 0; event < 400; event++) {
+            KungDebugRecorder.event("mimic-esp", "failed to resolve owner " + event);
+        }
+        assertEquals(400L, KungDebugRecorder.dump().lines()
+            .filter(line -> line.contains("failed to resolve owner")).count());
+    }
 }
