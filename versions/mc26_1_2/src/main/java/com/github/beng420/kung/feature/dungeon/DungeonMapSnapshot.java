@@ -126,7 +126,7 @@ public final class DungeonMapSnapshot {
                 + " revision=" + revision);
         }
 
-        if (!isValidRoomGrid(currentPlayerGridX, currentPlayerGridZ)) {
+        if (!DungeonScanUtils.isValidRoomGrid(currentPlayerGridX, currentPlayerGridZ)) {
             return;
         }
 
@@ -155,7 +155,7 @@ public final class DungeonMapSnapshot {
     }
 
     void observeStartRoom(int roomGridX, int roomGridZ) {
-        if (!isValidRoomGrid(roomGridX, roomGridZ)) return;
+        if (!DungeonScanUtils.isValidRoomGrid(roomGridX, roomGridZ)) return;
         GridKey entrance = new GridKey(roomGridX * 2, roomGridZ * 2);
         if (!entrance.equals(startRoom)) {
             startRoom = entrance;
@@ -165,14 +165,14 @@ public final class DungeonMapSnapshot {
     }
 
     public void observeVisitedRoom(int roomGridX, int roomGridZ) {
-        if (!isValidRoomGrid(roomGridX, roomGridZ)) {
+        if (!DungeonScanUtils.isValidRoomGrid(roomGridX, roomGridZ)) {
             return;
         }
         observeVisitedRoom(new GridKey(roomGridX, roomGridZ));
     }
 
     public void observeMapPlayerRoom(int roomGridX, int roomGridZ) {
-        if (!isValidRoomGrid(roomGridX, roomGridZ)) {
+        if (!DungeonScanUtils.isValidRoomGrid(roomGridX, roomGridZ)) {
             return;
         }
 
@@ -192,7 +192,7 @@ public final class DungeonMapSnapshot {
     }
 
     public void observeMapVisibleRoom(int roomGridX, int roomGridZ) {
-        if (!isValidRoomGrid(roomGridX, roomGridZ)) {
+        if (!DungeonScanUtils.isValidRoomGrid(roomGridX, roomGridZ)) {
             return;
         }
         GridKey room = new GridKey(roomGridX, roomGridZ);
@@ -205,7 +205,7 @@ public final class DungeonMapSnapshot {
     }
 
     void observeMapTrapRoom(int roomGridX, int roomGridZ) {
-        if (!isValidRoomGrid(roomGridX, roomGridZ)) return;
+        if (!DungeonScanUtils.isValidRoomGrid(roomGridX, roomGridZ)) return;
         observeMapVisibleRoom(roomGridX, roomGridZ);
         GridKey room = new GridKey(roomGridX, roomGridZ);
         if (mapTrapRooms.add(room)) {
@@ -263,7 +263,7 @@ public final class DungeonMapSnapshot {
     }
 
     public void observeMimicRoom(int roomGridX, int roomGridZ, String source) {
-        if (!isValidRoomGrid(roomGridX, roomGridZ)) {
+        if (!DungeonScanUtils.isValidRoomGrid(roomGridX, roomGridZ)) {
             return;
         }
         GridKey room = new GridKey(roomGridX, roomGridZ);
@@ -306,7 +306,7 @@ public final class DungeonMapSnapshot {
     }
 
     public void observeRoomClearState(int roomGridX, int roomGridZ, DungeonMapClearState clearState) {
-        if (!isValidRoomGrid(roomGridX, roomGridZ)) {
+        if (!DungeonScanUtils.isValidRoomGrid(roomGridX, roomGridZ)) {
             return;
         }
 
@@ -436,25 +436,10 @@ public final class DungeonMapSnapshot {
         Map<GridKey, RemoteRoom> nextRooms = new HashMap<>();
         if (rooms != null) {
             for (RemoteRoom room : rooms) {
-                if (room == null || !isValidRoomGrid(room.roomGridX(), room.roomGridZ())) {
+                if (room == null || !DungeonScanUtils.isValidRoomGrid(room.roomGridX(), room.roomGridZ())) {
                     continue;
                 }
-                int roomSecretsMax = room.roomSecretsMax() > 0 ? room.roomSecretsMax() : room.secrets();
-                RemoteRoom normalized = new RemoteRoom(
-                    room.roomGridX(),
-                    room.roomGridZ(),
-                    room.name() == null ? "" : room.name(),
-                    room.type() == null ? RoomType.UNKNOWN : room.type(),
-                    Math.max(0, room.secrets()),
-                    Math.max(0, room.crypts()),
-                    Math.clamp(room.roomSecretsFound(), 0, Math.max(0, roomSecretsMax)),
-                    Math.max(0, roomSecretsMax),
-                    room.visited(),
-                    room.cleared(),
-                    room.completed(),
-                    room.source() == null ? "" : room.source(),
-                    room.updatedAtMillis()
-                );
+                RemoteRoom normalized = normalizeRemoteRoom(room, room.source() == null ? "" : room.source());
                 GridKey key = new GridKey(normalized.roomGridX(), normalized.roomGridZ());
                 nextRooms.merge(key, normalized, DungeonMapSnapshot::mergeRemoteRoom);
             }
@@ -466,15 +451,7 @@ public final class DungeonMapSnapshot {
                 if (door == null || !isValidDoorGrid(door.scanGridX(), door.scanGridZ())) {
                     continue;
                 }
-                RemoteDoor normalized = new RemoteDoor(
-                    door.scanGridX(),
-                    door.scanGridZ(),
-                    door.kind() == null ? DungeonDoorKind.NONE : door.kind(),
-                    door.targetType() == null ? RoomType.UNKNOWN : door.targetType(),
-                    door.targetVisited(),
-                    door.source() == null ? "" : door.source(),
-                    door.updatedAtMillis()
-                );
+                RemoteDoor normalized = normalizeRemoteDoor(door, door.source() == null ? "" : door.source());
                 GridKey key = new GridKey(normalized.scanGridX(), normalized.scanGridZ());
                 nextDoors.merge(key, normalized, DungeonMapSnapshot::mergeRemoteDoor);
             }
@@ -500,25 +477,10 @@ public final class DungeonMapSnapshot {
 
         boolean changed = false;
         for (RemoteRoom room : rooms) {
-            if (room == null || !isValidRoomGrid(room.roomGridX(), room.roomGridZ())) {
+            if (room == null || !DungeonScanUtils.isValidRoomGrid(room.roomGridX(), room.roomGridZ())) {
                 continue;
             }
-            int roomSecretsMax = room.roomSecretsMax() > 0 ? room.roomSecretsMax() : room.secrets();
-            RemoteRoom normalized = new RemoteRoom(
-                room.roomGridX(),
-                room.roomGridZ(),
-                room.name() == null ? "" : room.name(),
-                room.type() == null ? RoomType.UNKNOWN : room.type(),
-                Math.max(0, room.secrets()),
-                Math.max(0, room.crypts()),
-                Math.clamp(room.roomSecretsFound(), 0, Math.max(0, roomSecretsMax)),
-                Math.max(0, roomSecretsMax),
-                room.visited(),
-                room.cleared(),
-                room.completed(),
-                source,
-                room.updatedAtMillis()
-            );
+            RemoteRoom normalized = normalizeRemoteRoom(room, source);
             GridKey key = new GridKey(normalized.roomGridX(), normalized.roomGridZ());
             RemoteRoom previous = remoteRooms.get(key);
             RemoteRoom merged = mergeRemoteRoom(previous, normalized);
@@ -546,15 +508,7 @@ public final class DungeonMapSnapshot {
             if (door == null || !isValidDoorGrid(door.scanGridX(), door.scanGridZ())) {
                 continue;
             }
-            RemoteDoor normalized = new RemoteDoor(
-                door.scanGridX(),
-                door.scanGridZ(),
-                door.kind() == null ? DungeonDoorKind.NONE : door.kind(),
-                door.targetType() == null ? RoomType.UNKNOWN : door.targetType(),
-                door.targetVisited(),
-                source,
-                door.updatedAtMillis()
-            );
+            RemoteDoor normalized = normalizeRemoteDoor(door, source);
             GridKey key = new GridKey(normalized.scanGridX(), normalized.scanGridZ());
             RemoteDoor previous = remoteDoors.get(key);
             RemoteDoor merged = mergeRemoteDoor(previous, normalized);
@@ -570,6 +524,39 @@ public final class DungeonMapSnapshot {
         if (changed) {
             revision++;
         }
+    }
+
+    /** Clamps and defaults an inbound remote room; `source` is the attribution to stamp on it. */
+    private static RemoteRoom normalizeRemoteRoom(RemoteRoom room, String source) {
+        int roomSecretsMax = room.roomSecretsMax() > 0 ? room.roomSecretsMax() : room.secrets();
+        return new RemoteRoom(
+            room.roomGridX(),
+            room.roomGridZ(),
+            room.name() == null ? "" : room.name(),
+            room.type() == null ? RoomType.UNKNOWN : room.type(),
+            Math.max(0, room.secrets()),
+            Math.max(0, room.crypts()),
+            Math.clamp(room.roomSecretsFound(), 0, Math.max(0, roomSecretsMax)),
+            Math.max(0, roomSecretsMax),
+            room.visited(),
+            room.cleared(),
+            room.completed(),
+            source,
+            room.updatedAtMillis()
+        );
+    }
+
+    /** Clamps and defaults an inbound remote door; `source` is the attribution to stamp on it. */
+    private static RemoteDoor normalizeRemoteDoor(RemoteDoor door, String source) {
+        return new RemoteDoor(
+            door.scanGridX(),
+            door.scanGridZ(),
+            door.kind() == null ? DungeonDoorKind.NONE : door.kind(),
+            door.targetType() == null ? RoomType.UNKNOWN : door.targetType(),
+            door.targetVisited(),
+            source,
+            door.updatedAtMillis()
+        );
     }
 
     private static RemoteRoom mergeRemoteRoom(RemoteRoom previous, RemoteRoom next) {
@@ -830,13 +817,6 @@ public final class DungeonMapSnapshot {
                 .append(":block=").append(point.doorBlockId());
         }
         return builder.toString();
-    }
-
-    private static boolean isValidRoomGrid(int gridX, int gridZ) {
-        return gridX >= 0
-            && gridZ >= 0
-            && gridX <= DungeonScanUtils.SCAN_GRID_SIZE / 2
-            && gridZ <= DungeonScanUtils.SCAN_GRID_SIZE / 2;
     }
 
     private static boolean isValidDoorGrid(int gridX, int gridZ) {

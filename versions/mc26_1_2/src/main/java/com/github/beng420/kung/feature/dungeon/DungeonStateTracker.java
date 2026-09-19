@@ -1129,7 +1129,7 @@ public final class DungeonStateTracker {
         int nextRoomGridX = roomGridX + dx;
         int nextRoomGridZ = roomGridZ + dz;
         String key = nextRoomGridX + "," + nextRoomGridZ;
-        if (visited.contains(key) || !isValidRoomGrid(nextRoomGridX, nextRoomGridZ)) {
+        if (visited.contains(key) || !DungeonScanUtils.isValidRoomGrid(nextRoomGridX, nextRoomGridZ)) {
             return;
         }
 
@@ -2264,13 +2264,6 @@ public final class DungeonStateTracker {
             && scanGridZ >= 0
             && scanGridX < DungeonScanUtils.SCAN_GRID_SIZE
             && scanGridZ < DungeonScanUtils.SCAN_GRID_SIZE;
-    }
-
-    private static boolean isValidRoomGrid(int roomGridX, int roomGridZ) {
-        return roomGridX >= 0
-            && roomGridZ >= 0
-            && roomGridX <= DungeonScanUtils.SCAN_GRID_SIZE / 2
-            && roomGridZ <= DungeonScanUtils.SCAN_GRID_SIZE / 2;
     }
 
     public record LearnRoomTypeResult(

@@ -806,7 +806,7 @@ public final class DungeonRunStats {
     }
 
     public void observeMapPlayerRoom(int roomGridX, int roomGridZ, long nowTick) {
-        if (!isValidRoomGrid(roomGridX, roomGridZ)) {
+        if (!DungeonScanUtils.isValidRoomGrid(roomGridX, roomGridZ)) {
             return;
         }
         lastRoomPresenceTick.put(new RoomKey(roomGridX, roomGridZ), nowTick);
@@ -1329,7 +1329,7 @@ public final class DungeonRunStats {
         }
 
         DungeonScanUtils.GridPosition grid = DungeonScanUtils.getRoomGridPosition(client.player.blockPosition());
-        if (!isValidRoomGrid(grid.gridX(), grid.gridZ())) {
+        if (!DungeonScanUtils.isValidRoomGrid(grid.gridX(), grid.gridZ())) {
             return null;
         }
         return new RoomKey(grid.gridX(), grid.gridZ());
@@ -1640,7 +1640,7 @@ public final class DungeonRunStats {
 
     private void observePlayerRoom(UUID uuid, net.minecraft.core.BlockPos position, long nowTick) {
         DungeonScanUtils.GridPosition grid = DungeonScanUtils.getRoomGridPosition(position);
-        if (!isValidRoomGrid(grid.gridX(), grid.gridZ())) {
+        if (!DungeonScanUtils.isValidRoomGrid(grid.gridX(), grid.gridZ())) {
             return;
         }
 
@@ -2337,13 +2337,6 @@ public final class DungeonRunStats {
             }
         }
         return true;
-    }
-
-    private static boolean isValidRoomGrid(int gridX, int gridZ) {
-        return gridX >= 0
-            && gridZ >= 0
-            && gridX <= DungeonScanUtils.SCAN_GRID_SIZE / 2
-            && gridZ <= DungeonScanUtils.SCAN_GRID_SIZE / 2;
     }
 
 

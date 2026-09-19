@@ -465,7 +465,7 @@ final class KungCommandActions {
             DungeonScanUtils.getRoomGridPosition(client.player.blockPosition());
         int targetRoomGridX = playerRoom.gridX() + direction.dx();
         int targetRoomGridZ = playerRoom.gridZ() + direction.dz();
-        if (!isValidRoomGrid(targetRoomGridX, targetRoomGridZ)) {
+        if (!DungeonScanUtils.isValidRoomGrid(targetRoomGridX, targetRoomGridZ)) {
             context.getSource().sendFeedback(commandMessage(
                 "No valid dungeon room cell in the direction you are looking. roomGrid="
                     + playerRoom.gridX() + "," + playerRoom.gridZ()
@@ -1021,13 +1021,6 @@ final class KungCommandActions {
 
     static String[] directionNames() {
         return new String[] {"north", "south", "east", "west"};
-    }
-
-    static boolean isValidRoomGrid(int roomGridX, int roomGridZ) {
-        return roomGridX >= 0
-            && roomGridZ >= 0
-            && roomGridX <= DungeonScanUtils.SCAN_GRID_SIZE / 2
-            && roomGridZ <= DungeonScanUtils.SCAN_GRID_SIZE / 2;
     }
 
     static DoorProbeSamples sampleDoor(Minecraft client, int gridX, int gridZ, int worldX, int worldZ) {

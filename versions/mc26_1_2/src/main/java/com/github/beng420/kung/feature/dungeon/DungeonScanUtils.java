@@ -37,6 +37,14 @@ public final class DungeonScanUtils {
     private DungeonScanUtils() {
     }
 
+    /** Room-grid bounds check. Single source of truth: room grids are half the scan grid. */
+    public static boolean isValidRoomGrid(int roomGridX, int roomGridZ) {
+        return roomGridX >= 0
+            && roomGridZ >= 0
+            && roomGridX <= SCAN_GRID_SIZE / 2
+            && roomGridZ <= SCAN_GRID_SIZE / 2;
+    }
+
     public static int worldXForScanGrid(int gridX) {
         return START_X + gridX * SCAN_STEP_BLOCKS;
     }

@@ -1251,7 +1251,7 @@ public final class DungeonKnownRoomCatalog {
         for (TemplateComponent component : variant.components()) {
             int roomGridX = anchorRoomGridX + component.dx();
             int roomGridZ = anchorRoomGridZ + component.dz();
-            if (!isValidRoomGrid(roomGridX, roomGridZ)) {
+            if (!DungeonScanUtils.isValidRoomGrid(roomGridX, roomGridZ)) {
                 return null;
             }
 
@@ -1345,7 +1345,7 @@ public final class DungeonKnownRoomCatalog {
         for (TemplateComponent component : variant.components()) {
             int roomGridX = anchorRoomGridX + component.dx();
             int roomGridZ = anchorRoomGridZ + component.dz();
-            if (!isValidRoomGrid(roomGridX, roomGridZ)) {
+            if (!DungeonScanUtils.isValidRoomGrid(roomGridX, roomGridZ)) {
                 return null;
             }
 
@@ -1488,7 +1488,7 @@ public final class DungeonKnownRoomCatalog {
             for (CellKey neighbor : cell.neighbors()) {
                 if (visitedCells.contains(neighbor)
                     || occupiedCells.contains(neighbor)
-                    || !isValidRoomGrid(neighbor.x(), neighbor.z())
+                    || !DungeonScanUtils.isValidRoomGrid(neighbor.x(), neighbor.z())
                     || hasVisibleDoorBetween(snapshot, cell, neighbor)) {
                     continue;
                 }
@@ -1655,7 +1655,7 @@ public final class DungeonKnownRoomCatalog {
         for (MatchedComponent component : match.components()) {
             CellKey cell = new CellKey(component.roomGridX(), component.roomGridZ());
             for (CellKey neighbor : cell.neighbors()) {
-                if (occupiedCells.contains(neighbor) || !isValidRoomGrid(neighbor.x(), neighbor.z())
+                if (occupiedCells.contains(neighbor) || !DungeonScanUtils.isValidRoomGrid(neighbor.x(), neighbor.z())
                     || hasVisibleDoorBetween(snapshot, cell, neighbor)) {
                     continue;
                 }
@@ -2120,13 +2120,6 @@ public final class DungeonKnownRoomCatalog {
             return line;
         }
         return line.substring(0, 137) + "...";
-    }
-
-    private static boolean isValidRoomGrid(int roomGridX, int roomGridZ) {
-        return roomGridX >= 0
-            && roomGridZ >= 0
-            && roomGridX <= DungeonScanUtils.SCAN_GRID_SIZE / 2
-            && roomGridZ <= DungeonScanUtils.SCAN_GRID_SIZE / 2;
     }
 
     private static Path knownRoomsFile() {
