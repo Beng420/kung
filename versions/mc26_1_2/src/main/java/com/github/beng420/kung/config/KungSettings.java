@@ -36,6 +36,15 @@ public final class KungSettings {
     }
 
     static List<CategoryEntry> categories(KungConfig config, Runnable openChangelog) {
+        return categories(config, openChangelog, KungDeveloperAccess.allowed());
+    }
+
+    static List<CategoryEntry> categories(KungConfig config, Runnable openChangelog, boolean developer) {
+        FeatureEntry dragonHelper = new FeatureEntry("M7 Dragon Helper", config.dungeon::m7DragonHelperEnabled,
+            () -> config.dungeon.setM7DragonHelperEnabled(!config.dungeon.m7DragonHelperEnabled()),
+            dragonHelperSettings(config))
+            .withTooltip("Dragon spawn markers, statue boxes and local count notifications in M7.",
+                "Statue boxes estimate the range; count results require server evidence.");
         return List.of(
             new CategoryEntry("Dungeon", List.of(
                 new FeatureEntry("Dungeon Map", config.dungeon::enabled,
@@ -81,11 +90,7 @@ public final class KungSettings {
                         "Hover the chat report for first/fifth hits, rate and hit ticks.",
                         "Arrow feedback counts for the first 40 server ticks at your nearest spawning statue.",
                         "Other dragons show -- for arrows. Each respawn starts fresh."),
-                new FeatureEntry("M7 Dragon Helper", config.dungeon::m7DragonHelperEnabled,
-                    () -> config.dungeon.setM7DragonHelperEnabled(!config.dungeon.m7DragonHelperEnabled()),
-                    dragonHelperSettings(config, KungDeveloperAccess.allowed()))
-                    .withTooltip("Dragon spawn markers, statue boxes and local count notifications in M7.",
-                        "Statue boxes estimate the range; count results require server evidence."),
+                dragonHelper,
                 new FeatureEntry("Colored F7/M7 Pillars", config.dungeon::coloredPillarsEnabled,
                     () -> config.dungeon.setColoredPillarsEnabled(!config.dungeon.coloredPillarsEnabled()), List.of(
                         SettingEntry.choice("Material", PillarMaterial.values(), config.dungeon::pillarMaterial,
@@ -201,7 +206,7 @@ public final class KungSettings {
                             .withTooltip("Print all splits in your local chat when the run ends.")
                     )
                 )
-            )),
+            ).stream().filter(feature -> developer || feature != dragonHelper).toList()),
             new CategoryEntry("Garden", List.of(
                 new FeatureEntry("6th Visitor Alarm", config.visitorAlarm::enabled,
                     () -> config.visitorAlarm.setEnabled(!config.visitorAlarm.enabled()),
@@ -400,8 +405,8 @@ public final class KungSettings {
         );
     }
 
-    static List<SettingEntry> dragonHelperSettings(KungConfig config, boolean developer) {
-        List<SettingEntry> settings = new ArrayList<>(List.of(
+    private static List<SettingEntry> dragonHelperSettings(KungConfig config) {
+        return List.of(
             SettingEntry.toggle("Spawn Markers", config.dungeon::dragonSpawnMarkersEnabled,
                 () -> config.dungeon.setDragonSpawnMarkersEnabled(!config.dungeon.dragonSpawnMarkersEnabled())),
             SettingEntry.toggle("Statue Boxes", config.dungeon::dragonStatueBoxesEnabled,
@@ -410,14 +415,11 @@ public final class KungSettings {
                     "Green means the origin is inside the estimate; red means outside."),
             SettingEntry.toggle("Count Notifications", config.dungeon::dragonCountNotificationsEnabled,
                 () -> config.dungeon.setDragonCountNotificationsEnabled(!config.dungeon.dragonCountNotificationsEnabled()))
-                .withTooltip("Local notifications for server-confirmed dragon counts.")
-        ));
-        if (developer) {
-            settings.add(SettingEntry.toggle("Developer Diagnostics", config.dungeon::devDragonDiagnosticsEnabled,
+                .withTooltip("Local notifications for server-confirmed dragon counts."),
+            SettingEntry.toggle("Developer Diagnostics", config.dungeon::devDragonDiagnosticsEnabled,
                 () -> config.dungeon.setDevDragonDiagnosticsEnabled(!config.dungeon.devDragonDiagnosticsEnabled()))
-                .withTooltip("Extra local dragon capture diagnostics for Beng114 only."));
-        }
-        return List.copyOf(settings);
+                .withTooltip("Extra local dragon capture diagnostics for Beng114 only.")
+        );
     }
 
     private static void toggleRoomSync(KungConfig config) {

@@ -124,7 +124,8 @@ Native OneConfig owns its own text rendering and colors.
 ### Optional OneConfig / Mod Menu integration
 
 `config/KungSettings` is the shared catalog for the existing `KungConfigScreen`
-and native OneConfig controls. It exposes six categories and 28 feature entries,
+and native OneConfig controls. It exposes six categories and 27 public feature
+entries, plus M7 Dragon Helper exclusively for Beng114's developer account,
 including enum choices, nested settings, actions, help and raw loadout bindings.
 Hitboxes uses dynamic entity rows and shared color/removal
 controls. Its native Add/Edit buttons open the complete Kung search/color editor;

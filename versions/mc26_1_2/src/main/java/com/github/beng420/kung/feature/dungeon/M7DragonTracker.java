@@ -35,7 +35,7 @@ final class M7DragonTracker {
         for (Attempt attempt : attempts.values()) {
             if (attempt.dead && attempt.outcome == null && tick - attempt.deathTick > CONFIRMATION_TICKS) {
                 attempt.outcome = Outcome.UNKNOWN;
-                results.add(new Result(attempt.statue, Outcome.UNKNOWN, "No statue confirmation received"));
+                results.add(new Result(attempt.statue, Outcome.UNKNOWN, "No statue confirmation received", attempt.position));
             }
         }
         return List.copyOf(results);
@@ -59,7 +59,7 @@ final class M7DragonTracker {
         attempts.put(uuid, new Attempt(uuid, statue, position));
         if (previous != null && previous.dead && previous.outcome == null) {
             previous.outcome = Outcome.UNKNOWN;
-            return List.of(new Result(statue, Outcome.UNKNOWN, "Another dragon spawned without statue confirmation"));
+            return List.of(new Result(statue, Outcome.UNKNOWN, "Another dragon spawned without statue confirmation", previous.position));
         }
         return List.of();
     }
@@ -105,31 +105,32 @@ final class M7DragonTracker {
         if (!brokenStatues.add(statue)) return List.of();
         Attempt attempt = latest(statue);
         if (attempt != null) attempt.outcome = Outcome.COUNTS;
-        return List.of(new Result(statue, Outcome.COUNTS, "Statue block destroyed"));
+        return List.of(new Result(statue, Outcome.COUNTS, "Statue block destroyed", attempt == null ? null : attempt.position));
     }
 
     List<Result> confirmMessage(String message) {
         if (!"[BOSS] Wither King: Oh, this one hurts!".equals(message)
             && !"[BOSS] Wither King: I have more of those.".equals(message)
             && !"[BOSS] Wither King: My soul is disposable.".equals(message)) return List.of();
-        if (!unknownDeaths.isEmpty()) return List.of(new Result(null, Outcome.COUNTS, message));
+        if (!unknownDeaths.isEmpty()) return List.of(new Result(null, Outcome.COUNTS, message, null));
         Attempt candidate = null;
         for (Attempt attempt : attempts.values()) {
             if (!attempt.dead || tick - attempt.deathTick > CONFIRMATION_TICKS) continue;
             // Include resolved deaths: excluding one could assign its delayed message to another dragon.
-            if (candidate != null) return List.of(new Result(null, Outcome.COUNTS, message));
+            if (candidate != null) return List.of(new Result(null, Outcome.COUNTS, message, null));
             candidate = attempt;
         }
-        if (candidate == null) return List.of(new Result(null, Outcome.COUNTS, message));
+        if (candidate == null) return List.of(new Result(null, Outcome.COUNTS, message, null));
         if (candidate.outcome == Outcome.COUNTS) return List.of();
         candidate.outcome = Outcome.COUNTS;
         brokenStatues.add(candidate.statue);
-        return List.of(new Result(candidate.statue, Outcome.COUNTS, message));
+        return List.of(new Result(candidate.statue, Outcome.COUNTS, message, candidate.position));
     }
 
     enum Outcome { COUNTS, UNKNOWN }
 
-    record Result(Statue statue, Outcome outcome, String evidence) { }
+    /** position is where the dragon died, or null when no attempt could be tied to the result. */
+    record Result(Statue statue, Outcome outcome, String evidence, Vec3 position) { }
 
     static final class Attempt {
         private final UUID uuid;

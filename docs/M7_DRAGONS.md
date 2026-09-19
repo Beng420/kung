@@ -1,7 +1,8 @@
 # M7 Dragon Helper
 
-Active module: Minecraft 26.1.2. **Dungeon > M7 Dragon Helper** defaults off in
-both Kung and native OneConfig. Spawn Markers, Statue Boxes and Count Notifications
+Active module: Minecraft 26.1.2. **Dungeon > M7 Dragon Helper** is visible and
+active only for Beng114's developer account, in both Kung and native OneConfig.
+Its master defaults off; Spawn Markers, Statue Boxes and Count Notifications
 default on beneath that master. Enable it before dragons spawn: an unidentified
 dragon remains unassigned rather than being guessed from its later position.
 
@@ -70,17 +71,21 @@ exclusively spawning them. Resolved statue/death evidence is deduplicated.
 ## Developer measurements
 
 Only Beng114's verified account UUID `69617dbf-568e-4632-9ee9-80bf67d534d9` can use
-the new developer tools. `KungDeveloperAccess` checks the local Minecraft `User`
+the entire M7 Dragon Helper and its developer tools. `KungDeveloperAccess` checks the local Minecraft `User`
 profile UUID; player names, tab entries and server-provided player UUIDs do not
-grant access. The Developer Diagnostics setting is absent from both public menus,
-and a copied true config value remains inactive for other accounts. Existing
+grant access. The whole helper entry and all its settings are absent from other
+accounts' menus; a copied enabled config cannot activate the feature. Existing
 public debugging tools are unchanged.
+
+The initial implementation restricted only Developer Diagnostics, leaving the
+helper itself public. Yrkuna's reported menu entry exposed this scope mismatch;
+the restriction now applies to both the shared menu catalog and feature execution.
 
 - `/kung dev dragons on` / `off`: enable or disable the developer capture.
 - `/kung dev dragons sample`: capture current positions and the looked-at block.
 - `/kung dev dragons copy`: copy the bounded report to the clipboard.
 
-Diagnostics can run independently of the public helper master. White points show
+Diagnostics can run independently of the helper master. White points show
 received origins; yellow points show interpolated body-box centers. Capture keeps
 512 rolling sample records plus a separate reserve of 128 important events.
 Positions are sampled every five server ticks. At most 16 arena particle types
@@ -98,12 +103,17 @@ spawn, then copy the report after the event or run.
 reload, confirmation timing, duplicate and ambiguous evidence, respawns, capacity
 and reset. Settings/native-menu tests cover defaults, persistence and hidden
 developer controls; `KungDeveloperAccessTest` rejects other, offline and absent
-identities. `M7DragonFeatureTest` covers dungeon/floor gates and the Wither King
+identities. `M7DragonFeatureTest` covers denied execution with copied enabled
+settings, dungeon/floor gates and the Wither King
 fallback; `DeveloperCommandGroupTest` checks that unavailable developer commands
 are absent from parsing, usage and completion. Full Java 25 build passes:
-782 tests, 781 passed, one Windows symlink skip, zero failures/errors.
+784 tests, 783 passed, one Windows symlink skip, zero failures/errors. The copied
+enabled-config runtime regression fails without the account guard and passes with
+it. Shared-catalog tests cover both account branches; native-tree tests require
+the entire helper to be absent for other accounts.
 
-Live M7 checks remain: all five spawn identities, visible box colors and boundary
+Live checks remain: Yrkuna/Beng114 menu visibility, all five spawn identities,
+visible box colors and boundary
 estimates, counted-box disappearance, chat/statue update ordering, simultaneous
 deaths, unload/rejoin and next-instance reset. Capture matching origin/body,
 particles and confirmation evidence before refining bounds. No exact server-box

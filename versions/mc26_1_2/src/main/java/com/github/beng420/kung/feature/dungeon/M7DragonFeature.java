@@ -5,9 +5,16 @@ import com.github.beng420.kung.feature.ConfigurableFeature;
 import com.github.beng420.kung.feature.dungeon.M7DragonTracker.Statue;
 import com.github.beng420.kung.message.KungMessages;
 import com.github.beng420.kung.runtime.KungDeveloperAccess;
+import com.github.beng420.kung.runtime.KungFileLayout;
 import com.github.beng420.kung.skyblock.HypixelDungeonFloor;
 import com.github.beng420.kung.skyblock.HypixelInstanceTracker;
 import com.github.beng420.kung.util.KungDebugRecorder;
+import java.io.BufferedWriter;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.EnumMap;
@@ -47,7 +54,8 @@ public final class M7DragonFeature extends ConfigurableFeature<DungeonConfig> {
     private M7DragonFeature() { super(config -> config.dungeon); }
 
     @Override public boolean isEnabled() {
-        return initialized() && (config().m7DragonHelperEnabled() || config().devDragonDiagnosticsEnabled());
+        return initialized() && KungDeveloperAccess.allowed()
+            && (config().m7DragonHelperEnabled() || config().devDragonDiagnosticsEnabled());
     }
 
     @Override protected void onInitialize() {
@@ -135,7 +143,10 @@ public final class M7DragonFeature extends ConfigurableFeature<DungeonConfig> {
         publish(tracker.spawn(entity.getUUID(), statue, entity.position()));
         if (tracker.attempt(entity.getUUID()) == null) return;
         entities.put(entity.getUUID(), dragon);
-        trace("spawn " + statue.label() + " id=" + entity.getId() + " uuid=" + entity.getUUID()
+        // A re-sent entity (chunk reload, re-track) is a position update, not a spawn: logging it
+        // as "spawn" made mid-flight coordinates look like imprecise spawn anchors.
+        trace((previous == null ? "spawn " : "reobserve ") + statue.label()
+            + " id=" + entity.getId() + " uuid=" + entity.getUUID()
             + " position=" + entity.position());
     }
 
@@ -205,7 +216,7 @@ public final class M7DragonFeature extends ConfigurableFeature<DungeonConfig> {
         List<M7DragonRenderer.Marker> markers = new ArrayList<>();
         for (Statue statue : Statue.values()) {
             if (config().m7DragonHelperEnabled() && config().dragonSpawnMarkersEnabled()) {
-                markers.add(point(statue.spawn(), statue.color()));
+                markers.add(point(waypoint(statue, partialTick), statue.color()));
             }
             if (config().m7DragonHelperEnabled() && config().dragonStatueBoxesEnabled() && !tracker.statueCounted(statue)) {
                 var attempt = tracker.latest(statue);
@@ -224,6 +235,15 @@ public final class M7DragonFeature extends ConfigurableFeature<DungeonConfig> {
         return markers;
     }
 
+    /** Waypoint rests on the spawn anchor until that statue's dragon is in the air, then rides it. */
+    private Vec3 waypoint(Statue statue, float partialTick) {
+        var attempt = tracker.latest(statue);
+        if (attempt == null || attempt.dead()) return statue.spawn();
+        EnderDragon dragon = entities.get(attempt.uuid());
+        if (dragon == null || dragon.isRemoved() || !dragon.isAlive()) return statue.spawn();
+        return dragon.getPosition(partialTick);
+    }
+
     private static M7DragonRenderer.Marker point(Vec3 center, int color) {
         return new M7DragonRenderer.Marker(new AABB(center, center).inflate(0.12), color | 0xFF000000, true);
     }
@@ -234,15 +254,60 @@ public final class M7DragonFeature extends ConfigurableFeature<DungeonConfig> {
             boolean counts = result.outcome() == M7DragonTracker.Outcome.COUNTS;
             String text = name + (counts ? " counts." : " result unknown — no statue confirmation.");
             trace("result " + text + " evidence=" + result.evidence());
+            recordDeath(result);
             if (!config().m7DragonHelperEnabled() || !config().dragonCountNotificationsEnabled()) continue;
             Minecraft client = Minecraft.getInstance();
             if (client.player == null) continue;
             client.player.sendSystemMessage(counts ? KungMessages.success("Dragons", text) : KungMessages.warning("Dragons", text));
-            if (counts && client.gui != null) {
+            // Subtitle slot rather than title: it draws at half the scale. Only an identified
+            // statue gets one - an unnamed dragon has no colour to recognise, so it stays in chat.
+            if (result.statue() != null && client.gui != null) {
                 client.gui.setTimes(0, 30, 5);
-                client.gui.setSubtitle(Component.literal("Server confirmed").withColor(0xAAAAAA));
-                client.gui.setTitle(Component.literal(text).withColor(0x55FF55));
+                client.gui.setTitle(Component.empty());
+                client.gui.setSubtitle(Component.literal(result.statue().label())
+                    .withColor(result.statue().color() & 0xFFFFFF)
+                    .append(Component.literal(counts ? " counts" : " unsure")
+                        .withColor(counts ? 0x55FF55 : 0xFFAA00)));
             }
+        }
+    }
+
+    /**
+     * Appends one line per resolved dragon so the real counting box can be fitted offline.
+     * Runs unattended - no dev command - because the feature is already Beng114-only. A dragon
+     * that first times out as UNKNOWN and is later confirmed writes a second line; dedupe by
+     * taking the highest tick per (statue, x, y, z).
+     */
+    /** Offsets are relative to the spawn anchor, which is the frame the counting box is fitted in. */
+    static String deathLine(long tick, Statue statue, M7DragonTracker.Outcome outcome, Vec3 at) {
+        return "{\"tick\":" + tick
+            + ",\"statue\":\"" + statue.name() + "\""
+            + ",\"outcome\":\"" + outcome.name() + "\""
+            + ",\"x\":" + at.x + ",\"y\":" + at.y + ",\"z\":" + at.z
+            + ",\"dx\":" + (at.x - statue.spawn().x)
+            + ",\"dy\":" + (at.y - statue.spawn().y)
+            + ",\"dz\":" + (at.z - statue.spawn().z)
+            + ",\"predictedInside\":" + statue.contains(at) + "}";
+    }
+
+    private void recordDeath(M7DragonTracker.Result result) {
+        Statue statue = result.statue();
+        Vec3 at = result.position();
+        if (statue == null || at == null) return;
+        Minecraft client = Minecraft.getInstance();
+        Path gameDirectory = client == null ? Path.of(".") : client.gameDirectory.toPath();
+        Path file = new KungFileLayout(gameDirectory, gameDirectory.resolve("config"))
+            .dungeonDataDirectory().resolve("m7-dragon-deaths.jsonl");
+        String line = deathLine(tracker.tick(), statue, result.outcome(), at);
+        try {
+            Files.createDirectories(file.getParent());
+            try (BufferedWriter writer = Files.newBufferedWriter(file, StandardCharsets.UTF_8,
+                StandardOpenOption.CREATE, StandardOpenOption.APPEND)) {
+                writer.write(line);
+                writer.newLine();
+            }
+        } catch (IOException exception) {
+            trace("death-record-failed " + exception.getMessage());
         }
     }
 

@@ -7,16 +7,21 @@ Read the [code map](CODE_MAP.md), then only the topic needed for the task.
 
 - **M7 Dragon Helper** adds colored spawn points, estimated statue outlines and
   evidence-based local count notifications, with its master off by default.
+  Following Yrkuna's visibility report, the entire helper is now Beng114-only in
+  both settings menus and at runtime, including copied enabled configurations;
+  the original restriction covered only Developer Diagnostics.
   Gray/green/red outlines track the identified living dragon's received origin
   against community bounds; they do not promise the exact server range. Exact
   Wither King confirmations or observed statue destruction confirm a count;
   missing evidence remains unknown. Beng114-only developer diagnostics are hidden
   from other accounts and guarded by the local session UUID, with bounded samples
   and `/kung dev dragons on|off|sample|copy`. Existing public tools are unchanged.
-  Focused tests and full Java 25 build pass: 782 cases, 781 passed, one Windows
+  The copied-config runtime regression fails without the account guard and passes
+  with it; shared/native catalog tests exclude the entire helper for other users.
+  Focused tests and full Java 25 build pass: 784 cases, 783 passed, one Windows
   symlink skip, no failures/errors; `git diff --check` passes. The 0.4.3 JAR is
-  rebuilt, not installed. Live M7 geometry, confirmation ordering and transition
-  checks remain open. See [M7 Dragon Helper](M7_DRAGONS.md).
+  rebuilt, not installed. Live Yrkuna/Beng114 menu checks, M7 geometry, confirmation
+  ordering and transition checks remain open. See [M7 Dragon Helper](M7_DRAGONS.md).
 
 - The 17:08:10 trace's late Blood Rush notifications are fixed. Blood open was
   already confirmed at 17:07:15, but delayed Wither scans at 17:07:35 still emitted

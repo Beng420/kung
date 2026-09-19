@@ -28,7 +28,7 @@ public final class KungSettingsTest {
 
         assertEquals(List.of("Dungeon", "Garden", "Hunting", "Slayer", "Util", "Debug"),
             categories.stream().map(CategoryEntry::name).toList());
-        assertEquals(List.of(12, 2, 1, 1, 9, 3),
+        assertEquals(List.of(11, 2, 1, 1, 9, 3),
             categories.stream().map(category -> category.features().size()).toList());
         for (var category : categories) {
             for (var feature : category.features()) {
@@ -253,14 +253,35 @@ public final class KungSettingsTest {
     }
 
     @Test
-    public void dragonHelperSettingsPersistIndependentlyAndHideDeveloperDiagnostics() {
+    public void fullCatalogHidesTheWholeDragonHelperFromOtherAccounts() {
+        KungConfig config = new KungConfig(temporary.getRoot().toPath().resolve("dragon-catalog.json"));
+        config.dungeon.setM7DragonHelperEnabled(true);
+        config.dungeon.setDevDragonDiagnosticsEnabled(true);
+        var developer = KungSettings.categories(config, () -> { }, true);
+        var publicCatalog = KungSettings.categories(config, () -> { }, false);
+        assertEquals(developer.stream().map(CategoryEntry::name).toList(),
+            publicCatalog.stream().map(CategoryEntry::name).toList());
+        assertEquals(List.of("Spawn Markers", "Statue Boxes", "Count Notifications", "Developer Diagnostics"),
+            feature(developer, "M7 Dragon Helper").settings().stream().map(SettingEntry::label).toList());
+        for (int index = 0; index < developer.size(); index++) {
+            assertEquals(developer.get(index).features().stream().map(FeatureEntry::name)
+                    .filter(name -> !name.equals("M7 Dragon Helper")).toList(),
+                publicCatalog.get(index).features().stream().map(FeatureEntry::name).toList());
+        }
+        assertFalse(KungSettings.categories(config, () -> { }).stream().flatMap(category -> category.features().stream())
+            .anyMatch(feature -> feature.name().equals("M7 Dragon Helper")));
+    }
+
+    @Test
+    public void developerDragonHelperSettingsPersistIndependently() {
         Path file = temporary.getRoot().toPath().resolve("dragon-helper.json");
         KungConfig config = new KungConfig(file);
-        var helper = feature(KungSettings.categories(config, () -> { }), "M7 Dragon Helper");
+        var helper = feature(KungSettings.categories(config, () -> { }, true), "M7 Dragon Helper");
         assertFalse(helper.enabled());
-        assertEquals(List.of("Spawn Markers", "Statue Boxes", "Count Notifications"),
+        assertEquals(List.of("Spawn Markers", "Statue Boxes", "Count Notifications", "Developer Diagnostics"),
             helper.settings().stream().map(SettingEntry::label).toList());
-        for (var setting : helper.settings()) {
+        assertFalse(setting(helper, "Developer Diagnostics").booleanSupplier().getAsBoolean());
+        for (var setting : helper.settings().subList(0, 3)) {
             assertTrue(setting.booleanSupplier().getAsBoolean());
             setting.toggle().run();
         }
@@ -275,8 +296,6 @@ public final class KungSettingsTest {
         assertFalse(restored.dungeon.devDragonDiagnosticsEnabled());
         assertFalse(restored.dungeon.dragonDebuffEnabled());
         assertFalse(restored.dungeon.enabled());
-        assertEquals(List.of("Spawn Markers", "Statue Boxes", "Count Notifications", "Developer Diagnostics"),
-            KungSettings.dragonHelperSettings(config, true).stream().map(SettingEntry::label).toList());
     }
 
     private static FeatureEntry feature(List<CategoryEntry> categories, String name) {
