@@ -1,0 +1,51 @@
+name: Discord Release Notification
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch: # Ermöglicht manuelles Testen per Klick in GitHub
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send release notification to Discord
+        env:
+          WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK }}
+          ROLE_ID: "1552336443790073996"
+          RELEASE_TITLE: ${{ github.event.release.name || 'Test Release' }}
+          RELEASE_TAG: ${{ github.event.release.tag_name || 'v1.0.0-test' }}
+          RELEASE_URL: ${{ github.event.release.html_url || 'https://github.com' }}
+          RELEASE_BODY: ${{ github.event.release.body || 'This is a test notification from GitHub Actions!' }}
+        run: |
+          python3 -c "
+          import os, json, urllib.request
+
+          role_id = os.environ.get('ROLE_ID')
+          title = os.environ.get('RELEASE_TITLE') or os.environ.get('RELEASE_TAG')
+          tag = os.environ.get('RELEASE_TAG')
+          url = os.environ.get('RELEASE_URL')
+          body = os.environ.get('RELEASE_BODY') or 'No changelog provided.'
+
+          if len(body) > 1500:
+              body = body[:1497] + '...'
+
+          payload = {
+              'content': f'<@&{role_id}> A new update has been released!',
+              'embeds': [{
+                  'title': f'{title} ({tag})',
+                  'url': url,
+                  'description': body,
+                  'color': 5814783,
+                  'footer': {'text': 'Minecraft Mod Release • GitHub'}
+              }]
+          }
+
+          req = urllib.request.Request(
+              os.environ['WEBHOOK_URL'],
+              data=json.dumps(payload).encode('utf-8'),
+              headers={'Content-Type': 'application/json', 'User-Agent': 'GitHub-Actions'}
+          )
+          urllib.request.urlopen(req)
+          print('Notification sent successfully.')
+          "
