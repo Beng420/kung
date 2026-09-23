@@ -22,3 +22,14 @@ graphify-out/*
 !graphify-out/cache/
 graphify-out/cache/*
 !graphify-out/cache/semantic/
+
+# Local only: agent notes, docs, Codex scratch folders and the libs shortcut.
+.editorconfig
+.graphifyignore
+AGENTS.md
+CLAUDE.md
+docs/
+.codex/
+.codex-video-frames/
+.codex_tmp/
+*.lnk
