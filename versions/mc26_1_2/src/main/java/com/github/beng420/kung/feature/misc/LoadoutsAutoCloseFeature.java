@@ -578,7 +578,7 @@ public final class LoadoutsAutoCloseFeature extends ConfigurableFeature<MiscConf
         return normalized;
     }
 
-    private static boolean keybindMatchesKey(String keybind, KeyEvent event) {
+    static boolean keybindMatchesKey(String keybind, KeyEvent event) {
         if (event == null || keybind == null || !keybind.startsWith("key:")) {
             return false;
         }
@@ -591,7 +591,7 @@ public final class LoadoutsAutoCloseFeature extends ConfigurableFeature<MiscConf
         return scancode != 0 && scancode == event.scancode();
     }
 
-    private static boolean keybindMatchesMouse(String keybind, int button) {
+    static boolean keybindMatchesMouse(String keybind, int button) {
         return keybind != null
             && keybind.startsWith("mouse:")
             && parseKeybindPart(keybind, 1, -1) == button;

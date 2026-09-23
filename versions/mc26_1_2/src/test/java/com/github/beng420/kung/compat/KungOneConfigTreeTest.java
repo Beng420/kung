@@ -32,13 +32,15 @@ public final class KungOneConfigTreeTest {
         assertEquals(expected, tree.map.size());
         assertEquals(6, tree.map.values().stream().map(node -> node.getMetadata("category")).distinct().count());
         long keybinds = tree.map.values().stream().filter(node -> node.getMetadata("visualizer") == Visualizer.KeybindVisualizer.class).count();
-        assertEquals(12, keybinds);
-        assertEquals(Property.Display.DISABLED, property(tree, "Crypts", "Enabled").getDisplay());
+        assertEquals(13, keybinds);
+        assertEquals(Property.Display.DISABLED, property(tree, "Crypt Messages", "Enabled").getDisplay());
         assertEquals(false, property(tree, "Colored F7/M7 Pillars", "Enabled").get());
         assertArrayEquals(new String[] {"Wool", "Glass", "Terracotta"},
             property(tree, "Colored F7/M7 Pillars", "Material").getMetadata("options"));
-        assertFalse(tree.map.values().stream().anyMatch(node -> "M7 Dragon Helper".equals(node.getMetadata("subcategory"))));
+        assertFalse(tree.map.values().stream().anyMatch(node -> "Spawn Markers".equals(node.getTitle())));
         assertFalse(tree.map.values().stream().anyMatch(node -> "Developer Diagnostics".equals(node.getTitle())));
+        // A row hidden by its switch is hidden in the native menu too, not merely greyed out.
+        assertEquals(Property.Display.SHOWN, property(tree, "Wither Dragons", "Track").getDisplay());
         // Global OneConfig search reads searchTags, but ignores category/subcategory headings.
         assertEquals(List.of("Kung", "Garden", "6th Visitor Alarm"),
             property(tree, "6th Visitor Alarm", "Enabled").getMetadata("searchTags"));
@@ -47,23 +49,16 @@ public final class KungOneConfigTreeTest {
     }
 
     @Test
-    public void removableTickControlsUseNativeNumbersAndGuardBothEditsAndRemoval() {
-        var ticks = new AtomicInteger(3);
+    public void removableColorRowsGetANativeRemoveButtonThatRespectsAvailability() {
         var removed = new AtomicInteger();
         var allowed = new AtomicBoolean(true);
-        var row = SettingEntry.stepperRemove("Threshold 1", ticks::get, ticks::set, 1, 20, 1, removed::incrementAndGet);
+        var row = SettingEntry.colorRemove("Threshold 1", () -> 0xFFFFFFFF, () -> { }, removed::incrementAndGet);
         var bridge = create(feature("Bow Draw Indicator", new AtomicBoolean(), () -> { }, List.of(row)), allowed);
-        var number = property(bridge.tree(), "Bow Draw Indicator", "Threshold 1 (ticks)");
-        assertEquals(Visualizer.NumberVisualizer.class, number.getMetadata("visualizer"));
-        number.setAs(99);
-        assertEquals(20, ticks.get());
         var remove = property(bridge.tree(), "Bow Draw Indicator", "Threshold 1 / Remove");
         Runnable action = remove.getMetadata("runnable");
         allowed.set(false);
         action.run();
-        number.setAs(7);
         assertEquals(0, removed.get());
-        assertEquals(20, ticks.get());
         allowed.set(true);
         action.run();
         assertEquals(1, removed.get());
@@ -127,12 +122,6 @@ public final class KungOneConfigTreeTest {
         Tree tree = defaults.tree();
         assertEquals(70, property(tree, "6th Visitor Alarm", "Volume (%)").get());
         assertEquals(0.5, (Double) property(tree, "Blood rush helper", "Title Time (s)").get(), 0.00001);
-        Property<?> volume = property(tree, "Custom Sounds", "Arrow Default Volume (x)");
-        assertEquals(1.0, (Double) volume.get(), 0.00001);
-        assertEquals(0.1f, (Float) volume.getMetadata("step"), 0.00001f);
-        Property<?> pitch = property(tree, "Custom Sounds", "Arrow Default Pitch (x)");
-        assertEquals(0.25f, (Float) pitch.getMetadata("min"), 0.00001f);
-        assertEquals(0.05f, (Float) pitch.getMetadata("step"), 0.00001f);
         var live = new KungOneConfigTree(KungSettings.defaults(), () -> { }, () -> true);
         live.applyDefaults(defaults);
         assertEquals(false, property(live.tree(), "Feast Progress", "Enabled").getMetadata("default"));
@@ -198,7 +187,7 @@ public final class KungOneConfigTreeTest {
 
     private static int countControls(List<SettingEntry> settings) {
         return settings.stream().mapToInt(setting -> (setting.kind() == SettingKind.GROUP ? 0
-            : setting.kind() == SettingKind.STEPPER_REMOVE ? 2 : 1) + countControls(setting.children())).sum();
+            : setting.kind() == SettingKind.COLOR_REMOVE ? 2 : 1) + countControls(setting.children())).sum();
     }
 
     private static KungOneConfigTree create(KungSettings.FeatureEntry feature, AtomicBoolean allowed) {

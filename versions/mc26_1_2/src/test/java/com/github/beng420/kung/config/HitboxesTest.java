@@ -35,6 +35,9 @@ public final class HitboxesTest {
             {"hitboxes":{"entities":{"arrow":1193046,"invalid id":45,"minecraft:zombie":null}}}
             """);
         assertEquals(java.util.Map.of("minecraft:arrow", 0xFF123456), config.hitboxes.entities());
+        // Entries saved with a modifier cover every variant after loading.
+        assertEquals(java.util.Map.of("skyblock:skeleton_master", 0xFF000001),
+            read("{\"hitboxes\":{\"entities\":{\"skyblock:healthy_skeleton_master\":1}}}").hitboxes.entities());
     }
 
     @Test
@@ -112,6 +115,27 @@ public final class HitboxesTest {
         assertEquals(List.of("minecraft:arrow"), HitboxSettings.search(all, Set.of(), "minecraft:arrow"));
         assertTrue(HitboxSettings.search(all, Set.of(), "no such entity xyz").isEmpty());
         assertEquals("Arrow (example)", HitboxSettings.name("example:arrow"));
+    }
+
+    @Test
+    public void typedNamesBecomeItemAndSkyBlockEntriesAfterTheVanillaMatches() {
+        var matches = HitboxSettings.search(HitboxSettings.entityIds(), Set.of(), "zombie");
+        var withTyped = HitboxSettings.withTypedEntries(matches, Set.of(), "zombie");
+        assertEquals(matches.getFirst(), withTyped.getFirst());
+        assertEquals("skyblock:zombie", withTyped.getLast());
+        assertEquals(List.of("skyblock:voidgloom_seraph"),
+            HitboxSettings.withTypedEntries(List.of(), Set.of(), " Voidgloom  Seraph "));
+        assertEquals(List.of(), HitboxSettings.withTypedEntries(List.of(), Set.of("skyblock:zealot"), "Zealot"));
+        // A real item name also offers the held-item entry, e.g. a thrown Bonemerang's bone.
+        assertEquals(List.of("item:bone", "skyblock:bone"), HitboxSettings.withTypedEntries(List.of(), Set.of(), " Bone "));
+        assertEquals("Bone (item)", HitboxSettings.name("item:bone"));
+        assertEquals("item:bone", com.github.beng420.kung.feature.misc.HitboxesFeature.itemId(
+            new net.minecraft.world.item.ItemStack(net.minecraft.core.Holder.direct(net.minecraft.world.item.Items.BONE,
+                net.minecraft.core.component.DataComponentMap.EMPTY))));
+        assertEquals("Voidgloom Seraph (skyblock)", HitboxSettings.name("skyblock:voidgloom_seraph"));
+        var config = new KungConfig(temporary.getRoot().toPath().resolve("skyblock.json"));
+        config.hitboxes.add("skyblock:voidgloom_seraph");
+        assertTrue(config.hitboxes.entities().containsKey("skyblock:voidgloom_seraph"));
     }
 
     @Test

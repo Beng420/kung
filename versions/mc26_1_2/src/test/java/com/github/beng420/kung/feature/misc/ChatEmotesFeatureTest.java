@@ -35,6 +35,42 @@ public final class ChatEmotesFeatureTest {
             assertEquals("msg Beng114 \u2672", command("msg Beng114 :ironman:"));
             assertEquals("\u2672 :cute: o/ :IMAN: :IRONMAN:", chat("\u2672 :cute: o/ :IMAN: :IRONMAN:"));
 
+            // Custom emotes: exact text, applied before the built-ins; blank shortcuts do nothing.
+            config.misc.addCustomChatEmote();
+            var gg = config.misc.customChatEmotes().getFirst();
+            assertEquals(":gg:", chat(":gg:"));
+            // Stored as the word between the colons, whether typed with them or not.
+            config.misc.setChatEmoteShortcut(gg, "gg");
+            assertEquals("gg", chat("gg"));
+            config.misc.setChatEmoteShortcut(gg, " :gg: ");
+            assertEquals("gg", gg.shortcut());
+            config.misc.setChatEmoteText(gg, "\u2714");
+            assertEquals("\u2714 well played \u2714", chat(":gg: well played :gg:"));
+            assertEquals("pc \u2714", command("pc :gg:"));
+            config.misc.addCustomChatEmote();
+            config.misc.setChatEmoteShortcut(config.misc.customChatEmotes().getLast(), ":iman:");
+            config.misc.setChatEmoteText(config.misc.customChatEmotes().getLast(), "IM");
+            assertEquals("IM", chat(":iman:"));
+            // Emotes of any length go through as typed.
+            config.misc.setChatEmoteText(gg, "(\u2310\u25A0_\u25A0)");
+            assertEquals("pc (\u2310\u25A0_\u25A0)", command("pc :gg:"));
+            config.misc.removeCustomChatEmote(gg);
+            assertEquals(":gg:", chat(":gg:"));
+
+            // A custom override of a built-in also covers its bare word; then back to the built-in.
+            config.misc.setChatEmotesReplaceWords(true);
+            assertEquals("IM", chat("iman"));
+            config.misc.setChatEmotesReplaceWords(false);
+            config.misc.removeCustomChatEmote(config.misc.customChatEmotes().getLast());
+
+            // Replace In Text: bare whole words too, but not inside words, command names or recipients.
+            assertEquals("but i am on an iman account", chat("but i am on an iman account"));
+            config.misc.setChatEmotesReplaceWords(true);
+            assertEquals("but i am on an ♲ account", chat("but i am on an iman account"));
+            assertEquals("♲, Ironmanship", chat("Ironman, Ironmanship"));
+            assertEquals("pc ♲ now", command("pc iman now"));
+            assertEquals("msg iman hi ♲", command("msg iman hi iman"));
+
             config.misc = new MiscConfig();
             assertEquals(":iman: :ironman:", chat(":iman: :ironman:"));
             assertEquals("pc :iman: :ironman:", command("pc :iman: :ironman:"));

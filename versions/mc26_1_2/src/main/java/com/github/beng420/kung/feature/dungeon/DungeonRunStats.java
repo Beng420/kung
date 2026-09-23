@@ -74,6 +74,7 @@ public final class DungeonRunStats {
     private static Field tabFooterField;
 
     private final Map<UUID, DungeonPlayerStats> players = new HashMap<>();
+    private final WishAlert.LowHealth wishLowHealth = new WishAlert.LowHealth();
     private final Map<String, UUID> playerNames = new HashMap<>();
     private final Map<String, DungeonClass> playerClasses = new HashMap<>();
     private final Set<String> dungeonPlayerNames = new HashSet<>();
@@ -142,6 +143,7 @@ public final class DungeonRunStats {
     }
 
     private void reset(boolean keepPreparation) {
+        wishLowHealth.reset();
         if (keepPreparation) {
             players.values().forEach(DungeonPlayerStats::resetRunCounters);
             // A genuinely completed run must never donate its final API response to another run.
@@ -509,6 +511,11 @@ public final class DungeonRunStats {
         return players.get(uuid);
     }
 
+    /** The local player's class, or UNKNOWN before the roster has resolved it. */
+    public DungeonClass selfDungeonClass() {
+        return selfUuid == null ? DungeonClass.UNKNOWN : dungeonClass(selfUuid);
+    }
+
     public DungeonClass dungeonClass(UUID uuid) {
         DungeonPlayerStats stats = playerStats(uuid);
         if (stats != null && stats.dungeonClass() != DungeonClass.UNKNOWN) {
@@ -647,21 +654,26 @@ public final class DungeonRunStats {
 
         sendingRunSummary = true;
         try {
-            output.accept(KungMessages.info("Run Stats"));
-            output.accept(KungMessages.detail(roomProgressSummary(renderPlan)));
-            output.accept(KungMessages.detail(
-                "Score " + score(renderPlan, 0)
-                    + " | Secrets " + unknownDash(totalFoundSecrets) + "/" + unknownPositive(availableSecrets)
-                    + " | Crypts " + cryptsOpened + "/" + unknownDash(cryptsAvailable)
-            ));
-            output.accept(KungMessages.detail("Party Secrets: " + unknownDash(totalFoundSecrets)));
-            String availability = personalSecretAvailability(sortedPlayers, KungConfig.get().misc.directHypixelApiEnabled());
-            if (!availability.isEmpty()) output.accept(KungMessages.detail(availability));
-            int nameWidth = DungeonRunSummaryLayout.nameColumnWidth(
-                sortedPlayers.stream().map(DungeonPlayerStats::name).toList(), textWidth);
-            for (DungeonPlayerStats stats : sortedPlayers) {
-                output.accept(DungeonRunSummaryLayout.playerLine(
-                    stats.name(), playerStatsDetails(stats, totalFoundSecrets), nameWidth, textWidth));
+            if (KungConfig.get().dungeon.runStatsReportEnabled()) {
+                output.accept(KungMessages.info("Run Stats"));
+                output.accept(KungMessages.detail(roomProgressSummary(renderPlan)));
+                output.accept(KungMessages.detail(
+                    "Score " + score(renderPlan, 0)
+                        + " | Secrets " + unknownDash(totalFoundSecrets) + "/" + unknownPositive(availableSecrets)
+                        + " | Crypts " + cryptsOpened + "/" + unknownDash(cryptsAvailable)
+                ));
+                output.accept(KungMessages.detail("Party Secrets: " + unknownDash(totalFoundSecrets)));
+            }
+            if (KungConfig.get().dungeon.playerStatsReportEnabled()) {
+                output.accept(KungMessages.info("Player Stats"));
+                String availability = personalSecretAvailability(sortedPlayers, KungConfig.get().misc.directHypixelApiEnabled());
+                if (!availability.isEmpty()) output.accept(KungMessages.detail(availability));
+                int nameWidth = DungeonRunSummaryLayout.nameColumnWidth(
+                    sortedPlayers.stream().map(DungeonPlayerStats::name).toList(), textWidth);
+                for (DungeonPlayerStats stats : sortedPlayers) {
+                    output.accept(DungeonRunSummaryLayout.playerLine(
+                        stats.name(), playerStatsDetails(stats, totalFoundSecrets), nameWidth, textWidth));
+                }
             }
         } finally {
             sendingRunSummary = false;
@@ -1014,9 +1026,11 @@ public final class DungeonRunStats {
     }
 
     private void observeScoreboard(Minecraft client) {
-        for (String line : DungeonSidebarReader.lines(client)) {
+        List<String> lines = DungeonSidebarReader.lines(client);
+        for (String line : lines) {
             observeScoreboardLine(client, line);
         }
+        WishAlert.observeSidebar(client, lines, KungConfig.get().dungeon, selfDungeonClass(), wishLowHealth);
     }
 
     void observeScoreboardLine(Minecraft client, String raw) {
@@ -2153,6 +2167,7 @@ public final class DungeonRunStats {
     private static boolean isGeneratedRunSummaryLine(String message) {
         return message.startsWith("[Kung")
             || message.contains("Run Stats")
+            || message.contains("Player Stats")
             || message.startsWith("Rooms cleared:")
             || (message.startsWith("Score ") && message.contains(" | Secrets ") && message.contains(" | Crypts "))
             || message.contains(": Attributed Rooms ");

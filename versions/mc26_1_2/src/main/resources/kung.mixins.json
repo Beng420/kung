@@ -9,6 +9,7 @@
     "ClientPacketListenerMixin",
     "ConnectionMixin",
     "FontAccessor",
+    "ItemInHandLayerMixin",
     "LocalPlayerMixin",
     "MultiPlayerGameModeMixin",
     "RenderSectionRegionMixin",

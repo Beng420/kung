@@ -4,6 +4,9 @@ import com.github.beng420.kung.config.category.MiscConfig;
 import com.github.beng420.kung.feature.ConfigurableFeature;
 import com.github.beng420.kung.message.KungMessages;
 import com.github.beng420.kung.skyblock.HypixelInstanceTracker;
+import java.time.Duration;
+import java.time.LocalTime;
+import java.time.format.DateTimeFormatter;
 import java.util.LinkedHashMap;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.minecraft.client.Minecraft;
@@ -14,8 +17,9 @@ import net.minecraft.sounds.SoundEvents;
 public final class LobbyHopHelperFeature extends ConfigurableFeature<MiscConfig> {
     public static final LobbyHopHelperFeature INSTANCE = new LobbyHopHelperFeature();
     private static final int MAX_HISTORY_SIZE = 128;
+    private static final DateTimeFormatter CLOCK = DateTimeFormatter.ofPattern("HH:mm:ss");
 
-    private static final LinkedHashMap<String, Long> lastSeenLobbyMillis = new LinkedHashMap<>();
+    private static final LinkedHashMap<String, Visit> visits = new LinkedHashMap<>();
     private static String currentLobbyId = "";
     private static boolean wasEnabled;
 
@@ -56,28 +60,33 @@ public final class LobbyHopHelperFeature extends ConfigurableFeature<MiscConfig>
         }
 
         String lobbyId = HypixelInstanceTracker.INSTANCE.serverId();
-        long elapsedMillis = recordVisit(lobbyId, System.nanoTime() / 1_000_000L);
-        if (elapsedMillis >= 0L) {
-            alert(client, lobbyId, elapsedMillis);
+        long nowMillis = System.nanoTime() / 1_000_000L;
+        Visit previous = recordVisit(lobbyId, nowMillis);
+        if (previous != null) {
+            alert(client, lobbyId, nowMillis, previous);
         }
     }
 
     static void clearHistory() {
-        lastSeenLobbyMillis.clear();
+        visits.clear();
         currentLobbyId = "";
     }
 
-    /** Returns time since last presence, or -1 when no revisit should be announced. */
-    static long recordVisit(String lobbyId, long nowMillis) {
-        if (lobbyId.isBlank()) return -1L;
+    record Visit(long arrivedMillis, long lastSeenMillis) { }
+
+    /** Returns the previous stay on arrival, or null when no revisit should be announced. */
+    static Visit recordVisit(String lobbyId, long nowMillis) {
+        if (lobbyId.isBlank()) return null;
+        boolean arrived = !lobbyId.equals(currentLobbyId);
         // Refresh while present so a long stay does not count toward time spent away.
-        Long previousVisit = lastSeenLobbyMillis.put(lobbyId, nowMillis);
-        if (lobbyId.equals(currentLobbyId)) return -1L;
+        Visit previous = visits.get(lobbyId);
+        visits.put(lobbyId, new Visit(arrived || previous == null ? nowMillis : previous.arrivedMillis(), nowMillis));
+        if (!arrived) return null;
         currentLobbyId = lobbyId;
-        if (lastSeenLobbyMillis.size() > MAX_HISTORY_SIZE) {
-            lastSeenLobbyMillis.pollFirstEntry();
+        if (visits.size() > MAX_HISTORY_SIZE) {
+            visits.pollFirstEntry();
         }
-        return previousVisit == null ? -1L : Math.max(0L, nowMillis - previousVisit);
+        return previous;
     }
 
     static String formatAgo(long elapsedMillis) {
@@ -85,12 +94,22 @@ public final class LobbyHopHelperFeature extends ConfigurableFeature<MiscConfig>
         return (seconds >= 60L ? seconds / 60L + "m" : "") + seconds % 60L + "s ago";
     }
 
-    private static void alert(Minecraft client, String lobbyId, long elapsedMillis) {
-        String ago = formatAgo(elapsedMillis);
-        client.gui.setSubtitle(Component.literal(lobbyId + " - " + ago));
-        client.gui.setTitle(Component.literal("Swap Lobbies"));
-        KungMessages.send(client, KungMessages.Type.WARNING, "",
-            "You've been on lobby " + lobbyId + " before! " + ago + ".");
+    /** Monotonic millis back to wall-clock time for display. */
+    private static String clock(long nowMillis, long thenMillis) {
+        return LocalTime.now().minus(Duration.ofMillis(nowMillis - thenMillis)).format(CLOCK);
+    }
+
+    private static void alert(Minecraft client, String lobbyId, long nowMillis, Visit previous) {
+        String ago = formatAgo(nowMillis - previous.lastSeenMillis());
+        if (INSTANCE.config().lobbyHopTitleEnabled()) {
+            client.gui.setSubtitle(Component.literal(lobbyId + " - " + ago));
+            client.gui.setTitle(Component.literal("Swap Lobbies"));
+        }
+        if (INSTANCE.config().lobbyHopChatEnabled()) {
+            KungMessages.send(client, KungMessages.Type.WARNING, "",
+                "You've been on lobby " + lobbyId + " before! " + ago + ". ("
+                    + clock(nowMillis, previous.arrivedMillis()) + " - " + clock(nowMillis, previous.lastSeenMillis()) + ")");
+        }
         client.getSoundManager().play(SimpleSoundInstance.forUI(SoundEvents.NOTE_BLOCK_PLING.value(), 1.35F, 1.0F));
     }
 }

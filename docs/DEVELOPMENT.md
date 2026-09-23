@@ -125,7 +125,7 @@ Native OneConfig owns its own text rendering and colors.
 
 `config/KungSettings` is the shared catalog for the existing `KungConfigScreen`
 and native OneConfig controls. It exposes six categories and 27 public feature
-entries, plus M7 Dragon Helper exclusively for Beng114's developer account,
+entries; Wither Dragons adds its helper settings exclusively for Beng114's developer account,
 including enum choices, nested settings, actions, help and raw loadout bindings.
 Hitboxes uses dynamic entity rows and shared color/removal
 controls. Its native Add/Edit buttons open the complete Kung search/color editor;
@@ -188,6 +188,9 @@ safe labeled bounds as `/kung hud`, without creating dungeon/container observati
 Normal HUD drawing pauses while those external previews render. Gameplay appearance
 and the existing standalone editor layout remain unchanged. OneConfig 1.2.0 can only
 edit external HUD placement in a loaded world, not from the title screen.
+Both editors show only switched-on HUDs: `/kung hud` filters its entries, and the
+OneConfig wrapper reports a size of 0 while its HUD is off (as OneConfig's own Odin
+wrapper does), so OneConfig does not draw it as a dimmed hidden HUD.
 
 Live validation still needs native opening/search, all control kinds, persistence,
 profile switches, audio-list refresh, title-screen settings access, optional-mod absence,
@@ -291,3 +294,22 @@ do not import arbitrary profile data during cleanup.
 All runtime paths and legacy-folder migration are documented in
 [FILE_STORAGE.md](FILE_STORAGE.md). New write paths must remain below the Kung
 config or log directory, apart from installing the mod JAR.
+
+## Tarantula egg sac spots
+
+`/kung dev tara` (developer only) prints how often each grid cell of the egg sac
+prediction actually carried a sac, over every phase recorded so far, plus the
+number of phases. The data comes from `config/kung/slayer-data/tarantula-egg-sacs.txt`,
+one line per phase: `anchor=x,y,z sacs=dx,dy,dz;...`, offsets relative to the spot
+the boss jumped from. Recording runs while the Tarantula helper tracks a boss and
+only for developers. `TarantulaEggSacGridTest` covers the counting.
+
+First measurement, 143 phases with 646 sacs from clean phases (4-6 sacs each):
+
+- The sacs sit in a **disc of radius 3.05** around the centre, not in a square. Not one
+  sac landed in a corner of the old 6.7x6.7 box; 35 of its 81 grid cells stayed empty,
+  all of them outside that radius. The prediction now draws the disc only.
+- Their height matches the centre exactly (`EGG_SAC_CENTER_ABOVE_BOSS = 9.42`, |dy| < 0.03).
+- Angles spread over every direction, so inside the disc there are no dead spots.
+- Lines with dozens of sacs are other players' fights caught by the old 24-block filter;
+  sacs now have to sit in our own cluster (8 blocks around the prediction centre).

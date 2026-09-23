@@ -4,10 +4,21 @@ import com.github.beng420.kung.config.KungConfig;
 import com.github.beng420.kung.config.category.SlayerConfig;
 import com.github.beng420.kung.feature.ConfigurableFeature;
 import com.github.beng420.kung.message.KungMessages;
+import com.github.beng420.kung.runtime.KungDeveloperAccess;
+import com.github.beng420.kung.runtime.KungFileLayout;
+import com.github.beng420.kung.util.KungDebugRecorder;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.TreeMap;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderContext;
@@ -35,28 +46,41 @@ public final class TarantulaHelperFeature extends ConfigurableFeature<SlayerConf
     private static final double EGG_SAC_PAIR_RANGE = 2.5;
     private static final double EGG_SAC_BOSS_RANGE = 24.0;
     private static final double EGG_SAC_CENTER_ABOVE_BOSS = 9.42;
-    private static final double EGG_SAC_PREDICTION_HALF_X = 3.35;
+    /**
+     * 646 recorded sacs from 143 phases: they sit in a disc around the centre, never in the corners of
+     * the old square, and their height matches the centre exactly (99% within 3.05 blocks, |dy| < 0.03).
+     */
+    private static final double EGG_SAC_PREDICTION_RADIUS = 3.05;
+    private static final double EGG_SAC_PREDICTION_HALF_X = EGG_SAC_PREDICTION_RADIUS;
     private static final double EGG_SAC_PREDICTION_HALF_Y = 0.42;
-    private static final double EGG_SAC_PREDICTION_HALF_Z = 3.35;
+    private static final double EGG_SAC_PREDICTION_HALF_Z = EGG_SAC_PREDICTION_RADIUS;
+    /** Other players fight their bosses next to ours; their sacs are far outside our own disc. */
+    private static final double EGG_SAC_CLUSTER_RANGE = 8.0;
+    private static final double EGG_SAC_CLUSTER_HEIGHT = 4.0;
     private static final float FIRST_EGG_SAC_PRE_TRIGGER_HEALTH = 0.86F;
     private static final float SECOND_EGG_SAC_PRE_TRIGGER_HEALTH = 0.54F;
     private static final long EGG_SAC_DONE_GRACE_MILLIS = 250L;
     private static final long BOSS_REBIND_GRACE_MILLIS = 2_000L;
     private static final long BOSS_MISSING_PREDICTION_MILLIS = 450L;
     private static final long SLAYER_END_SUPPRESS_MILLIS = 1_500L;
+    /** The leap into the egg sac phase gains far more height in one tick than walking over a slab. */
+    private static final double JUMP_RISE_PER_TICK = 0.3;
     private static final int PREDICTION_RED = 0;
     private static final int PREDICTION_GREEN = 255;
     private static final int PREDICTION_BLUE = 210;
     private static final int PREDICTION_ALPHA = 120;
     private static final double PREDICTION_GRID_SPACING = 0.75;
+    /**
+     * Hypixel keeps the real health in the nametag. Mobs carry "795.1k/1.2M❤", a slayer boss only its
+     * current health, as in "☠ Tarantula Broodfather V 9.4M❤".
+     */
+    private static final java.util.regex.Pattern NAMETAG_HEALTH =
+        java.util.regex.Pattern.compile("(?:([\\d.,]+[kKmMbB]?)/)?([\\d.,]+[kKmMbB]?)❤");
+    private static final String EGG_SAC_FILE = "tarantula-egg-sacs.txt";
     private static final double PREDICTION_GRID_HALF_SIZE = 0.17;
     private static final double PREDICTION_GRID_BLOCK_SCAN_ABOVE = 1.0;
     private static final int PREDICTION_GRID_MAX_LOWERED_STEPS = 6;
     private static final int PREDICTION_GRID_ALPHA = 185;
-    private static final int RED = 0;
-    private static final int GREEN = 230;
-    private static final int BLUE = 255;
-    private static final int ALPHA = 235;
 
     private Entity activeBoss;
     private int activeBossId = -1;
@@ -77,9 +101,19 @@ public final class TarantulaHelperFeature extends ConfigurableFeature<SlayerConf
     private boolean firstEggSacPhasePredicted;
     private boolean secondEggSacPhasePredicted;
     private boolean cocoonEggSacPhasePredicted;
+    private boolean eggSacJumpArmed;
+    private boolean trackingTraced = true;
+    private double lastBossY = Double.NaN;
+    /** Offsets from the jump spot of every sac seen in the running phase, one entry per spawn point. */
+    private final Map<String, Vec3> phaseSacOffsets = new LinkedHashMap<>();
     private float lastBossHealthPercent = Float.NaN;
     private long slayerEndSeenMillis;
     private boolean activeBossWasConjoined;
+    /** A slayer nametag names no maximum, so the boss's full health is the highest value seen. */
+    private double bossMaxHealth;
+    private int activeNameCarrierId = -1;
+    /** The health this phase started at; while it runs the boss cannot lose any. */
+    private float phaseStartHealth = Float.NaN;
 
     private TarantulaHelperFeature() {
         super(cfg -> cfg.slayer);
@@ -110,8 +144,18 @@ public final class TarantulaHelperFeature extends ConfigurableFeature<SlayerConf
         String message = clean(rawMessage);
         if (isEggSacPhaseStartMessage(message)) {
             Entity boss = activeBoss(client);
+            if (eggSacPhaseActive && eggSacSeenDuringPhase) {
+                // The sacs of the running phase are done with; this message belongs to the next one.
+                finishEggSacPhase(client);
+            }
             if (boss != null) {
-                startEggSacPhase(client, boss);
+                // The health here is what the real threshold looks like; it tunes the jump arming.
+                float fraction = bossHealthFraction(client, boss);
+                startEggSacPhase(client, boss, "hatchling message at "
+                    + (Float.isNaN(fraction) ? "unknown" : Math.round(fraction * 100) + "%"));
+            } else {
+                // No boss entity while he cocoons; the message alone is proof enough to show the box.
+                startEggSacPhase(client, null, "hatchling message");
             }
             return;
         }
@@ -128,9 +172,7 @@ public final class TarantulaHelperFeature extends ConfigurableFeature<SlayerConf
 
     private void tick(Minecraft client) {
         boolean shouldTrack = isEnabled()
-            && (config().eggSacPredictionRendererEnabled()
-                || config().eggSacPredictionEnabled()
-                || KungConfig.get().debug.tarantulaMessages());
+            && (config().eggSacPredictionEnabled() || KungConfig.get().debug.tarantulaMessages());
 
         if (!shouldTrack || client.level == null || client.player == null) {
             clearTrackedBoss();
@@ -147,7 +189,7 @@ public final class TarantulaHelperFeature extends ConfigurableFeature<SlayerConf
                 visibleEggSacs = nearbyEggSacs;
                 if (!nearbyEggSacs.isEmpty()) {
                     Entity previousBoss = activeBoss != null ? activeBoss : client.player;
-                    startEggSacPhase(client, previousBoss);
+                    startEggSacPhase(client, previousBoss, "sacs visible");
                     visibleEggSacs = nearbyEggSacs;
                     markEggSacsSeen();
                     markBossMissing(client);
@@ -156,6 +198,9 @@ public final class TarantulaHelperFeature extends ConfigurableFeature<SlayerConf
                     markBossMissing(client);
                     return;
                 } else if (!markBossMissing(client)) {
+                    return;
+                } else if (eggSacPhaseActive) {
+                    // He sits in his cocoon: no entity to find, but the phase is still running.
                     return;
                 } else {
                     finishEggSacPhase(client);
@@ -169,13 +214,24 @@ public final class TarantulaHelperFeature extends ConfigurableFeature<SlayerConf
         }
 
         if (boss == null) {
+            // Nothing bound: the phase still needs a spot, so take the nearest boss body there is.
+            if (eggSacPhaseActive) anchorToAnyBossBody(client);
+            traceTracking(client, false);
             return;
+        }
+        traceTracking(client, true);
+        if (activeBossId == -1) {
+            bossMaxHealth = 0;
+            activeNameCarrierId = -1;
+            float fraction = bossHealthFraction(client, boss);
+            KungDebugRecorder.event("tarantula", "boss bound type=" + boss.getType().toShortString()
+                + " health=" + (Float.isNaN(fraction) ? "unknown" : Math.round(fraction * 100) + "%"));
         }
 
         if (activeBossId == -1) {
             activeBoss = boss;
             activeBossId = boss.getId();
-            activePhase = phaseFor(boss);
+            activePhase = phaseFor(client, boss);
             lastPositionDebugMillis = 0L;
             missingBossSinceMillis = 0L;
             activeBossWasConjoined = isConjoinedBrood(boss);
@@ -186,7 +242,7 @@ public final class TarantulaHelperFeature extends ConfigurableFeature<SlayerConf
             activeBossWasConjoined = activeBossWasConjoined || isConjoinedBrood(boss);
         }
 
-        int phase = phaseFor(boss);
+        int phase = phaseFor(client, boss);
         if (phase != 0 && activePhase != 0 && phase != activePhase) {
             activePhase = phase;
             debug(client, DebugMessage.SLAYER_PHASE_CHANGE, "slayer phase change");
@@ -196,9 +252,6 @@ public final class TarantulaHelperFeature extends ConfigurableFeature<SlayerConf
 
         anticipateEggSacPhase(client, boss);
         updateEggSacPhase(client, boss);
-        if (config().eggSacPredictionEnabled() && canRenderPredictionForBoss(boss)) {
-            updateEggSacPrediction(client, boss);
-        }
 
         long now = System.currentTimeMillis();
         if (now - lastPositionDebugMillis >= 1000L) {
@@ -207,40 +260,46 @@ public final class TarantulaHelperFeature extends ConfigurableFeature<SlayerConf
         }
     }
 
+    /**
+     * Only while an egg sac phase runs, over the boss. He disappears into its cocoon just as the sacs
+     * spawn, so the last anchor carries the box through that gap instead of letting it blink out.
+     */
     private void render(LevelRenderContext context) {
         Minecraft client = Minecraft.getInstance();
-        boolean renderBossArrow = isEnabled() && config().eggSacPredictionRendererEnabled();
-        boolean wantsEggSacPrediction = isEnabled() && config().eggSacPredictionEnabled();
-
-        if ((!renderBossArrow && !wantsEggSacPrediction)
+        if (!isEnabled()
+            || !config().eggSacPredictionEnabled()
             || client.level == null
-            || client.player == null) {
+            || client.player == null
+            || !eggSacPhaseActive
+            || eggSacSeenDuringPhase
+            || recentlySawSlayerEnd()) {
             return;
         }
 
         Entity boss = activeBoss(client);
-        if (boss == null) {
+        Vec3 center = boss != null && canRenderPredictionForBoss(boss)
+            ? predictionAnchorFor(boss, renderPartialTick())
+            : eggSacPredictionAnchor;
+        if (center == null) {
             return;
         }
-
-        boolean renderEggSacPrediction = wantsEggSacPrediction
-            && canRenderPredictionForBoss(boss)
-            && !eggSacPredictionFinished()
-            && visibleEggSacs.isEmpty()
-            && !recentlySawSlayerEnd();
 
         PoseStack poseStack = context.poseStack();
         Vec3 camera = client.gameRenderer.getMainCamera().position();
         poseStack.pushPose();
         poseStack.translate(-camera.x, -camera.y, -camera.z);
-        MultiBufferSource buffers = context.bufferSource();
-        if (renderEggSacPrediction) {
-            drawEggSacPrediction(poseStack, buffers, predictionAnchorFor(boss, renderPartialTick()));
-        }
-        if (renderBossArrow) {
-            drawArrow(poseStack, buffers, boss);
-        }
+        drawEggSacPrediction(poseStack, context.bufferSource(), center);
         poseStack.popPose();
+    }
+
+    private Vec3 predictionAnchorFor(Entity boss, float partialTick) {
+        Vec3 position = boss.getPosition(partialTick);
+        return new Vec3(position.x, position.y + boss.getBbHeight() + EGG_SAC_CENTER_ABOVE_BOSS, position.z);
+    }
+
+    private float renderPartialTick() {
+        Minecraft client = Minecraft.getInstance();
+        return client.gameRenderer.getMainCamera().getCameraEntityPartialTicks(client.getDeltaTracker());
     }
 
     private Entity activeBoss(Minecraft client) {
@@ -256,6 +315,40 @@ public final class TarantulaHelperFeature extends ConfigurableFeature<SlayerConf
             return null;
         }
         return boss;
+    }
+
+    /** Why the helper has no boss: the names it does see decide whether matching or ownership failed. */
+    private void traceTracking(Minecraft client, boolean found) {
+        if (found == trackingTraced) return;
+        trackingTraced = found;
+        if (found) {
+            return;
+        }
+        StringBuilder names = new StringBuilder();
+        for (Entity entity : client.level.entitiesForRendering()) {
+            if (!entity.hasCustomName() || client.player.distanceToSqr(entity) > SEARCH_RANGE * SEARCH_RANGE) continue;
+            String name = plain(entityName(entity));
+            if (name.isBlank() || names.length() > 300) continue;
+            names.append(names.isEmpty() ? "" : " | ").append(name);
+        }
+        KungDebugRecorder.event("tarantula", "no own boss; nearby=[" + names + "]");
+    }
+
+    /** Anchor without ownership proof: only used while a phase already started, so it is our fight. */
+    private void anchorToAnyBossBody(Minecraft client) {
+        double best = SEARCH_RANGE * SEARCH_RANGE;
+        Entity body = null;
+        for (Entity entity : client.level.entitiesForRendering()) {
+            if (!hasTarantulaBossName(entity)) continue;
+            Entity candidate = nearestBossBody(client, entity);
+            if (candidate == null) continue;
+            double distance = client.player.distanceToSqr(candidate);
+            if (distance < best) {
+                best = distance;
+                body = candidate;
+            }
+        }
+        if (body != null) updateEggSacPrediction(client, body);
     }
 
     private Entity findOwnBoss(Minecraft client) {
@@ -393,30 +486,124 @@ public final class TarantulaHelperFeature extends ConfigurableFeature<SlayerConf
             || message.contains("kill the hatchlings");
     }
 
+    /**
+     * Tarantula jumps when his health reaches a threshold, spins on the spot and only then spawns the
+     * cobwebs and egg sacs. The jump is the cue, and the spot he jumps from is where they appear.
+     */
     private void anticipateEggSacPhase(Minecraft client, Entity boss) {
+        double previousY = lastBossY;
+        lastBossY = boss.getY();
+        double rise = Double.isNaN(previousY) ? 0.0 : boss.getY() - previousY;
         if (eggSacPredictionFinished() || isConjoinedBrood(boss)) {
             lastBossHealthPercent = Float.NaN;
             return;
         }
 
-        if (!(boss instanceof LivingEntity living) || living.getMaxHealth() <= 0.0F) {
+        // The box belongs over the boss, so the anchor follows him; it only has to outlive him.
+        if (canRenderPredictionForBoss(boss)) {
+            updateEggSacPrediction(client, boss);
+        }
+
+        float healthPercent = bossHealthFraction(client, boss);
+        if (Float.isNaN(healthPercent)) {
             return;
         }
 
-        float healthPercent = living.getHealth() / living.getMaxHealth();
         float previousHealthPercent = lastBossHealthPercent;
         lastBossHealthPercent = healthPercent;
-        if (!firstEggSacPhasePredicted && crossedHealthThreshold(previousHealthPercent, healthPercent, FIRST_EGG_SAC_PRE_TRIGGER_HEALTH)) {
-            updateEggSacPrediction(client, boss);
+        if ((!firstEggSacPhasePredicted && crossedHealthThreshold(previousHealthPercent, healthPercent, FIRST_EGG_SAC_PRE_TRIGGER_HEALTH))
+            || (firstEggSacPhasePredicted && !secondEggSacPhasePredicted
+                && crossedHealthThreshold(previousHealthPercent, healthPercent, SECOND_EGG_SAC_PRE_TRIGGER_HEALTH))) {
+            eggSacJumpArmed = true;
+            KungDebugRecorder.event("tarantula", "egg sac armed health=" + Math.round(healthPercent * 100) + "%");
+        }
+
+        // Real damage lands again, so the sacs this phase waited for were never coming. While the phase
+        // runs he is invulnerable, so anything past health jitter means the phase was a false alarm.
+        if (eggSacPhaseActive && !eggSacSeenDuringPhase && !Float.isNaN(phaseStartHealth)
+            && healthPercent < phaseStartHealth - 0.005F) {
+            KungDebugRecorder.event("tarantula", "boss damageable again, no sacs");
+            finishEggSacPhase(client);
+        }
+
+        if (eggSacJumpArmed && rise > JUMP_RISE_PER_TICK) {
+            eggSacJumpArmed = false;
+            KungDebugRecorder.event("tarantula", String.format(Locale.ROOT, "egg sac jump rise=%.2f", rise));
+            primeEggSacPhase(client, boss, "jump");
             return;
         }
-        if (!secondEggSacPhasePredicted && crossedHealthThreshold(previousHealthPercent, healthPercent, SECOND_EGG_SAC_PRE_TRIGGER_HEALTH)) {
-            updateEggSacPrediction(client, boss);
-            return;
+    }
+
+    /**
+     * The entity's own health stays full on Hypixel, so the fraction comes from the nametag above the
+     * body. Slayer bosses stack several stands (owner, name, health), so any of them may carry it.
+     */
+    private float bossHealthFraction(Minecraft client, Entity boss) {
+        Entity carrier = ownNameCarrier(client, boss);
+        double[] health = carrier == null ? null : nametagHealth(plain(entityName(carrier)));
+        if (health == null) {
+            return Float.NaN;
         }
-        if (!cocoonEggSacPhasePredicted && hasCocoonSignal(client, boss)) {
-            cocoonEggSacPhasePredicted = true;
-            primeEggSacPhase(client, boss);
+        if (health[1] > 0) {
+            return (float) Math.clamp(health[0] / health[1], 0.0, 1.0);
+        }
+
+        // A boss tag names no maximum, so the highest health seen for this boss is its full health.
+        bossMaxHealth = Math.max(bossMaxHealth, health[0]);
+        return bossMaxHealth <= 0 ? Float.NaN : (float) Math.clamp(health[0] / bossMaxHealth, 0.0, 1.0);
+    }
+
+    /**
+     * Our own boss's nametag. Other players fight their bosses right next to ours here, so the nearest
+     * boss tag is regularly someone else's and its health would jump between fights.
+     */
+    private Entity ownNameCarrier(Minecraft client, Entity boss) {
+        Entity remembered = activeNameCarrierId == -1 ? null : client.level.getEntity(activeNameCarrierId);
+        if (remembered != null && hasTarantulaBossName(remembered)
+            && remembered.distanceToSqr(boss) <= NAME_TO_BODY_RANGE * NAME_TO_BODY_RANGE) {
+            return remembered;
+        }
+
+        double bestDistance = NAME_TO_BODY_RANGE * NAME_TO_BODY_RANGE;
+        Entity best = null;
+        for (Entity entity : client.level.entitiesForRendering()) {
+            if (!hasTarantulaBossName(entity) || !isOwnBossNameCarrier(client, entity)) {
+                continue;
+            }
+
+            double distance = entity.distanceToSqr(boss);
+            if (distance < bestDistance) {
+                bestDistance = distance;
+                best = entity;
+            }
+        }
+        activeNameCarrierId = best == null ? -1 : best.getId();
+        return best;
+    }
+
+    /** "... 795.1k/1.2M❤" -> {795100, 1200000}; "... 9.4M❤" -> {9400000, -1}; null without health. */
+    static double[] nametagHealth(String name) {
+        var matcher = NAMETAG_HEALTH.matcher(name);
+        if (!matcher.find()) {
+            return null;
+        }
+
+        boolean hasMax = matcher.group(1) != null;
+        double current = nametagAmount(hasMax ? matcher.group(1) : matcher.group(2));
+        double max = hasMax ? nametagAmount(matcher.group(2)) : -1;
+        return current < 0 ? null : new double[] {current, max};
+    }
+
+    private static double nametagAmount(String text) {
+        String value = text.replace(",", "").toLowerCase(Locale.ROOT);
+        double factor = value.endsWith("k") ? 1_000 : value.endsWith("m") ? 1_000_000 : value.endsWith("b") ? 1_000_000_000 : 1;
+        if (factor > 1) {
+            value = value.substring(0, value.length() - 1);
+        }
+        try {
+            return Double.parseDouble(value) * factor;
+        } catch (NumberFormatException exception) {
+            return -1;
         }
     }
 
@@ -439,17 +626,17 @@ public final class TarantulaHelperFeature extends ConfigurableFeature<SlayerConf
 
         if (!firstEggSacPhasePredicted) {
             firstEggSacPhasePredicted = true;
-            primeEggSacPhase(client, activeBoss);
+            primeEggSacPhase(client, activeBoss, "boss vanished");
             return true;
         }
         if (!secondEggSacPhasePredicted) {
             secondEggSacPhasePredicted = true;
-            primeEggSacPhase(client, activeBoss);
+            primeEggSacPhase(client, activeBoss, "boss vanished");
             return true;
         }
         if (!cocoonEggSacPhasePredicted && eggSacSeenDuringPhase) {
             cocoonEggSacPhasePredicted = true;
-            primeEggSacPhase(client, activeBoss);
+            primeEggSacPhase(client, activeBoss, "boss vanished");
             return true;
         }
         return false;
@@ -457,23 +644,6 @@ public final class TarantulaHelperFeature extends ConfigurableFeature<SlayerConf
 
     private boolean recentlySawSlayerEnd() {
         return slayerEndSeenMillis != 0L && System.currentTimeMillis() - slayerEndSeenMillis <= SLAYER_END_SUPPRESS_MILLIS;
-    }
-
-    private boolean hasCocoonSignal(Minecraft client, Entity boss) {
-        if (clean(entityName(boss)).contains("cocoon")) {
-            return true;
-        }
-
-        for (Entity entity : client.level.entitiesForRendering()) {
-            if (entity.distanceToSqr(boss) > OWNER_SEARCH_RANGE * OWNER_SEARCH_RANGE) {
-                continue;
-            }
-            String name = clean(entityName(entity));
-            if (name.contains("cocoon")) {
-                return true;
-            }
-        }
-        return false;
     }
 
     private boolean isConjoinedBrood(Entity entity) {
@@ -498,7 +668,7 @@ public final class TarantulaHelperFeature extends ConfigurableFeature<SlayerConf
         visibleEggSacs = eggSacs;
         if (!eggSacs.isEmpty()) {
             if (!eggSacPhaseActive) {
-                startEggSacPhase(client, boss);
+                startEggSacPhase(client, boss, "sacs visible");
             } else if (!eggSacPhaseStartDebugSent) {
                 sendEggSacPhaseStartDebug(client);
             }
@@ -516,6 +686,17 @@ public final class TarantulaHelperFeature extends ConfigurableFeature<SlayerConf
         }
     }
 
+    /** Our own sacs sit in one tight cluster around the prediction; anything else is another fight. */
+    private boolean belongsToOurPhase(Entity timer, Entity boss) {
+        if (eggSacPredictionAnchor != null) {
+            double dx = timer.getX() - eggSacPredictionAnchor.x;
+            double dz = timer.getZ() - eggSacPredictionAnchor.z;
+            return Math.hypot(dx, dz) <= EGG_SAC_CLUSTER_RANGE
+                && Math.abs(timer.getY() - eggSacPredictionAnchor.y) <= EGG_SAC_CLUSTER_HEIGHT;
+        }
+        return boss == null || timer.distanceToSqr(boss) <= EGG_SAC_BOSS_RANGE * EGG_SAC_BOSS_RANGE;
+    }
+
     private List<EggSac> findEggSacs(Minecraft client, Entity boss) {
         java.util.ArrayList<EggSac> sacs = new java.util.ArrayList<>();
         for (Entity timer : client.level.entitiesForRendering()) {
@@ -527,7 +708,7 @@ public final class TarantulaHelperFeature extends ConfigurableFeature<SlayerConf
             if (!isEggSacTimer(timerName)) {
                 continue;
             }
-            if (boss != null && timer.distanceToSqr(boss) > EGG_SAC_BOSS_RANGE * EGG_SAC_BOSS_RANGE) {
+            if (!belongsToOurPhase(timer, boss)) {
                 continue;
             }
 
@@ -560,7 +741,7 @@ public final class TarantulaHelperFeature extends ConfigurableFeature<SlayerConf
     private void rebindBossAfterPhaseTransition(Minecraft client, Entity boss) {
         activeBoss = boss;
         activeBossId = boss.getId();
-        activePhase = phaseFor(boss);
+        activePhase = phaseFor(client, boss);
         activeBossWasConjoined = activeBossWasConjoined || isConjoinedBrood(boss);
         lastBossHealthPercent = Float.NaN;
         missingBossSinceMillis = 0L;
@@ -580,6 +761,98 @@ public final class TarantulaHelperFeature extends ConfigurableFeature<SlayerConf
     private void markEggSacsSeen() {
         eggSacSeenDuringPhase = true;
         lastEggSacSeenMillis = System.currentTimeMillis();
+        recordSacOffsets();
+    }
+
+    /** Which of the predicted spots actually carry a sac, collected over many bosses for the developer. */
+    private void recordSacOffsets() {
+        if (eggSacPredictionAnchor == null || !KungDeveloperAccess.allowed()) {
+            return;
+        }
+
+        for (EggSac sac : visibleEggSacs) {
+            Vec3 offset = sac.center().subtract(eggSacPredictionAnchor);
+            phaseSacOffsets.putIfAbsent(String.format(Locale.ROOT, "%.1f,%.1f", offset.x, offset.z), offset);
+        }
+    }
+
+    private void writeSacOffsets() {
+        if (phaseSacOffsets.isEmpty() || eggSacPredictionAnchor == null) {
+            phaseSacOffsets.clear();
+            return;
+        }
+
+        StringBuilder line = new StringBuilder(String.format(Locale.ROOT, "anchor=%.2f,%.2f,%.2f sacs=",
+            eggSacPredictionAnchor.x, eggSacPredictionAnchor.y, eggSacPredictionAnchor.z));
+        boolean first = true;
+        for (Vec3 offset : phaseSacOffsets.values()) {
+            if (!first) line.append(';');
+            first = false;
+            line.append(String.format(Locale.ROOT, "%.2f,%.2f,%.2f", offset.x, offset.y, offset.z));
+        }
+        phaseSacOffsets.clear();
+        Path file = eggSacFile();
+        try {
+            Files.createDirectories(file.getParent());
+            Files.writeString(file, line + System.lineSeparator(), StandardCharsets.UTF_8,
+                StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+        } catch (IOException exception) {
+            KungDebugRecorder.event("tarantula", "egg sac write failed: " + exception.getMessage());
+        }
+    }
+
+    private static Path eggSacFile() {
+        Minecraft client = Minecraft.getInstance();
+        Path gameDirectory = client == null ? Path.of(".") : client.gameDirectory.toPath();
+        return new KungFileLayout(gameDirectory, gameDirectory.resolve("config"))
+            .slayerDataDirectory().resolve(EGG_SAC_FILE);
+    }
+
+    /** How often each grid cell carried a sac, over every phase recorded so far. */
+    public String eggSacGridReport() {
+        Path file = eggSacFile();
+        List<String> lines;
+        try {
+            lines = Files.exists(file) ? Files.readAllLines(file, StandardCharsets.UTF_8) : List.of();
+        } catch (IOException exception) {
+            return "Egg sac data unreadable: " + exception.getMessage();
+        }
+        if (lines.isEmpty()) {
+            return "No egg sac phases recorded yet. File: " + file;
+        }
+
+        Map<String, Integer> counts = eggSacGridCounts(lines);
+        int columns = (int) Math.floor(EGG_SAC_PREDICTION_HALF_X / PREDICTION_GRID_SPACING);
+        int rows = (int) Math.floor(EGG_SAC_PREDICTION_HALF_Z / PREDICTION_GRID_SPACING);
+        StringBuilder report = new StringBuilder("Egg sac spots over " + lines.size() + " phases (x right, z down):");
+        for (int gridZ = -rows; gridZ <= rows; gridZ++) {
+            report.append(String.format(Locale.ROOT, "%n%3d:", gridZ));
+            for (int gridX = -columns; gridX <= columns; gridX++) {
+                report.append(String.format(Locale.ROOT, "%5d", counts.getOrDefault(gridX + "," + gridZ, 0)));
+            }
+        }
+        return report + System.lineSeparator() + "File: " + file;
+    }
+
+    /** "anchor=x,y,z sacs=dx,dy,dz;..." per phase -> hits per "gridX,gridZ" cell. */
+    static Map<String, Integer> eggSacGridCounts(List<String> lines) {
+        Map<String, Integer> counts = new TreeMap<>();
+        for (String line : lines) {
+            int start = line.indexOf("sacs=");
+            if (start < 0) continue;
+            for (String entry : line.substring(start + 5).split(";")) {
+                String[] parts = entry.split(",");
+                if (parts.length != 3) continue;
+                try {
+                    int gridX = (int) Math.round(Double.parseDouble(parts[0]) / PREDICTION_GRID_SPACING);
+                    int gridZ = (int) Math.round(Double.parseDouble(parts[2]) / PREDICTION_GRID_SPACING);
+                    counts.merge(gridX + "," + gridZ, 1, Integer::sum);
+                } catch (NumberFormatException exception) {
+                    // A truncated line from a crash; the rest of the file still counts.
+                }
+            }
+        }
+        return counts;
     }
 
     private String entityName(Entity entity) {
@@ -591,15 +864,15 @@ public final class TarantulaHelperFeature extends ConfigurableFeature<SlayerConf
         return name.matches("\\d+s \\d+/\\d+");
     }
 
-    private void primeEggSacPhase(Minecraft client, Entity boss) {
-        startEggSacPhase(client, boss, false);
+    private void primeEggSacPhase(Minecraft client, Entity boss, String reason) {
+        startEggSacPhase(client, boss, false, reason);
     }
 
-    private void startEggSacPhase(Minecraft client, Entity boss) {
-        startEggSacPhase(client, boss, true);
+    private void startEggSacPhase(Minecraft client, Entity boss, String reason) {
+        startEggSacPhase(client, boss, true, reason);
     }
 
-    private void startEggSacPhase(Minecraft client, Entity boss, boolean sendDebug) {
+    private void startEggSacPhase(Minecraft client, Entity boss, boolean sendDebug, String reason) {
         if (eggSacPredictionFinished()) {
             return;
         }
@@ -612,14 +885,18 @@ public final class TarantulaHelperFeature extends ConfigurableFeature<SlayerConf
         }
 
         long now = System.currentTimeMillis();
+        phaseStartHealth = boss == null ? Float.NaN : bossHealthFraction(client, boss);
         eggSacPhaseActive = true;
+        KungDebugRecorder.event("tarantula", "egg sac phase started: " + reason);
         markEggSacPhasePredicted();
         eggSacSeenDuringPhase = false;
         eggSacPhaseStartedMillis = now;
         lastEggSacSeenMillis = now;
         visibleEggSacs = List.of();
         eggSacPhaseStartDebugSent = false;
-        updateEggSacPrediction(client, boss);
+        if (eggSacPredictionAnchor == null && boss != null) {
+            updateEggSacPrediction(client, boss);
+        }
         if (sendDebug) {
             sendEggSacPhaseStartDebug(client);
         }
@@ -646,6 +923,7 @@ public final class TarantulaHelperFeature extends ConfigurableFeature<SlayerConf
         }
 
         boolean completedRealEggSacPhase = eggSacSeenDuringPhase;
+        writeSacOffsets();
         eggSacPhaseActive = false;
         eggSacSeenDuringPhase = false;
         eggSacPhaseStartedMillis = 0L;
@@ -656,6 +934,7 @@ public final class TarantulaHelperFeature extends ConfigurableFeature<SlayerConf
         eggSacPredictionHalfZ = EGG_SAC_PREDICTION_HALF_Z;
         visibleEggSacs = List.of();
         eggSacPhaseStartDebugSent = false;
+        eggSacJumpArmed = false;
         if (completedRealEggSacPhase) {
             completedEggSacPhases++;
         }
@@ -679,12 +958,12 @@ public final class TarantulaHelperFeature extends ConfigurableFeature<SlayerConf
             .trim();
     }
 
-    private int phaseFor(Entity boss) {
-        if (!(boss instanceof LivingEntity living) || living.getMaxHealth() <= 0.0F) {
+    private int phaseFor(Minecraft client, Entity boss) {
+        float healthPercent = bossHealthFraction(client, boss);
+        if (Float.isNaN(healthPercent)) {
             return 0;
         }
 
-        float healthPercent = living.getHealth() / living.getMaxHealth();
         if (healthPercent > 0.66F) {
             return 1;
         }
@@ -730,7 +1009,7 @@ public final class TarantulaHelperFeature extends ConfigurableFeature<SlayerConf
         eggSacSeenDuringPhase = false;
         eggSacPhaseStartedMillis = 0L;
         lastEggSacSeenMillis = 0L;
-        eggSacPredictionAnchor = null;
+        // The anchor stays: a box on its own clock still needs a spot when the boss entity is gone.
         eggSacPredictionHalfX = EGG_SAC_PREDICTION_HALF_X;
         eggSacPredictionHalfY = EGG_SAC_PREDICTION_HALF_Y;
         eggSacPredictionHalfZ = EGG_SAC_PREDICTION_HALF_Z;
@@ -742,6 +1021,12 @@ public final class TarantulaHelperFeature extends ConfigurableFeature<SlayerConf
         cocoonEggSacPhasePredicted = false;
         lastBossHealthPercent = Float.NaN;
         activeBossWasConjoined = false;
+        eggSacJumpArmed = false;
+        lastBossY = Double.NaN;
+        bossMaxHealth = 0;
+        activeNameCarrierId = -1;
+        phaseStartHealth = Float.NaN;
+        phaseSacOffsets.clear();
     }
 
     private void updateEggSacPrediction(Minecraft client, Entity boss) {
@@ -752,16 +1037,6 @@ public final class TarantulaHelperFeature extends ConfigurableFeature<SlayerConf
         eggSacPredictionHalfX = EGG_SAC_PREDICTION_HALF_X;
         eggSacPredictionHalfY = EGG_SAC_PREDICTION_HALF_Y;
         eggSacPredictionHalfZ = EGG_SAC_PREDICTION_HALF_Z;
-    }
-
-    private Vec3 predictionAnchorFor(Entity boss, float partialTick) {
-        Vec3 position = boss.getPosition(partialTick);
-        return new Vec3(position.x, position.y + boss.getBbHeight() + EGG_SAC_CENTER_ABOVE_BOSS, position.z);
-    }
-
-    private float renderPartialTick() {
-        Minecraft client = Minecraft.getInstance();
-        return client.gameRenderer.getMainCamera().getCameraEntityPartialTicks(client.getDeltaTracker());
     }
 
     private void drawEggSacPrediction(PoseStack poseStack, MultiBufferSource buffers, Vec3 center) {
@@ -795,6 +1070,12 @@ public final class TarantulaHelperFeature extends ConfigurableFeature<SlayerConf
         double halfY = Math.min(PREDICTION_GRID_HALF_SIZE, Math.max(0.10, eggSacPredictionHalfY * 0.4));
         for (int gridX = minGridX; gridX <= maxGridX; gridX++) {
             for (int gridZ = minGridZ; gridZ <= maxGridZ; gridZ++) {
+                // The corners of the square never carried a sac, so only the disc is drawn.
+                if (Math.hypot(gridX * PREDICTION_GRID_SPACING, gridZ * PREDICTION_GRID_SPACING)
+                    > EGG_SAC_PREDICTION_RADIUS) {
+                    continue;
+                }
+
                 double x = center.x + gridX * PREDICTION_GRID_SPACING;
                 double z = center.z + gridZ * PREDICTION_GRID_SPACING;
                 double y = gridYFor(client, x, center.y, z);
@@ -843,22 +1124,6 @@ public final class TarantulaHelperFeature extends ConfigurableFeature<SlayerConf
         }
 
         return false;
-    }
-
-    private void drawArrow(PoseStack poseStack, MultiBufferSource buffers, Entity boss) {
-        float partialTick = renderPartialTick();
-        Vec3 position = boss.getPosition(partialTick);
-        double x = position.x;
-        double y = position.y + boss.getBbHeight();
-        double z = position.z;
-        double shaftTopY = y + 2.25;
-        double shaftBottomY = y + 1.45;
-        double tipY = y + 1.05;
-
-        VertexConsumer vertices = buffers.getBuffer(RenderTypes.debugQuads());
-        PoseStack.Pose pose = poseStack.last();
-        drawBox(pose, vertices, x - 0.08, shaftBottomY, z - 0.08, x + 0.08, shaftTopY, z + 0.08, RED, GREEN, BLUE, ALPHA);
-        drawBox(pose, vertices, x - 0.32, tipY, z - 0.32, x + 0.32, shaftBottomY, z + 0.32, RED, GREEN, BLUE, ALPHA);
     }
 
     private void drawBox(

@@ -6,6 +6,18 @@ public final class DebugConfig extends ConfigCategory {
     private boolean dungeonMessages = true;
     private boolean interfaceMessages = true;
     private boolean tarantulaMessages = true;
+    private MenuFont menuFont = MenuFont.INTER;
+
+    public MenuFont menuFont() { return menuFont == null ? MenuFont.INTER : menuFont; }
+    public void setMenuFont(MenuFont value) { menuFont = value; save(); }
+
+    public enum MenuFont {
+        INTER("Inter"), MINECRAFT("Minecraft");
+
+        private final String label;
+        MenuFont(String label) { this.label = label; }
+        public String label() { return label; }
+    }
 
     public boolean enabled() {
         return enabled;

@@ -159,7 +159,7 @@ final class M7DragonTracker {
         RED("Red", 0xFFFF5555, new Vec3(27, 14, 59), new BlockPos(32, 22, 59)),
         ORANGE("Orange", 0xFFFFAA00, new Vec3(85, 14, 56), new BlockPos(80, 23, 56)),
         GREEN("Green", 0xFF55FF55, new Vec3(27, 14, 94), new BlockPos(32, 23, 94)),
-        BLUE("Blue", 0xFF5555FF, new Vec3(84, 14, 94), new BlockPos(79, 23, 94)),
+        BLUE("Blue", 0xFF55AAFF, new Vec3(84, 14, 94), new BlockPos(79, 23, 94)),
         PURPLE("Purple", 0xFFAA00AA, new Vec3(56, 14, 125), new BlockPos(56, 22, 120));
 
         private final String label;
@@ -173,7 +173,9 @@ final class M7DragonTracker {
             this.color = color;
             this.spawn = spawn;
             this.statueBlock = statueBlock;
-            range = new AABB(spawn.x - 13.5, 6, spawn.z - 13.5, spawn.x + 13.5, 29.5, spawn.z + 13.5);
+            // ponytail: Z from recorded kills (counted up to 17.54 out, failed at 19.92); X keeps
+            // Skytils' 13.5 because no kill has landed farther out in X. Refit once X has samples.
+            range = new AABB(spawn.x - 13.5, 6, spawn.z - 18, spawn.x + 13.5, 29.5, spawn.z + 18);
         }
 
         String label() { return label; }

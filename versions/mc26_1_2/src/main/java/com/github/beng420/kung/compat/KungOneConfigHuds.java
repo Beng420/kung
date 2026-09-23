@@ -42,7 +42,7 @@ final class KungOneConfigHuds {
         }
         CompatOverlayRenderer.register(graphics -> {
             if (HudManager.INSTANCE.isEditing()) {
-                for (var layout : layouts) KungHudPreviews.draw(graphics, layout, tracker);
+                for (var layout : layouts) if (layout.enabled()) KungHudPreviews.draw(graphics, layout, tracker);
             }
             return Unit.INSTANCE;
         });

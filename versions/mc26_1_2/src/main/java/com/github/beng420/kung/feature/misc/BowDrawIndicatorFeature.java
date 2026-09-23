@@ -150,9 +150,14 @@ public final class BowDrawIndicatorFeature extends ConfigurableFeature<MiscConfi
             graphics.fill(BAR_X, 17, WIDTH - BAR_X, 25, 0xFF343A44);
             graphics.fill(BAR_X, 17, BAR_X + Math.round(BAR_WIDTH * BowDrawProgress.power(ticks)), 25, color);
             int previousLabelEnd = 0;
-            for (int marker : config.bowDrawThresholds().stream().mapToInt(MiscConfig.BowDrawThreshold::ticks).distinct().sorted().toArray()) {
+            // Duplicate markers share one line, in the first one's color.
+            var markers = new java.util.TreeMap<Integer, Integer>();
+            for (var threshold : config.bowDrawThresholds()) markers.putIfAbsent(threshold.ticks(), threshold.color());
+            for (var line : markers.entrySet()) {
+                int marker = line.getKey();
                 int x = BAR_X + Math.round(BAR_WIDTH * BowDrawProgress.power(marker));
-                int markerColor = ticks >= marker ? 0xFFFFFFFF : 0xFF939BA7;
+                // Not reached yet: the same color at half strength.
+                int markerColor = ticks >= marker ? line.getValue() : (line.getValue() & 0x00FFFFFF) | 0x80000000;
                 graphics.fill(x - 1, 15, x, 27, markerColor);
                 String label = marker + "t";
                 int labelX = Math.min(x - font.width(label) / 2, WIDTH - 2 - font.width(label));

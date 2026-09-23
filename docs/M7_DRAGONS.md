@@ -1,15 +1,22 @@
-# M7 Dragon Helper
+# Wither Dragons
 
-Active module: Minecraft 26.1.2. **Dungeon > M7 Dragon Helper** is visible and
-active only for Beng114's developer account, in both Kung and native OneConfig.
-Its master defaults off; Spawn Markers, Statue Boxes and Count Notifications
-default on beneath that master. Enable it before dragons spawn: an unidentified
-dragon remains unassigned rather than being guessed from its later position.
+Active module: Minecraft 26.1.2. **Dungeon > Wither Dragons** holds everything for
+the M7 dragons behind one master switch (default off). Every account gets the
+**Debuff Tracker** (see [DUNGEON_DEBUFFS.md](DUNGEON_DEBUFFS.md)); the helper parts
+below are visible and active only for Beng114's developer account, in both Kung and
+native OneConfig. A config from before the merge keeps whichever of the old M7 Dragon
+Debuff / M7 Dragon Helper switches it had on until the master is first toggled.
+
+Rows open under the switch they depend on: Debuff Tracker > Track,
+Spawn Markers > Marker > Core Parts (Core only), Flight Paths > Path Part. Spawn
+Markers, Statue Boxes, Count Notifications and Flight Paths default on beneath the
+master. Enable it before dragons spawn: an unidentified dragon remains unassigned
+rather than being guessed from its later position.
 
 The feature requires confirmed Catacombs context plus M7 metadata. Wither King
 dialogue can establish the arena for this feature when the floor is unknown;
 explicit other floors/modes still win. Instance changes and disconnects clear its
-observations. Existing M7 Dragon Debuff, map and split settings are independent.
+observations. Map and split settings are independent.
 
 ## Markers and estimated statue ranges
 
@@ -33,8 +40,10 @@ not intersection with its large body or the interpolated body-box center.
 | Blue | 84 / 14 / 94 | 79 / 23 / 94 |
 | Purple | 56 / 14 / 125 | 56 / 22 / 120 |
 
-Each displayed range extends 13.5 blocks from the spawn in X and Z, with inclusive
-Y bounds 6 through 29.5. These are **Skytils community estimates, not documented
+Each displayed range extends 13.5 blocks from the spawn in X and 18 in Z, with
+inclusive Y bounds 6 through 29.5. Z was widened from Skytils' 13.5 after recorded
+kills counted up to 17.54 blocks out (Orange +Z, Green -Z, Blue +Z) and a Green kill
+failed at 19.92. X has no kill beyond 10.3 yet. These are **estimates, not documented
 exact server boxes**. Spawn identity requires the original spawn observation to
 be within four blocks of exactly one known spawn.
 
@@ -43,6 +52,30 @@ The range and origin-check reference is [Skytils' M7 implementation](https://git
 [Hypixel's March 8, 2022 patch](https://hypixel.net/threads/march-8th-small-dungeons-patch.4855706/)
 confirms that in-range particles exist, but supplies no exact range geometry.
 Particles are diagnostic observations only, not automatic count confirmation.
+
+## Aim point
+
+Flights repeat run after run: 18-38 recorded box-centre paths per statue (Red, Orange,
+Green, Blue) deviate by at most 0.26 blocks. **Aim Point** shows where to shoot so an
+arrow fired now meets the dragon's body, from the anchor's particle burst (median 5.05 s
+before spawn over 19 traced spawns) until 60 server ticks after spawn:
+
+- the body's position when the arrow arrives, raised by the arrow's drop;
+- vanilla arrow physics: 3 blocks/tick at full power, drag 0.99, gravity 0.05;
+- gray while an arrow fired now would land before the dragon exists, white once it lands on it.
+
+Auto picks by dungeon class. **Terminator** (Archer, Berserker) always fires at full speed;
+its marker grows one second before spawn, the cue to run in for the arrow stack.
+**Last Breath** (everyone else) fires on release: the current draw sets the arrow speed,
+so a weaker draw moves the aim for more lead and drop.
+
+Lead after spawn comes from `m7-dragon-timelines.jsonl`: every part of each dragon's
+first 60 server ticks, one row per tick, anchor-relative and shifted onto the last
+server position. Only complete windows are kept (a dragon killed early would freeze the
+aim), at most five per statue; the newest one drives the aim. Until a statue has one,
+the aim sits on the body without lead: on its spawn pose before spawn, on the live body
+after. Purple, usually killed at spawn, relies on this. Last Breath and Terminator
+arrow speeds are unmeasured.
 
 ## Count confirmation
 

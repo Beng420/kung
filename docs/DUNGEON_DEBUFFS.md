@@ -1,6 +1,6 @@
 # Dungeon debuff observations
 
-Dungeon > **Ice Spray Highlight** and **M7 Dragon Debuff** are independent,
+Dungeon > **Ice Spray Highlight** and **Wither Dragons > Debuff Tracker** are independent,
 default-off features in Minecraft 26.1.2. Neither requires Dungeon Map, Splits or
 Util > Hitboxes. They observe incoming packets and draw local UI; they never use
 an item, aim, attack or send party chat.
@@ -139,7 +139,7 @@ distant/overlapping targets, matching marker coordinates and unchanged render bo
 This fixes the identified coordinate mismatch; confirming that it resolves this
 exact live Goldor case still requires a run with the new JAR.
 
-## M7 Dragon Debuff
+## Debuff Tracker (Wither Dragons)
 
 Confirmed Catacombs M7 context and an observed Ender Dragon spawn in a recognized
 P5 spawn region establish each observation. A new entity UUID starts a fresh

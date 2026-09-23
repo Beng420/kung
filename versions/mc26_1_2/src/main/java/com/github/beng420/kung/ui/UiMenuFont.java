@@ -21,7 +21,10 @@ public final class UiMenuFont extends Font {
     static Provider menuProvider(Provider base) {
         return new Provider() {
             @Override public GlyphSource glyphs(FontDescription description) {
-                return base.glyphs(FontDescription.DEFAULT.equals(description) ? MENU : description);
+                // The developer font trial swaps Inter for the game font without a resource reload.
+                boolean inter = com.github.beng420.kung.config.KungConfig.get().debug.menuFont()
+                    == com.github.beng420.kung.config.category.DebugConfig.MenuFont.INTER;
+                return base.glyphs(inter && FontDescription.DEFAULT.equals(description) ? MENU : description);
             }
             @Override public EffectGlyph effect() { return base.effect(); }
         };

@@ -19,6 +19,17 @@ public final class UiTooltip {
         int viewportHeight,
         UiTheme theme
     ) {
+        draw(graphics, font, lines, x, 0, y, viewportWidth, viewportHeight, theme);
+    }
+
+    /** Odin-style info box: next to the hovered row instead of under the cursor. */
+    public static void drawBeside(GuiGraphicsExtractor graphics, Font font, List<String> lines, int rowLeft, int rowRight,
+                                  int y, int viewportWidth, int viewportHeight, UiTheme theme) {
+        draw(graphics, font, lines, -Math.max(1, rowLeft), rowRight, y, viewportWidth, viewportHeight, theme);
+    }
+
+    private static void draw(GuiGraphicsExtractor graphics, Font font, List<String> lines, int x, int rowRight,
+                             int y, int viewportWidth, int viewportHeight, UiTheme theme) {
         if (lines == null || lines.isEmpty()) {
             return;
         }
@@ -29,6 +40,9 @@ public final class UiTooltip {
             .limit(maxLines).toList();
         int width = wrapped.stream().mapToInt(font::width).max().orElse(0) + UiSpacing.MD * 2;
         int height = wrapped.size() * (font.lineHeight + UiSpacing.XS) + UiSpacing.SM * 2;
+        // Beside a row (x < 0 encodes its left edge): right of it, or left of it when the screen ends first.
+        if (x < 0 && rowRight + UiSpacing.SM + width + 1 <= viewportWidth) x = rowRight + UiSpacing.SM;
+        else if (x < 0) x = -x - UiSpacing.SM - width;
         x = Math.clamp(x, 1, Math.max(1, viewportWidth - width - 1));
         if (y + height + 1 > viewportHeight) y -= height + UiSpacing.MD * 2;
         y = Math.clamp(y, 1, Math.max(1, viewportHeight - height - 1));

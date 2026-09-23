@@ -7,6 +7,9 @@ import com.github.beng420.kung.feature.dungeon.DungeonStateTracker;
 import com.github.beng420.kung.feature.garden.FeastOverlayFeature;
 import com.github.beng420.kung.feature.misc.SuperpairsHelperFeature;
 import com.github.beng420.kung.feature.misc.BowDrawIndicatorFeature;
+import com.github.beng420.kung.feature.misc.FrozenBlazeHudFeature;
+import com.github.beng420.kung.feature.misc.PerformanceHudFeature;
+import com.github.beng420.kung.feature.misc.SackTrackerFeature;
 import com.github.beng420.kung.feature.safari.SafariOverlayFeature;
 import java.util.List;
 import java.util.Objects;
@@ -51,7 +54,7 @@ public final class KungHudLayout {
                 return new Bounds(bounds.x(), bounds.y(), bounds.width(), bounds.height());
             }, config.safari::x, config.safari::y, config.safari::setX, config.safari::setY,
                 config.safari::scale, config.safari::setScale, config.safari::enabled, config.safari::setEnabled),
-            new Entry("dragon_debuff", "M7 Dragon Debuff", () -> DragonDebuffHud.overlayBounds(config.dungeon),
+            new Entry("dragon_debuff", "Dragon Debuff", () -> DragonDebuffHud.overlayBounds(config.dungeon),
                 config.dungeon::dragonDebuffX, config.dungeon::dragonDebuffY,
                 config.dungeon::setDragonDebuffX, config.dungeon::setDragonDebuffY,
                 config.dungeon::dragonDebuffScale, config.dungeon::setDragonDebuffScale,
@@ -60,7 +63,22 @@ public final class KungHudLayout {
                 config.misc::bowDrawIndicatorX, config.misc::bowDrawIndicatorY,
                 config.misc::setBowDrawIndicatorX, config.misc::setBowDrawIndicatorY,
                 config.misc::bowDrawIndicatorScale, config.misc::setBowDrawIndicatorScale,
-                config.misc::bowDrawIndicatorEnabled, config.misc::setBowDrawIndicatorEnabled)
+                config.misc::bowDrawIndicatorEnabled, config.misc::setBowDrawIndicatorEnabled),
+            new Entry("frozen_blaze_hud", "Frozen Blaze HUD", () -> FrozenBlazeHudFeature.overlayBounds(config.misc),
+                config.misc::frozenBlazeHudX, config.misc::frozenBlazeHudY,
+                config.misc::setFrozenBlazeHudX, config.misc::setFrozenBlazeHudY,
+                config.misc::frozenBlazeHudScale, config.misc::setFrozenBlazeHudScale,
+                config.misc::frozenBlazeHudEnabled, config.misc::setFrozenBlazeHudEnabled),
+            new Entry("performance_hud", "Performance", () -> PerformanceHudFeature.overlayBounds(config.misc),
+                config.misc::performanceHudX, config.misc::performanceHudY,
+                config.misc::setPerformanceHudX, config.misc::setPerformanceHudY,
+                config.misc::performanceHudScale, config.misc::setPerformanceHudScale,
+                config.misc::performanceHudEnabled, config.misc::setPerformanceHudEnabled),
+            new Entry("sack_tracker", "Sack Tracker", () -> SackTrackerFeature.overlayBounds(config.misc),
+                config.misc::sackTrackerX, config.misc::sackTrackerY,
+                config.misc::setSackTrackerX, config.misc::setSackTrackerY,
+                config.misc::sackTrackerScale, config.misc::setSackTrackerScale,
+                config.misc::sackTrackerEnabled, config.misc::setSackTrackerEnabled)
         );
     }
 

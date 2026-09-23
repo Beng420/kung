@@ -30,8 +30,13 @@ public final class KungOneConfigHudTest {
         assertEquals(12F, wrapper.getX(), 0F);
         assertEquals(23F, wrapper.getY(), 0F);
         assertEquals(1F, wrapper.getScale(), 0F);
+        // Switched off: no space in OneConfig's editor, as its Odin wrapper does.
+        assertEquals(0F, wrapper.getScaledWidth(), 0F);
+        assertEquals(0F, wrapper.getScaledHeight(), 0F);
+        state.enabled[0] = true;
         assertEquals(120F, wrapper.getScaledWidth(), 0F);
         assertEquals(60F, wrapper.getScaledHeight(), 0F);
+        state.enabled[0] = false;
         wrapper.onDragStart();
         wrapper.onDragEnd();
         wrapper.save();
@@ -63,6 +68,7 @@ public final class KungOneConfigHudTest {
     @Test
     public void movingNativeBoundsPreservesContentOriginAndReadsLiveScale() {
         FakeHud state = new FakeHud();
+        state.enabled[0] = true;
         var wrapper = state.wrapper(List.of());
         wrapper.setX(90.4F);
         wrapper.setY(-10.6F);

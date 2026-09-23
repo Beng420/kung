@@ -101,7 +101,6 @@ public final class SplitsConfig extends ConfigCategory {
         save();
     }
 
-    public String predictionModeLabel() { return predictionMode().label(); }
     public void cyclePredictionMode() { setPredictionMode(predictionMode().next()); }
 
     public PredictionSource predictionSource() {

@@ -43,7 +43,7 @@ final class KungOneConfigTree {
                 }
                 master.addDisplayCondition(() -> feature.clickable() ? Property.Display.SHOWN : Property.Display.DISABLED);
                 put(master, category.name(), featureName);
-                addSettings(feature.settings(), prefix, "", category.name(), featureName, () -> true);
+                addSettings(feature.settings(), prefix, "", category.name(), featureName, () -> true, () -> true);
             }
         }
         refresh();
@@ -57,10 +57,6 @@ final class KungOneConfigTree {
             var defaultNode = defaults.tree.get(entry.getKey());
             if (defaultNode instanceof Property<?> defaultProperty && defaultProperty.get() != null) {
                 property.addMetadata("default", defaultProperty.get());
-            } else if ("Custom Sounds".equals(property.getMetadata("subcategory"))
-                && (property.type == double.class)) {
-                // Arbitrary user filenames have no default catalog entry. Both per-file multipliers default to 1x.
-                property.addMetadata("default", 1.0);
             }
         }
     }
@@ -73,17 +69,21 @@ final class KungOneConfigTree {
     }
 
     private void addSettings(List<SettingEntry> settings, String prefix, String parentLabel,
-                             String category, String feature, BooleanSupplier available) {
+                             String category, String feature, BooleanSupplier available, BooleanSupplier shown) {
         for (int index = 0; index < settings.size(); index++) {
             SettingEntry setting = settings.get(index);
+            // A hidden parent hides its whole branch, e.g. Core Parts and its toggles while Marker is Skeleton.
+            BooleanSupplier visible = () -> shown.getAsBoolean() && setting.visible();
             String label = parentLabel.isEmpty() ? setting.label() : parentLabel + " / " + setting.label();
             String key = prefix + "__" + (setting.kind() == SettingKind.LABEL ? "info_" + index : id(setting.label()));
+            // Repeated rows (every bow threshold has a "Ticks" slider) keep their label but not their key.
+            if (tree.map.containsKey(key)) key += "__" + index;
             String description = String.join("\n", setting.tooltip());
             Property<?> property = switch (setting.kind()) {
                 case TOGGLE -> property(key, label, description, setting.booleanSupplier()::getAsBoolean,
                     value -> { if (value != setting.booleanSupplier().getAsBoolean()) setting.toggle().run(); },
                     Boolean.class, Visualizer.SwitchVisualizer.class);
-                case STEPPER, STEPPER_REMOVE, SLIDER -> number(key, label, description, setting, feature);
+                case STEPPER, SLIDER -> number(key, label, description, setting, feature);
                 case CHOICE -> property(key, label, description, setting.intSupplier()::getAsInt,
                     setting.intConsumer()::accept, Integer.class, Visualizer.DropdownVisualizer.class);
                 case TEXT -> property(key, label, description, setting.textSupplier(),
@@ -98,27 +98,26 @@ final class KungOneConfigTree {
                 if (setting.kind() == SettingKind.CHOICE) {
                     property.addMetadata("options", setting.choices().toArray(String[]::new));
                 }
-                property.addDisplayCondition(() -> available.getAsBoolean() ? Property.Display.SHOWN : Property.Display.DISABLED);
+                property.addDisplayCondition(() -> !visible.getAsBoolean() ? Property.Display.HIDDEN
+                    : available.getAsBoolean() ? Property.Display.SHOWN : Property.Display.DISABLED);
                 put(property, category, feature);
             }
-            if (setting.kind() == SettingKind.STEPPER_REMOVE) {
+            if (setting.kind() == SettingKind.COLOR_REMOVE) {
                 put(button(key + "__remove", label + " / Remove", description, "Remove", setting.cycleChoice()), category, feature);
             }
             if (!setting.children().isEmpty()) {
                 BooleanSupplier childAvailable = setting.kind() == SettingKind.TOGGLE
                     ? () -> available.getAsBoolean() && setting.booleanSupplier().getAsBoolean() : available;
-                addSettings(setting.children(), key, label, category, feature, childAvailable);
+                addSettings(setting.children(), key, label, category, feature, childAvailable, visible);
             }
         }
     }
 
     private Property<?> number(String key, String label, String description, SettingEntry setting, String feature) {
-        double divisor = feature.equals("Custom Sounds")
-            ? setting.label().contains("Pitch") ? 100.0 : setting.label().contains("Volume") ? 10.0 : 1.0
-            : setting.label().equals("Title Time") ? 10.0 : 1.0;
-        String unit = setting.kind() == SettingKind.STEPPER_REMOVE ? "ticks" : setting.label().equals("Title Time") ? "s"
+        double divisor = setting.label().equals("Title Time") ? 10.0 : 1.0;
+        String unit = setting.label().equals("Title Time") ? "s"
             : divisor > 1.0 ? "x"
-            : setting.label().contains("Alpha") || feature.equals("6th Visitor Alarm") && setting.label().equals("Volume")
+            : setting.label().contains("Alpha")
                 ? "%" : "";
         String shownLabel = unit.isEmpty() ? label : label + " (" + unit + ")";
         Property<?> number;

@@ -34,8 +34,9 @@ final class KungOneConfigHud implements OneConfigHudWrapper {
     @Override public void setY(float y) { if (writesAllowed.getAsBoolean()) layout.moveY(y); }
     @Override public float getScale() { return layout.scale(); }
     @Override public void setScale(float scale) { if (writesAllowed.getAsBoolean()) layout.scale(scale); }
-    @Override public float getScaledWidth() { return layout.bounds().width(); }
-    @Override public float getScaledHeight() { return layout.bounds().height(); }
+    // OneConfig's editor draws hidden HUDs dimmed; a switched-off Kung HUD takes no space there at all.
+    @Override public float getScaledWidth() { return layout.enabled() ? layout.bounds().width() : 0; }
+    @Override public float getScaledHeight() { return layout.enabled() ? layout.bounds().height() : 0; }
     // Proportional resize goes through setScale; dimensions are measured by Kung's renderers.
     @Override public void setScaledWidth(float width) { }
     @Override public void setScaledHeight(float height) { }

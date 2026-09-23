@@ -1,8 +1,10 @@
 package com.github.beng420.kung.config;
 
 import com.github.beng420.kung.config.category.HitboxesConfig;
+import com.github.beng420.kung.feature.misc.HitboxesFeature;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
@@ -56,6 +58,13 @@ final class HitboxSettings implements Supplier<List<SettingEntry>> {
         client.setScreen(new HitboxEditorScreen(parent, config, id));
     }
 
+    /** What was around the player in the last minute first, then every vanilla entity type. */
+    static List<String> addableIds() {
+        Set<String> ids = new LinkedHashSet<>(HitboxesFeature.recentIds());
+        ids.addAll(entityIds());
+        return List.copyOf(ids);
+    }
+
     static List<String> entityIds() {
         return BuiltInRegistries.ENTITY_TYPE.keySet().stream().map(Object::toString)
             .sorted(Comparator.comparing(HitboxSettings::name).thenComparing(Comparator.naturalOrder())).toList();
@@ -66,6 +75,24 @@ final class HitboxSettings implements Supplier<List<SettingEntry>> {
         return all.stream().filter(id -> !selected.contains(id))
             .filter(id -> name(id).toLowerCase(Locale.ROOT).contains(needle)
                 || id.toLowerCase(Locale.ROOT).replace('_', ' ').contains(needle)).toList();
+    }
+
+    /**
+     * A typed item name also becomes an item entry (boxes that item where an armor stand holds it,
+     * e.g. a thrown Bonemerang), and any typed name a SkyBlock mob. Both last, so Enter still picks
+     * a vanilla entity first.
+     */
+    static List<String> withTypedEntries(List<String> matches, Set<String> selected, String query) {
+        List<String> result = new ArrayList<>(matches);
+        String path = query.strip().toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9_./-]+", "_");
+        var item = path.isEmpty() ? null : net.minecraft.resources.Identifier.tryParse("minecraft:" + path);
+        if (item != null && BuiltInRegistries.ITEM.containsKey(item)) {
+            String id = HitboxesFeature.ITEM + path;
+            if (!result.contains(id) && !selected.contains(id)) result.add(id);
+        }
+        String typed = HitboxesFeature.skyBlockId(query);
+        if (typed != null && !result.contains(typed) && !selected.contains(typed)) result.add(typed);
+        return List.copyOf(result);
     }
 
     static String name(String id) {

@@ -40,7 +40,6 @@ import net.minecraft.world.item.ItemStack;
 
 public final class CustomSoundsFeature extends ConfigurableFeature<MiscConfig> {
     public static final CustomSoundsFeature INSTANCE = new CustomSoundsFeature();
-    private static final String SOUND_DIRECTORY_LABEL = "config/kung/custom-sounds";
     private static final String BUNDLED_SOUND_RESOURCE_PREFIX = "/assets/kung/sounds/custom/";
     private static final List<String> BUNDLED_SOUND_NAMES = List.of(
         "kung_arrow_ping.wav",
@@ -61,6 +60,7 @@ public final class CustomSoundsFeature extends ConfigurableFeature<MiscConfig> {
     private static final WitherShieldSoundTimer SHIELD_TIMER = new WitherShieldSoundTimer();
     private static final Map<String, CachedSound> SOUND_CACHE = new ConcurrentHashMap<>();
     private static volatile List<String> availableSounds = List.of();
+    private static volatile long lastScanMillis;
     private static Object lastLevel;
     private static boolean wasEnabled;
 
@@ -111,14 +111,24 @@ public final class CustomSoundsFeature extends ConfigurableFeature<MiscConfig> {
         }
     }
 
-    public static String soundsFolderStatus() {
-        if (availableSounds.isEmpty()) {
-            return "Folder: " + SOUND_DIRECTORY_LABEL;
-        }
-        return "Files: " + String.join(", ", availableSounds);
+    /** Files in the sounds folder; the menu asks every frame, so the folder is rescanned at most every 2 s. */
+    public static List<String> availableSounds() {
+        if (System.currentTimeMillis() - lastScanMillis > 2000) refreshSoundIndex();
+        return availableSounds;
+    }
+
+    public static Path soundsFolder() {
+        return soundsDirectory();
+    }
+
+    /** Opens the folder in the system file browser (Explorer on Windows). */
+    public static void openSoundsFolder() {
+        refreshSoundIndex();
+        net.minecraft.util.Util.getPlatform().openPath(soundsDirectory());
     }
 
     public static void refreshSoundIndex() {
+        lastScanMillis = System.currentTimeMillis();
         try {
             Path directory = soundsDirectory();
             Files.createDirectories(directory);
@@ -165,16 +175,20 @@ public final class CustomSoundsFeature extends ConfigurableFeature<MiscConfig> {
         playConfigured(INSTANCE.config().customArrowHitSounds(), CustomSoundEvent.ARROW_HIT);
     }
 
-    public static void playArrowHitSound(String soundName) {
-        playSingle(soundName, CustomSoundEvent.ARROW_HIT);
-    }
 
     public static void playWitherShieldExpire() {
         playConfigured(INSTANCE.config().customWitherShieldExpireSounds(), CustomSoundEvent.WITHER_SHIELD_EXPIRE);
     }
 
-    public static void playWitherShieldExpireSound(String soundName) {
-        playSingle(soundName, CustomSoundEvent.WITHER_SHIELD_EXPIRE);
+    /** The sound screen's Test: plays even while Custom Sounds is off, so sounds can be tuned first. */
+    public static void testArrowHit() {
+        for (String name : configuredSoundNames(INSTANCE.config().customArrowHitSounds())) playSingle(name, CustomSoundEvent.ARROW_HIT, false);
+    }
+
+    public static void testWitherShieldExpire() {
+        for (String name : configuredSoundNames(INSTANCE.config().customWitherShieldExpireSounds())) {
+            playSingle(name, CustomSoundEvent.WITHER_SHIELD_EXPIRE, false);
+        }
     }
 
     public static List<String> configuredSoundNames(String configuredSounds) {
@@ -254,7 +268,11 @@ public final class CustomSoundsFeature extends ConfigurableFeature<MiscConfig> {
     }
 
     private static void playSingle(String soundName, CustomSoundEvent event) {
-        if (!enabled()) {
+        playSingle(soundName, event, true);
+    }
+
+    private static void playSingle(String soundName, CustomSoundEvent event, boolean requireEnabled) {
+        if (requireEnabled && !enabled()) {
             return;
         }
         String normalized = normalizeSoundName(soundName);
@@ -263,14 +281,12 @@ public final class CustomSoundsFeature extends ConfigurableFeature<MiscConfig> {
         }
         MiscConfig config = INSTANCE.config();
         int volumeTenths = event == CustomSoundEvent.ARROW_HIT
-            ? config.customArrowHitSoundVolumeTenths(normalized)
-            : config.customWitherShieldExpireSoundVolumeTenths(normalized);
+            ? config.customArrowHitVolumeTenths() : config.customWitherShieldExpireVolumeTenths();
         if (volumeTenths <= 0) {
             return;
         }
         int pitchHundredths = event == CustomSoundEvent.ARROW_HIT
-            ? config.customArrowHitSoundPitchHundredths(normalized)
-            : config.customWitherShieldExpireSoundPitchHundredths(normalized);
+            ? config.customArrowHitPitchHundredths() : config.customWitherShieldExpirePitchHundredths();
         float volume = Math.clamp(volumeTenths / 10.0f, 0.0f, 5.0f);
         float pitch = Math.clamp(pitchHundredths / 100.0f, 0.25f, 3.0f);
         long generation = PLAYBACK_GENERATION.get();

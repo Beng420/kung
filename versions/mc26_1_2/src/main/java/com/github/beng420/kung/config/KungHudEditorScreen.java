@@ -169,8 +169,9 @@ public final class KungHudEditorScreen extends Screen {
         return super.keyPressed(event);
     }
 
+    /** Only the HUDs that are switched on; the rest have nothing to place. */
     private List<Entry> hudEntries() {
-        return KungHudLayout.entries(KungConfig.get(), dungeonStateTracker);
+        return KungHudLayout.entries(KungConfig.get(), dungeonStateTracker).stream().filter(Entry::enabled).toList();
     }
 
     private void drawHudBox(GuiGraphicsExtractor graphics, Entry entry, boolean hovered, boolean draggingEntry) {
@@ -185,7 +186,7 @@ public final class KungHudEditorScreen extends Screen {
             SafariOverlayFeature.drawPreview(graphics, KungConfig.get().safari);
         } else if (entry.id().equals("feast_progress")) {
             FeastOverlayFeature.drawPreview(graphics, KungConfig.get().feast);
-        } else if (entry.id().equals("dragon_debuff") || entry.id().equals("bow_draw_indicator")) {
+        } else if (entry.id().equals("dragon_debuff") || entry.id().equals("bow_draw_indicator") || entry.id().equals("frozen_blaze_hud")) {
             KungHudPreviews.draw(graphics, entry, dungeonStateTracker);
         } else {
             drawCentered(graphics, entry.name(), bounds.x() + bounds.width() / 2, bounds.y() + bounds.height() / 2 - 4);

@@ -1,6 +1,7 @@
 package com.github.beng420.kung.config;
 
 import com.github.beng420.kung.config.category.HitboxesConfig;
+import com.github.beng420.kung.feature.misc.HitboxesFeature;
 import com.github.beng420.kung.ui.UiBounds;
 import com.github.beng420.kung.ui.UiMenuFont;
 import com.github.beng420.kung.ui.UiScrollList;
@@ -11,6 +12,7 @@ import com.mojang.blaze3d.platform.NativeImage;
 import java.awt.Color;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.screens.Screen;
@@ -34,9 +36,11 @@ final class HitboxEditorScreen extends Screen {
     private final Screen parent;
     private final HitboxesConfig config;
     private final String entityId;
+    private final java.util.function.IntConsumer saveColor;
     private final Font menuFont;
     private final UiTextField input;
     private final List<String> all;
+    private final Set<String> recent;
     private final UiScrollList scroll = new UiScrollList();
     private List<String> matches = List.of();
     private String previousQuery;
@@ -50,18 +54,32 @@ final class HitboxEditorScreen extends Screen {
     private int y;
 
     HitboxEditorScreen(Screen parent, HitboxesConfig config, String entityId) {
-        super(Component.literal(entityId == null ? "Add Hitbox" : HitboxSettings.name(entityId) + " Color"));
+        this(parent, config, entityId, entityId == null ? "Add Hitbox" : HitboxSettings.name(entityId) + " Color",
+            entityId == null ? 0 : config.entities().getOrDefault(entityId, HitboxesConfig.DEFAULT_COLOR),
+            color -> config.setColor(entityId, color));
+    }
+
+    /** The color popup alone, for anything else with a color (bow draw threshold lines). */
+    HitboxEditorScreen(Screen parent, String title, int color, java.util.function.IntConsumer saveColor) {
+        this(parent, null, "", title, color, saveColor);
+    }
+
+    private HitboxEditorScreen(Screen parent, HitboxesConfig config, String entityId, String title, int color,
+                               java.util.function.IntConsumer saveColor) {
+        super(Component.literal(title));
         this.parent = parent;
         this.config = config;
         this.entityId = entityId;
+        this.saveColor = saveColor;
         menuFont = UiMenuFont.wrap(font);
         input = new UiTextField(menuFont, Component.literal(entityId == null ? "Search entities" : "Hex color"))
             .maxLength(entityId == null ? 120 : 7).canLoseFocus(false).textShadow(false)
             .hint(entityId == null ? "Search entities..." : "#RRGGBB");
         input.setFocused(true);
-        all = entityId == null ? HitboxSettings.entityIds() : List.of();
+        all = entityId == null ? HitboxSettings.addableIds() : List.of();
+        recent = entityId == null ? Set.copyOf(HitboxesFeature.recentIds()) : Set.of();
         if (entityId != null) {
-            setColor(config.entities().getOrDefault(entityId, HitboxesConfig.DEFAULT_COLOR));
+            setColor(color);
             updateHex();
         }
     }
@@ -129,7 +147,8 @@ final class HitboxEditorScreen extends Screen {
     private void refreshSearch() {
         if (input.value().equals(previousQuery)) return;
         previousQuery = input.value();
-        matches = HitboxSettings.search(all, config.entities().keySet(), previousQuery);
+        matches = HitboxSettings.withTypedEntries(
+            HitboxSettings.search(all, config.entities().keySet(), previousQuery), config.entities().keySet(), previousQuery);
         selected = 0;
         scroll.reset();
     }
@@ -146,8 +165,8 @@ final class HitboxEditorScreen extends Screen {
                 bounds.contains(mouseX, mouseY) || index == selected ? THEME.panelSoft() : THEME.control());
             graphics.text(menuFont, menuFont.plainSubstrByWidth(HitboxSettings.name(id), bounds.width() - 12),
                 bounds.x() + 6, bounds.y() + 3, THEME.text(), false);
-            graphics.text(menuFont, menuFont.plainSubstrByWidth(id, bounds.width() - 12),
-                bounds.x() + 6, bounds.y() + 13, THEME.muted(), false);
+            graphics.text(menuFont, menuFont.plainSubstrByWidth(recent.contains(id) ? id + "  \u2022 seen nearby" : id,
+                bounds.width() - 12), bounds.x() + 6, bounds.y() + 13, THEME.muted(), false);
         }
         if (matches.size() > VISIBLE_ROWS) {
             int height = VISIBLE_ROWS * ROW_HEIGHT;
@@ -273,7 +292,7 @@ final class HitboxEditorScreen extends Screen {
 
     private void save() {
         Integer parsed = parseHex(input.value());
-        if (parsed != null) { config.setColor(entityId, parsed); onClose(); }
+        if (parsed != null) { saveColor.accept(parsed); onClose(); }
     }
 
     private void dragColor(int mx, int my) {

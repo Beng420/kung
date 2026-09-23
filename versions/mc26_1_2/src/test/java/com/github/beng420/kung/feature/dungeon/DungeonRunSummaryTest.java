@@ -39,7 +39,22 @@ public final class DungeonRunSummaryTest {
             stats.sendRunSummary(plan, String::length, line -> lines.add(line.getString()));
             assertTrue(lines.stream().anyMatch(line -> line.contains("Run Stats")));
             assertTrue(lines.stream().anyMatch(line -> line.contains("Secrets 52/58")));
+            assertTrue(lines.stream().anyMatch(line -> line.contains("Player Stats")));
             assertTrue(lines.stream().anyMatch(line -> line.contains("Alice") && line.contains("12/52 Secrets")));
+
+            // Each half switches off on its own.
+            lines.clear();
+            config.setPlayerStatsReportEnabled(false);
+            stats.sendRunSummary(plan, String::length, line -> lines.add(line.getString()));
+            assertTrue(lines.stream().anyMatch(line -> line.contains("Secrets 52/58")));
+            assertFalse(lines.stream().anyMatch(line -> line.contains("Player Stats") || line.contains("Alice")));
+            lines.clear();
+            config.setPlayerStatsReportEnabled(true);
+            config.setRunStatsReportEnabled(false);
+            stats.sendRunSummary(plan, String::length, line -> lines.add(line.getString()));
+            assertFalse(lines.stream().anyMatch(line -> line.contains("Run Stats") || line.contains("Secrets 52/58")));
+            assertTrue(lines.stream().anyMatch(line -> line.contains("Alice")));
+            config.setRunStatsReportEnabled(true);
 
             // A summary already prepared before a late toggle must also stay silent.
             lines.clear();

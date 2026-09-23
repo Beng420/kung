@@ -4,6 +4,7 @@ import static net.fabricmc.fabric.api.client.command.v2.ClientCommands.literal;
 
 import com.github.beng420.kung.config.KungConfig;
 import com.github.beng420.kung.feature.dungeon.M7DragonFeature;
+import com.github.beng420.kung.feature.slayer.TarantulaHelperFeature;
 import com.github.beng420.kung.message.KungMessages;
 import com.github.beng420.kung.runtime.KungDeveloperAccess;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
@@ -25,7 +26,9 @@ final class DeveloperCommandGroup {
                     if (!KungDeveloperAccess.allowed()) return 0;
                     context.getSource().getClient().keyboardHandler.setClipboard(M7DragonFeature.INSTANCE.developerReport());
                     return reply(context.getSource(), "Dragon measurements copied.");
-                }))));
+                })))
+            .then(literal("tara").executes(context -> reply(context.getSource(),
+                TarantulaHelperFeature.INSTANCE.eggSacGridReport()))));
     }
 
     private static int diagnostics(FabricClientCommandSource source, boolean enabled) {

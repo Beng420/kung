@@ -110,8 +110,11 @@ show 302; the corrected estimate is 292, then 307 after the puzzle is confirmed.
 
 ## Room credit and summary
 
-`Dungeon > Player Stats` gates the entire end-of-run chat summary: heading, rooms,
-score, party secrets, crypts and player rows. A disabled switch also consumes a
+`Dungeon > Run Reports` gates the entire end-of-run chat summary. It comes in two
+messages with their own switches: **Run Stats** (rooms, score, secrets, crypts, party
+secrets) and **Player Stats** (personal-secret availability and one row per player).
+Split times are held about half a second, so they print after Hypixel's score report
+instead of inside it. A disabled master switch also consumes a
 pending summary without waiting for final API fetches, including the instance-exit
 flush. Checking again at output time covers disabling the feature after completion.
 Shared statistics remain available to the map and other enabled consumers.

@@ -40,7 +40,17 @@ public final class DungeonStateTracker {
     private final DungeonRoomRepository roomRepository;
     private final DungeonScanRecorder scanRecorder = new DungeonScanRecorder();
     private final DungeonRunStats runStats = new DungeonRunStats();
-    private final DungeonSplitTracker splitTracker = new DungeonSplitTracker();
+    /**
+     * Hypixel's score report arrives in the same moment the run ends; printing the splits right
+     * away landed them between its header and the rest. Hold them until the report is through.
+     */
+    private final DungeonSplitTracker splitTracker = new DungeonSplitTracker(notices -> {
+        this.pendingSplitSummary = notices;
+        this.pendingSplitSummaryTick = this.dungeonTick + SPLIT_SUMMARY_DELAY_TICKS;
+    });
+    private List<DungeonSplitMessages.Notice> pendingSplitSummary;
+    private long pendingSplitSummaryTick;
+    private static final long SPLIT_SUMMARY_DELAY_TICKS = 10;
     private final BloodRushHelperFeature bloodRushHelper = BloodRushHelperFeature.INSTANCE;
     private boolean dungeonInstanceActive;
     // Commit scan readiness only after instance setup/reset reaches its existing boundary.
@@ -802,6 +812,12 @@ public final class DungeonStateTracker {
     }
 
     private void observeDungeonMessage(Minecraft client, String text, boolean overlay, DungeonDeathTracker.MessageSource source) {
+        // Before canProcessDungeonRunMessage: an enrage is a chat line and needs neither an active
+        // dungeon instance nor a lifecycle signal. Behind that gate it failed silently.
+        if (!overlay) {
+            WishAlert.observeMessage(client, text, com.github.beng420.kung.config.KungConfig.get().dungeon,
+                runStats.selfDungeonClass());
+        }
         observeRunStartSignal(client, text);
         if (!canProcessDungeonRunMessage(client)) {
             return;
@@ -1633,6 +1649,10 @@ public final class DungeonStateTracker {
             syncLiveRooms(client);
             bloodRushHelper.observeProgress(client, this);
             bloodRushHelper.maybeShowDoorTitle(client, this);
+        }
+        if (pendingSplitSummary != null && dungeonTick >= pendingSplitSummaryTick) {
+            DungeonSplitMessages.send(pendingSplitSummary);
+            pendingSplitSummary = null;
         }
         if (pendingRunSummaryTick != Long.MIN_VALUE && dungeonTick >= pendingRunSummaryTick) {
             sendRunSummaryOnce(client);

@@ -6,6 +6,9 @@ import com.github.beng420.kung.feature.dungeon.DungeonStateTracker;
 import com.github.beng420.kung.feature.garden.FeastOverlayFeature;
 import com.github.beng420.kung.feature.safari.SafariOverlayFeature;
 import com.github.beng420.kung.feature.misc.BowDrawIndicatorFeature;
+import com.github.beng420.kung.feature.misc.FrozenBlazeHudFeature;
+import com.github.beng420.kung.feature.misc.PerformanceHudFeature;
+import com.github.beng420.kung.feature.misc.SackTrackerFeature;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 
@@ -24,6 +27,9 @@ public final class KungHudPreviews {
             case "safari_uniques" -> SafariOverlayFeature.drawPreview(graphics, config.safari);
             case "dragon_debuff" -> DragonDebuffHud.drawPreview(graphics, config.dungeon);
             case "bow_draw_indicator" -> BowDrawIndicatorFeature.drawPreview(graphics, config.misc);
+            case "frozen_blaze_hud" -> FrozenBlazeHudFeature.drawPreview(graphics, config.misc);
+            case "performance_hud" -> PerformanceHudFeature.drawPreview(graphics, config.misc);
+            case "sack_tracker" -> SackTrackerFeature.drawPreview(graphics, config.misc);
             // Map and Superpairs retain the safe labeled placeholders used by /kung hud.
             case "dungeon_map", "superpairs" -> drawPlaceholder(graphics, entry);
             default -> { }

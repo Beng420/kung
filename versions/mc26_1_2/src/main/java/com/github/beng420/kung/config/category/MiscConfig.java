@@ -8,16 +8,38 @@ import java.util.Map;
 
 public final class MiscConfig extends ConfigCategory {
     private boolean lobbyHopHelperEnabled = false;
+    private boolean lobbyHopTitleEnabled = true;
+    private boolean lobbyHopChatEnabled = true;
     private boolean bowDrawIndicatorEnabled = false;
     private int bowDrawIndicatorX = 6;
     private int bowDrawIndicatorY = 160;
     private int bowDrawIndicatorScale = 100;
     private List<BowDrawThreshold> bowDrawThresholds = defaultBowDrawThresholds();
+    private boolean frozenBlazeHudEnabled = false;
+    private int frozenBlazeHudX = 6;
+    private int frozenBlazeHudY = 210;
+    private int frozenBlazeHudScale = 100;
+    private boolean performanceHudEnabled = false;
+    private int performanceHudX = 6;
+    private int performanceHudY = 120;
+    private int performanceHudScale = 100;
+    private boolean performanceGraphTps = false;
+    private boolean performanceGraphFps = false;
+    private boolean performanceGraphPing = false;
+    private boolean sackTrackerEnabled = false;
+    private String sackTrackerKeybind = "";
+    private boolean sackTrackerInMenus = true;
+    private int sackTrackerX = 6;
+    private int sackTrackerY = 240;
+    private int sackTrackerScale = 100;
+    private List<SackItem> sackTrackerItems = new ArrayList<>();
     private boolean hypixelApiEnabled = false;
     private String hypixelApiKey = "";
 
     private boolean chatCommandsEnabled = false;
     private boolean chatEmotesEnabled = false;
+    private boolean chatEmotesReplaceWords = false;
+    private List<ChatEmote> customChatEmotes = new ArrayList<>();
 
     private boolean c50ChatCommandEnabled = true;
     private boolean c50PartyCommandsEnabled = true;
@@ -53,10 +75,6 @@ public final class MiscConfig extends ConfigCategory {
     private String customWitherShieldExpireSounds = "kung_wither_fade.wav";
     private int customWitherShieldExpireVolumeTenths = 10;
     private int customWitherShieldExpirePitchHundredths = 100;
-    private Map<String, Integer> customArrowHitSoundVolumeTenths = new HashMap<>();
-    private Map<String, Integer> customArrowHitSoundPitchHundredths = new HashMap<>();
-    private Map<String, Integer> customWitherShieldExpireSoundVolumeTenths = new HashMap<>();
-    private Map<String, Integer> customWitherShieldExpireSoundPitchHundredths = new HashMap<>();
 
     public boolean lobbyHopHelperEnabled() { return lobbyHopHelperEnabled; }
     public boolean bowDrawIndicatorEnabled() { return bowDrawIndicatorEnabled; }
@@ -68,6 +86,99 @@ public final class MiscConfig extends ConfigCategory {
     public int bowDrawIndicatorScale() { return bowDrawIndicatorScale; }
     public void setBowDrawIndicatorScale(int value) { bowDrawIndicatorScale = Math.clamp(value, 25, 300); save(); }
     public List<BowDrawThreshold> bowDrawThresholds() { return Collections.unmodifiableList(bowDrawThresholds); }
+    public boolean frozenBlazeHudEnabled() { return frozenBlazeHudEnabled; }
+    public void setFrozenBlazeHudEnabled(boolean value) { frozenBlazeHudEnabled = value; save(); }
+    public int frozenBlazeHudX() { return frozenBlazeHudX; }
+    public void setFrozenBlazeHudX(int value) { frozenBlazeHudX = value; save(); }
+    public int frozenBlazeHudY() { return frozenBlazeHudY; }
+    public void setFrozenBlazeHudY(int value) { frozenBlazeHudY = value; save(); }
+    public int frozenBlazeHudScale() { return frozenBlazeHudScale; }
+    public void setFrozenBlazeHudScale(int value) { frozenBlazeHudScale = Math.clamp(value, 25, 300); save(); }
+    public boolean performanceHudEnabled() { return performanceHudEnabled; }
+    public void setPerformanceHudEnabled(boolean value) { performanceHudEnabled = value; save(); }
+    public int performanceHudX() { return performanceHudX; }
+    public void setPerformanceHudX(int value) { performanceHudX = value; save(); }
+    public int performanceHudY() { return performanceHudY; }
+    public void setPerformanceHudY(int value) { performanceHudY = value; save(); }
+    public int performanceHudScale() { return performanceHudScale; }
+    public void setPerformanceHudScale(int value) { performanceHudScale = Math.clamp(value, 25, 300); save(); }
+    public boolean performanceGraphTps() { return performanceGraphTps; }
+    public void setPerformanceGraphTps(boolean value) { performanceGraphTps = value; save(); }
+    public boolean performanceGraphFps() { return performanceGraphFps; }
+    public void setPerformanceGraphFps(boolean value) { performanceGraphFps = value; save(); }
+    public boolean performanceGraphPing() { return performanceGraphPing; }
+    public void setPerformanceGraphPing(boolean value) { performanceGraphPing = value; save(); }
+    public boolean sackTrackerEnabled() { return sackTrackerEnabled; }
+    public void setSackTrackerEnabled(boolean value) { sackTrackerEnabled = value; save(); }
+    public String sackTrackerKeybind() { return sackTrackerKeybind == null ? "" : sackTrackerKeybind; }
+    public void setSackTrackerKeybind(String value) { sackTrackerKeybind = value == null ? "" : value; save(); }
+    public boolean sackTrackerInMenus() { return sackTrackerInMenus; }
+    public void setSackTrackerInMenus(boolean value) { sackTrackerInMenus = value; save(); }
+    public int sackTrackerX() { return sackTrackerX; }
+    public void setSackTrackerX(int value) { sackTrackerX = value; save(); }
+    public int sackTrackerY() { return sackTrackerY; }
+    public void setSackTrackerY(int value) { sackTrackerY = value; save(); }
+    public int sackTrackerScale() { return sackTrackerScale; }
+    public void setSackTrackerScale(int value) { sackTrackerScale = Math.clamp(value, 25, 300); save(); }
+    public List<SackItem> sackTrackerItems() { return Collections.unmodifiableList(sackTrackerItems); }
+
+    public SackItem sackTrackerItem(String name) {
+        for (SackItem item : sackTrackerItems) if (item.name().equals(name)) return item;
+        return null;
+    }
+
+    /** Tracks the item, or stops tracking it when it already is; true when it is tracked now. */
+    public boolean toggleSackTrackerItem(String name, int color, long amount) {
+        SackItem existing = sackTrackerItem(name);
+        if (existing != null) sackTrackerItems.remove(existing);
+        else sackTrackerItems.add(new SackItem(name, color, amount, 0));
+        save();
+        return existing == null;
+    }
+
+    public void setSackTrackerAmount(SackItem item, long amount) {
+        if (!sackTrackerItems.contains(item) || item.amount == Math.max(0, amount)) return;
+        item.amount = Math.max(0, amount);
+        save();
+    }
+
+    public void setSackTrackerGoal(SackItem item, long goal) {
+        if (!sackTrackerItems.contains(item) || item.goal == Math.max(0, goal)) return;
+        item.goal = Math.max(0, goal);
+        save();
+    }
+
+    public void removeSackTrackerItem(SackItem item) {
+        if (sackTrackerItems.remove(item)) save();
+    }
+
+    public void clearSackTrackerItems() {
+        if (sackTrackerItems.isEmpty()) return;
+        sackTrackerItems.clear();
+        save();
+    }
+
+    /** Identity stays stable while editing, like ChatEmote, so rows keep owning their entry. */
+    public static final class SackItem {
+        private String name = "";
+        private int color = 0xFFFFFF;
+        private long amount;
+        private long goal;
+
+        private SackItem() { }
+
+        public SackItem(String name, int color, long amount, long goal) {
+            this.name = name;
+            this.color = color;
+            this.amount = amount;
+            this.goal = goal;
+        }
+
+        public String name() { return name == null ? "" : name; }
+        public int color() { return color; }
+        public long amount() { return amount; }
+        public long goal() { return goal; }
+    }
 
     public void addBowDrawThreshold() {
         if (bowDrawThresholds.size() >= 20) return;
@@ -82,7 +193,13 @@ public final class MiscConfig extends ConfigCategory {
 
     public void setBowDrawThreshold(BowDrawThreshold entry, int ticks) {
         if (!bowDrawThresholds.contains(entry)) return;
-        entry.ticks = Math.clamp(ticks, 1, 20);
+        entry.ticks = Math.clamp(ticks, 0, 20);
+        save();
+    }
+
+    public void setBowDrawThresholdColor(BowDrawThreshold entry, int color) {
+        if (!bowDrawThresholds.contains(entry)) return;
+        entry.color = color | 0xFF000000;
         save();
     }
 
@@ -91,31 +208,65 @@ public final class MiscConfig extends ConfigCategory {
     }
 
     private static List<BowDrawThreshold> defaultBowDrawThresholds() {
-        return new ArrayList<>(List.of(new BowDrawThreshold(3), new BowDrawThreshold(20)));
+        return new ArrayList<>(List.of(new BowDrawThreshold(3), new BowDrawThreshold(5), new BowDrawThreshold(8)));
     }
 
     /** Identity stays stable while editing a value, so list/native controls keep their row ownership. */
     public static final class BowDrawThreshold {
         private int ticks;
+        /** 0 in configs from before colors existed: those lines stay white. */
+        private int color;
         private BowDrawThreshold(int ticks) { this.ticks = ticks; }
         public int ticks() { return ticks; }
+        public int color() { return color == 0 ? 0xFFFFFFFF : color | 0xFF000000; }
     }
     public void setLobbyHopHelperEnabled(boolean value) { lobbyHopHelperEnabled = value; save(); }
+    public boolean lobbyHopTitleEnabled() { return lobbyHopTitleEnabled; }
+    public void setLobbyHopTitleEnabled(boolean value) { lobbyHopTitleEnabled = value; save(); }
+    public boolean lobbyHopChatEnabled() { return lobbyHopChatEnabled; }
+    public void setLobbyHopChatEnabled(boolean value) { lobbyHopChatEnabled = value; save(); }
     public boolean hypixelApiEnabled() { return hypixelApiEnabled; }
     public void setHypixelApiEnabled(boolean value) { hypixelApiEnabled = value; save(); }
     public boolean directHypixelApiEnabled() { return hypixelApiEnabled && !hypixelApiKey().isBlank(); }
     public String hypixelApiKey() { return hypixelApiKey == null ? "" : hypixelApiKey; }
-    public String hypixelApiKeyDisplay() {
-        String key = hypixelApiKey();
-        if (key.isBlank()) return "Not set";
-        if (key.length() <= 8) return "Set";
-        return key.substring(0, 4) + "..." + key.substring(key.length() - 4);
-    }
     public void setHypixelApiKey(String value) { hypixelApiKey = value == null ? "" : value.trim(); save(); }
     public boolean chatCommandsEnabled() { return chatCommandsEnabled; }
     public void setChatCommandsEnabled(boolean value) { chatCommandsEnabled = value; save(); }
     public boolean chatEmotesEnabled() { return chatEmotesEnabled; }
     public void setChatEmotesEnabled(boolean value) { chatEmotesEnabled = value; save(); }
+    public boolean chatEmotesReplaceWords() { return chatEmotesReplaceWords; }
+    public void setChatEmotesReplaceWords(boolean value) { chatEmotesReplaceWords = value; save(); }
+    public List<ChatEmote> customChatEmotes() { return Collections.unmodifiableList(customChatEmotes); }
+
+    public void addCustomChatEmote() {
+        customChatEmotes.add(new ChatEmote());
+        save();
+    }
+
+    public void setChatEmoteShortcut(ChatEmote emote, String shortcut) {
+        if (!customChatEmotes.contains(emote)) return;
+        emote.shortcut = shortcut == null ? "" : shortcut.strip().replaceAll("^:+|:+$", "").strip();
+        save();
+    }
+
+    public void setChatEmoteText(ChatEmote emote, String text) {
+        if (!customChatEmotes.contains(emote)) return;
+        emote.emote = text == null ? "" : text.strip();
+        save();
+    }
+
+    public void removeCustomChatEmote(ChatEmote emote) {
+        if (customChatEmotes.remove(emote)) save();
+    }
+
+    /** Identity stays stable while editing, like BowDrawThreshold, so rows keep owning their entry. */
+    public static final class ChatEmote {
+        private String shortcut = "";
+        private String emote = "";
+        /** The word between the colons; configs from before this stored the colons too. */
+        public String shortcut() { return shortcut == null ? "" : shortcut.replaceAll("^:+|:+$", ""); }
+        public String emote() { return emote == null ? "" : emote; }
+    }
     public boolean c50ChatCommandEnabled() { return c50ChatCommandEnabled; }
     public void setC50ChatCommandEnabled(boolean value) { c50ChatCommandEnabled = value; save(); }
     public boolean c50PartyCommandsEnabled() { return c50PartyCommandsEnabled; }
@@ -194,34 +345,6 @@ public final class MiscConfig extends ConfigCategory {
         customWitherShieldExpirePitchHundredths = Math.clamp(value, 25, 300);
         save();
     }
-    public int customArrowHitSoundVolumeTenths(String soundName) {
-        return customSoundValue(customArrowHitSoundVolumeTenths, soundName, customArrowHitVolumeTenths, 0, 50);
-    }
-    public void setCustomArrowHitSoundVolumeTenths(String soundName, int value) {
-        putCustomSoundValue(customArrowHitSoundVolumeTenths, soundName, value, 0, 50);
-        save();
-    }
-    public int customArrowHitSoundPitchHundredths(String soundName) {
-        return customSoundValue(customArrowHitSoundPitchHundredths, soundName, customArrowHitPitchHundredths, 25, 300);
-    }
-    public void setCustomArrowHitSoundPitchHundredths(String soundName, int value) {
-        putCustomSoundValue(customArrowHitSoundPitchHundredths, soundName, value, 25, 300);
-        save();
-    }
-    public int customWitherShieldExpireSoundVolumeTenths(String soundName) {
-        return customSoundValue(customWitherShieldExpireSoundVolumeTenths, soundName, customWitherShieldExpireVolumeTenths, 0, 50);
-    }
-    public void setCustomWitherShieldExpireSoundVolumeTenths(String soundName, int value) {
-        putCustomSoundValue(customWitherShieldExpireSoundVolumeTenths, soundName, value, 0, 50);
-        save();
-    }
-    public int customWitherShieldExpireSoundPitchHundredths(String soundName) {
-        return customSoundValue(customWitherShieldExpireSoundPitchHundredths, soundName, customWitherShieldExpirePitchHundredths, 25, 300);
-    }
-    public void setCustomWitherShieldExpireSoundPitchHundredths(String soundName, int value) {
-        putCustomSoundValue(customWitherShieldExpireSoundPitchHundredths, soundName, value, 25, 300);
-        save();
-    }
 
     public static String[] defaultLoadoutKeybinds() {
         String[] defaults = new String[12];
@@ -255,9 +378,16 @@ public final class MiscConfig extends ConfigCategory {
 
     public void normalize() {
         bowDrawIndicatorScale = Math.clamp(bowDrawIndicatorScale, 25, 300);
+        frozenBlazeHudScale = Math.clamp(frozenBlazeHudScale, 25, 300);
+        performanceHudScale = Math.clamp(performanceHudScale, 25, 300);
+        sackTrackerScale = Math.clamp(sackTrackerScale, 25, 300);
+        sackTrackerItems = sackTrackerItems == null ? new ArrayList<>()
+            : new ArrayList<>(sackTrackerItems.stream().filter(item -> item != null && !item.name().isBlank()).toList());
         if (bowDrawThresholds == null) bowDrawThresholds = defaultBowDrawThresholds();
+        customChatEmotes = customChatEmotes == null ? new ArrayList<>()
+            : new ArrayList<>(customChatEmotes.stream().filter(java.util.Objects::nonNull).toList());
         bowDrawThresholds = new ArrayList<>(bowDrawThresholds.stream().filter(java.util.Objects::nonNull).limit(20).toList());
-        for (var threshold : bowDrawThresholds) threshold.ticks = Math.clamp(threshold.ticks, 1, 20);
+        for (var threshold : bowDrawThresholds) threshold.ticks = Math.clamp(threshold.ticks, 0, 20);
         if (loadoutKeybinds == null) {
             loadoutKeybinds = defaultLoadoutKeybinds();
         } else {
@@ -267,10 +397,6 @@ public final class MiscConfig extends ConfigCategory {
             }
             loadoutKeybinds = normalized;
         }
-        customArrowHitSoundVolumeTenths = normalizeCustomSoundValues(customArrowHitSoundVolumeTenths, 0, 50);
-        customArrowHitSoundPitchHundredths = normalizeCustomSoundValues(customArrowHitSoundPitchHundredths, 25, 300);
-        customWitherShieldExpireSoundVolumeTenths = normalizeCustomSoundValues(customWitherShieldExpireSoundVolumeTenths, 0, 50);
-        customWitherShieldExpireSoundPitchHundredths = normalizeCustomSoundValues(customWitherShieldExpireSoundPitchHundredths, 25, 300);
     }
 
     private static String normalizeCustomSoundList(String value) {
@@ -283,28 +409,6 @@ public final class MiscConfig extends ConfigCategory {
             result.append(name);
         }
         return result.toString();
-    }
-
-    private static int customSoundValue(Map<String, Integer> values, String soundName, int fallback, int min, int max) {
-        String normalized = normalizeCustomSoundName(soundName);
-        Integer value = normalized.isBlank() || values == null ? null : values.get(normalized);
-        return Math.clamp(value == null ? fallback : value, min, max);
-    }
-
-    private static void putCustomSoundValue(Map<String, Integer> values, String soundName, int value, int min, int max) {
-        String normalized = normalizeCustomSoundName(soundName);
-        if (!normalized.isBlank()) values.put(normalized, Math.clamp(value, min, max));
-    }
-
-    private static Map<String, Integer> normalizeCustomSoundValues(Map<String, Integer> saved, int min, int max) {
-        Map<String, Integer> result = new HashMap<>();
-        if (saved == null) return result;
-        for (Map.Entry<String, Integer> entry : saved.entrySet()) {
-            String name = normalizeCustomSoundName(entry.getKey());
-            Integer value = entry.getValue();
-            if (!name.isBlank() && value != null) result.put(name, Math.clamp(value, min, max));
-        }
-        return result;
     }
 
     private static String normalizeCustomSoundName(String value) {

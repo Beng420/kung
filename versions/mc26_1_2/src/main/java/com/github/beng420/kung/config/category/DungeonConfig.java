@@ -3,8 +3,10 @@ package com.github.beng420.kung.config.category;
 import com.github.beng420.kung.runtime.KungDeveloperAccess;
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
 
 public final class DungeonConfig extends ConfigCategory {
     private boolean enabled = false;
@@ -14,27 +16,41 @@ public final class DungeonConfig extends ConfigCategory {
     private int textScale = 100;
     private int unopenedRoomAlpha = 12;
     private boolean showHeader = true;
-    private boolean showLegend = false;
     private boolean showInBoss = true;
     private boolean princeIconsEnabled = true;
     private Map<String, Boolean> princeRoomOverrides = new HashMap<>();
     private boolean mimicEspEnabled = false;
     private boolean iceSprayHighlightEnabled = false;
     private int iceSprayBoxSize = 100;
+    /** Pre-merge master of M7 Dragon Debuff; only read to seed witherDragonsEnabled. */
     private boolean dragonDebuffEnabled = false;
+    private boolean dragonDebuffTrackerEnabled = true;
     private DragonDebuffScope dragonDebuffScope = DragonDebuffScope.ALL_DRAGONS;
     private int dragonDebuffX = 8;
     private int dragonDebuffY = 230;
     private int dragonDebuffScale = 85;
+    /** Pre-merge master of M7 Dragon Helper; only read to seed witherDragonsEnabled. */
     private boolean m7DragonHelperEnabled = false;
+    /** Null until toggled, so a config from before the merge keeps whichever dragon feature it had on. */
+    private Boolean witherDragonsEnabled;
+    private boolean dragonFlightPathsEnabled = true;
     private boolean dragonSpawnMarkersEnabled = true;
     private boolean dragonStatueBoxesEnabled = true;
     private boolean dragonCountNotificationsEnabled = true;
     private boolean devDragonDiagnosticsEnabled = false;
     private boolean coloredPillarsEnabled = false;
+    private boolean wishAlertEnabled = false;
+    private int wishAlertLowHealthPercent = 20;
+    private DragonMarkerMode dragonMarkerMode = DragonMarkerMode.CORE;
+    private DragonPart dragonTrailPart = DragonPart.NECK;
+    private Set<DragonPart> dragonCoreParts = EnumSet.of(DragonPart.BOX);
+    private DragonAimMode dragonAimMode = DragonAimMode.AUTO;
+    private boolean devWishAlertAnyClassEnabled = false;
     private PillarMaterial pillarMaterial = PillarMaterial.WOOL;
     private boolean forcePaulScoreEnabled = false;
     private boolean playerTrackingEnabled = false;
+    private boolean runStatsReportEnabled = true;
+    private boolean playerStatsReportEnabled = true;
     private boolean deathMessagesEnabled = false;
     private boolean deathMessagesShareTotalEnabled = false;
     private boolean deathMessagesShareIndividualEnabled = false;
@@ -68,8 +84,6 @@ public final class DungeonConfig extends ConfigCategory {
     public int unopenedRoomAlpha() { return unopenedRoomAlpha; }
     public boolean showHeader() { return showHeader; }
     public void setShowHeader(boolean value) { showHeader = value; save(); }
-    public boolean showLegend() { return showLegend; }
-    public void setShowLegend(boolean value) { showLegend = value; save(); }
     public boolean showInBoss() { return showInBoss; }
     public void setShowInBoss(boolean value) { showInBoss = value; save(); }
     public boolean princeIconsEnabled() { return princeIconsEnabled; }
@@ -88,8 +102,20 @@ public final class DungeonConfig extends ConfigCategory {
     public void setIceSprayHighlightEnabled(boolean value) { iceSprayHighlightEnabled = value; save(); }
     public int iceSprayBoxSize() { return Math.clamp(iceSprayBoxSize, 100, 200); }
     public void setIceSprayBoxSize(int value) { iceSprayBoxSize = Math.clamp(value, 100, 200); save(); }
-    public boolean dragonDebuffEnabled() { return dragonDebuffEnabled; }
-    public void setDragonDebuffEnabled(boolean value) { dragonDebuffEnabled = value; save(); }
+    public boolean witherDragonsEnabled() {
+        return witherDragonsEnabled != null ? witherDragonsEnabled : dragonDebuffEnabled || m7DragonHelperEnabled;
+    }
+    public void setWitherDragonsEnabled(boolean value) { witherDragonsEnabled = value; save(); }
+    public boolean dragonDebuffTrackerEnabled() { return dragonDebuffTrackerEnabled; }
+    public void setDragonDebuffTrackerEnabled(boolean value) { dragonDebuffTrackerEnabled = value; save(); }
+    /** Debuff tracking in effect: the Wither Dragons master plus its own switch. */
+    public boolean dragonDebuffEnabled() { return witherDragonsEnabled() && dragonDebuffTrackerEnabled; }
+    /** The HUD editor's switch: turning the HUD on also turns the master on, or nothing would show. */
+    public void setDragonDebuffEnabled(boolean value) {
+        dragonDebuffTrackerEnabled = value;
+        if (value) witherDragonsEnabled = true;
+        save();
+    }
     public DragonDebuffScope dragonDebuffScope() { return dragonDebuffScope == null ? DragonDebuffScope.ALL_DRAGONS : dragonDebuffScope; }
     public void setDragonDebuffScope(DragonDebuffScope value) { dragonDebuffScope = value == null ? DragonDebuffScope.ALL_DRAGONS : value; save(); }
     public int dragonDebuffX() { return dragonDebuffX; }
@@ -98,8 +124,10 @@ public final class DungeonConfig extends ConfigCategory {
     public void setDragonDebuffX(int value) { dragonDebuffX = value; save(); }
     public void setDragonDebuffY(int value) { dragonDebuffY = value; save(); }
     public void setDragonDebuffScale(int value) { dragonDebuffScale = Math.clamp(value, 25, 300); save(); }
-    public boolean m7DragonHelperEnabled() { return m7DragonHelperEnabled; }
-    public void setM7DragonHelperEnabled(boolean value) { m7DragonHelperEnabled = value; save(); }
+    /** The helper has no switch of its own any more; Wither Dragons turns it on for the developer account. */
+    public boolean m7DragonHelperEnabled() { return witherDragonsEnabled(); }
+    public boolean dragonFlightPathsEnabled() { return dragonFlightPathsEnabled; }
+    public void setDragonFlightPathsEnabled(boolean value) { dragonFlightPathsEnabled = value; save(); }
     public boolean dragonSpawnMarkersEnabled() { return dragonSpawnMarkersEnabled; }
     public void setDragonSpawnMarkersEnabled(boolean value) { dragonSpawnMarkersEnabled = value; save(); }
     public boolean dragonStatueBoxesEnabled() { return dragonStatueBoxesEnabled; }
@@ -108,6 +136,30 @@ public final class DungeonConfig extends ConfigCategory {
     public void setDragonCountNotificationsEnabled(boolean value) { dragonCountNotificationsEnabled = value; save(); }
     public boolean devDragonDiagnosticsEnabled() { return devDragonDiagnosticsEnabled && KungDeveloperAccess.allowed(); }
     public void setDevDragonDiagnosticsEnabled(boolean value) { devDragonDiagnosticsEnabled = value; save(); }
+    public DragonMarkerMode dragonMarkerMode() { return dragonMarkerMode; }
+    public void setDragonMarkerMode(DragonMarkerMode value) {
+        dragonMarkerMode = value == null ? DragonMarkerMode.CORE : value;
+        save();
+    }
+    public DragonPart dragonTrailPart() { return dragonTrailPart == null ? DragonPart.NECK : dragonTrailPart; }
+    public void setDragonTrailPart(DragonPart value) { dragonTrailPart = value; save(); }
+    public DragonAimMode dragonAimMode() { return dragonAimMode == null ? DragonAimMode.AUTO : dragonAimMode; }
+    public void setDragonAimMode(DragonAimMode value) { dragonAimMode = value; save(); }
+    public boolean dragonCorePart(DragonPart part) { return dragonCoreParts != null && dragonCoreParts.contains(part); }
+    public void toggleDragonCorePart(DragonPart part) {
+        if (dragonCoreParts == null) dragonCoreParts = EnumSet.noneOf(DragonPart.class);
+        if (!dragonCoreParts.remove(part)) dragonCoreParts.add(part);
+        save();
+    }
+    public boolean wishAlertEnabled() { return wishAlertEnabled; }
+    public boolean devWishAlertAnyClassEnabled() { return devWishAlertAnyClassEnabled; }
+    public void setDevWishAlertAnyClassEnabled(boolean value) {
+        devWishAlertAnyClassEnabled = value;
+        save();
+    }
+    public void setWishAlertEnabled(boolean value) { wishAlertEnabled = value; save(); }
+    public int wishAlertLowHealthPercent() { return Math.clamp(wishAlertLowHealthPercent, 0, 100); }
+    public void setWishAlertLowHealthPercent(int value) { wishAlertLowHealthPercent = Math.clamp(value, 0, 100); save(); }
     public boolean coloredPillarsEnabled() { return coloredPillarsEnabled; }
     public void setColoredPillarsEnabled(boolean value) { coloredPillarsEnabled = value; save(); }
     public PillarMaterial pillarMaterial() { return pillarMaterial == null ? PillarMaterial.WOOL : pillarMaterial; }
@@ -116,6 +168,10 @@ public final class DungeonConfig extends ConfigCategory {
     public void setForcePaulScoreEnabled(boolean value) { forcePaulScoreEnabled = value; save(); }
     public boolean playerTrackingEnabled() { return playerTrackingEnabled; }
     public void setPlayerTrackingEnabled(boolean value) { playerTrackingEnabled = value; save(); }
+    public boolean runStatsReportEnabled() { return runStatsReportEnabled; }
+    public void setRunStatsReportEnabled(boolean value) { runStatsReportEnabled = value; save(); }
+    public boolean playerStatsReportEnabled() { return playerStatsReportEnabled; }
+    public void setPlayerStatsReportEnabled(boolean value) { playerStatsReportEnabled = value; save(); }
     public boolean deathMessagesEnabled() { return deathMessagesEnabled; }
     public void setDeathMessagesEnabled(boolean value) { deathMessagesEnabled = value; save(); }
     public boolean deathMessagesShareTotalEnabled() { return deathMessagesShareTotalEnabled; }
@@ -143,7 +199,6 @@ public final class DungeonConfig extends ConfigCategory {
     }
     public boolean fiveCryptPartyMessageEnabled() { return fiveCryptPartyMessageEnabled; }
     public void setFiveCryptPartyMessageEnabled(boolean value) { fiveCryptPartyMessageEnabled = value; save(); }
-    public String fiveCryptPartyMessage() { return getFiveCryptPartyMessage(); }
     public boolean cryptProgressPartyMessageEnabled() { return cryptProgressPartyMessageEnabled; }
     public void setCryptProgressPartyMessageEnabled(boolean value) { cryptProgressPartyMessageEnabled = value; save(); }
     public boolean fiveCryptTitleEnabled() { return fiveCryptTitleEnabled; }
@@ -166,11 +221,11 @@ public final class DungeonConfig extends ConfigCategory {
     }
 
     public void setUnopenedRoomAlpha(int alpha) {
-        this.unopenedRoomAlpha = Math.clamp(alpha, 0, 28);
+        this.unopenedRoomAlpha = Math.clamp(alpha, 0, 100);
         save();
     }
 
-    public String getFiveCryptPartyMessage() {
+    public String fiveCryptPartyMessage() {
         return (fiveCryptPartyMessage == null || fiveCryptPartyMessage.isBlank())
             ? "We got all 5 crypts (✿◠‿◠)"
             : fiveCryptPartyMessage;
@@ -201,6 +256,35 @@ public final class DungeonConfig extends ConfigCategory {
         private final String label;
         PillarMaterial(String label) { this.label = label; }
         public String label() { return label; }
+    }
+
+    /** Which prefire aim point to show; Auto picks the weapon from the dungeon class. */
+    public enum DragonAimMode {
+        AUTO("Auto (Class)"), LAST_BREATH("Last Breath"), TERMINATOR("Terminator"), OFF("Off");
+
+        private final String label;
+        DragonAimMode(String label) { this.label = label; }
+        public String label() { return label; }
+    }
+
+    public enum DragonMarkerMode {
+        CORE("Core"), SKELETON("Skeleton");
+
+        private final String label;
+        DragonMarkerMode(String label) { this.label = label; }
+        public String label() { return label; }
+    }
+
+    /** A dragon hitbox part; part is its slot in EnderDragon.getSubEntities(), -1 for the overall box centre. */
+    public enum DragonPart {
+        BOX("Box Centre", -1), HEAD("Head", 0), NECK("Neck", 1), BODY("Body", 2),
+        TAIL_1("Tail 1", 3), TAIL_2("Tail 2", 4), TAIL_3("Tail 3", 5), WING_1("Wing 1", 6), WING_2("Wing 2", 7);
+
+        private final String label;
+        private final int part;
+        DragonPart(String label, int part) { this.label = label; this.part = part; }
+        public String label() { return label; }
+        public int part() { return part; }
     }
 
     public enum DragonDebuffScope {

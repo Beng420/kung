@@ -2,7 +2,6 @@ package com.github.beng420.kung.config.category;
 
 public final class SlayerConfig extends ConfigCategory {
     private boolean tarantulaHelperEnabled = false;
-    private boolean eggSacPredictionRendererEnabled = false;
     private boolean eggSacPredictionEnabled = false;
     private EggSacPredictionRenderMode eggSacPredictionRenderMode = EggSacPredictionRenderMode.BOX;
     private boolean tarantulaDebugSlayerSpawned = true;
@@ -15,12 +14,9 @@ public final class SlayerConfig extends ConfigCategory {
 
     public boolean tarantulaHelperEnabled() { return tarantulaHelperEnabled; }
     public void setTarantulaHelperEnabled(boolean value) { tarantulaHelperEnabled = value; save(); }
-    public boolean eggSacPredictionRendererEnabled() { return eggSacPredictionRendererEnabled; }
-    public void setEggSacPredictionRendererEnabled(boolean value) { eggSacPredictionRendererEnabled = value; save(); }
     public boolean eggSacPredictionEnabled() { return eggSacPredictionEnabled; }
     public void setEggSacPredictionEnabled(boolean value) { eggSacPredictionEnabled = value; save(); }
     public EggSacPredictionRenderMode eggSacPredictionRenderMode() { return eggSacPredictionRenderMode; }
-    public String eggSacPredictionRenderModeLabel() { return eggSacPredictionRenderMode.label(); }
     public void cycleEggSacPredictionRenderMode() { setEggSacPredictionRenderMode(eggSacPredictionRenderMode.next()); }
     public void setEggSacPredictionRenderMode(EggSacPredictionRenderMode value) {
         eggSacPredictionRenderMode = value == null ? EggSacPredictionRenderMode.BOX : value;

@@ -32,6 +32,18 @@ existing `config/kung/kung.json`. Disabling retains selections; older configs st
 with an empty list. Invalid IDs/null entries are removed on load. Valid unknown
 IDs are retained for temporarily absent mods and produce no boxes until present.
 
+SkyBlock mobs are `skyblock:` entries matched against the nametag armor stand
+above the mob, whole words only. Mob modifiers (Healthy, Speedy, Fortified,
+Stormy, Flaming, Healing, Boomer, Stealthy, Runic, Corrupted) drop from added
+names and from saved entries on load, so `skyblock:skeleton_master` covers every
+variant. `item:` entries box an item held by an armor stand, such as a thrown
+Bonemerang. The add list starts with every entity type, SkyBlock name and held
+item seen nearby in the last minute, marked "seen nearby".
+
+For frame time, the selection is resolved once per change, nametags are matched
+every 10 ticks rather than per frame, and boxes are written straight into the
+line buffer (`LineBoxes`) instead of building a VoxelShape per box.
+
 `HitboxesFeature` extracts interpolated bounding boxes from loaded entities once
 per rendered frame through Fabric's extraction event. It applies Minecraft's
 entity render-distance check and omits the first-person camera entity. Selected

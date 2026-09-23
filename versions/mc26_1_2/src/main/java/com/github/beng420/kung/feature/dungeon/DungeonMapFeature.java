@@ -40,7 +40,6 @@ public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> 
     private static final int GRID_UNITS = DungeonScanUtils.SCAN_GRID_SIZE;
     private static final int GRID_PIXEL_SIZE = scanGridToPixel(GRID_UNITS);
     private static final int HEADER_HEIGHT = 0;
-    private static final int LEGEND_HEIGHT = 38;
     private static final int PLAYER_HEAD_SIZE = 10;
     private static final int TEAMMATE_HEAD_SIZE = 8;
     private static final float ROOM_LABEL_SCALE = 0.56F;
@@ -73,7 +72,6 @@ public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> 
     private static final int MIMIC_ROOM_OUTLINE = 0xFFFF3333;
     private static final int MIMIC_ROOM_GLOW = 0x44FF3333;
     private static final int UNKNOWN_CLASS_BORDER = 0xFFE9EDF2;
-    private static final int MAX_UNOPENED_ALPHA = 28;
     private static final int FOOTER_HEIGHT = 26;
     private static final float FOOTER_TEXT_SCALE = 0.72F;
     private static final Map<String, SmoothedMarker> SMOOTHED_PLAYER_MARKERS = new HashMap<>();
@@ -197,16 +195,6 @@ public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> 
                 dungeonStateTracker.isRecording(),
                 renderPartialTick()
             );
-            if (config.showLegend()) {
-                graphics.pose().pushMatrix();
-                try {
-                    graphics.pose().translate(left, gridTop + GRID_PIXEL_SIZE + 5);
-                    graphics.pose().scale(textScale(config), textScale(config));
-                    drawLegend(graphics, 0, 0);
-                } finally {
-                    graphics.pose().popMatrix();
-                }
-            }
             graphics.pose().pushMatrix();
             try {
                 graphics.pose().translate(left, gridTop + footerTop(config));
@@ -617,7 +605,7 @@ public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> 
     }
 
     private static int effectiveUnopenedRoomAlpha() {
-        return Math.min(KungConfig.get().dungeon.unopenedRoomAlpha(), MAX_UNOPENED_ALPHA);
+        return KungConfig.get().dungeon.unopenedRoomAlpha();
     }
 
     private static void drawInternalRoomConnections(
@@ -2033,25 +2021,6 @@ public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> 
         return ROOM_SIZE + DOOR_SIZE + CELL_GAP * 2;
     }
 
-    private static void drawLegend(GuiGraphicsExtractor graphics, int left, int top) {
-        int x = left;
-        x = drawLegendItem(graphics, x, top, RoomType.START, "start");
-        x = drawLegendItem(graphics, x, top, RoomType.NORMAL, "normal");
-        drawLegendItem(graphics, x, top, RoomType.PUZZLE, "puzzle");
-        x = drawLegendItem(graphics, left, top + 12, RoomType.FAIRY, "fairy");
-        x = drawLegendItem(graphics, x, top + 12, RoomType.TRAP, "trap");
-        drawLegendItem(graphics, x, top + 12, RoomType.BLOOD, "blood");
-        x = drawLegendItem(graphics, left, top + 24, RoomType.YELLOW, "yellow");
-        drawLegendItem(graphics, x, top + 24, RoomType.RARE, "rare");
-    }
-
-    private static int drawLegendItem(GuiGraphicsExtractor graphics, int x, int y, RoomType roomType, String label) {
-        Minecraft client = Minecraft.getInstance();
-        graphics.fill(x, y, x + 7, y + 7, roomType.color());
-        graphics.text(client.font, label, x + 10, y, MUTED_TEXT, true);
-        return x + 10 + client.font.width(label) + 8;
-    }
-
     private static void drawFooter(
         GuiGraphicsExtractor graphics,
         int left,
@@ -2184,7 +2153,7 @@ public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> 
     }
 
     private static int footerTop(DungeonConfig config) {
-        return GRID_PIXEL_SIZE + (config.showLegend() ? Math.round(LEGEND_HEIGHT * textScale(config)) + 8 : 6);
+        return GRID_PIXEL_SIZE + 6;
     }
 
     private static int overlayContentHeight(DungeonConfig config) {

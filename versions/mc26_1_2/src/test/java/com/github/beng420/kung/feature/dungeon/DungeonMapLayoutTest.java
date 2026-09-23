@@ -22,16 +22,13 @@ public final class DungeonMapLayoutTest {
     }
 
     @Test
-    public void textEnlargementReservesFooterAndLegendSpaceWithoutChangingMapScale() {
+    public void textEnlargementReservesFooterSpaceWithoutChangingMapScale() {
         DungeonConfig config = new DungeonConfig();
-        config.setShowLegend(true);
         DungeonMapFeature.OverlayBounds normal = DungeonMapFeature.overlayBounds(config);
         config.setTextScale(200);
         DungeonMapFeature.OverlayBounds readable = DungeonMapFeature.overlayBounds(config);
         assertEquals(100, config.scale());
         assertTrue(readable.width() > normal.width());
         assertTrue(readable.height() > normal.height());
-        config.setShowLegend(false);
-        assertTrue(DungeonMapFeature.overlayBounds(config).height() < readable.height());
     }
 }

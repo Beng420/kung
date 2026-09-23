@@ -33,9 +33,27 @@ public record SettingEntry(
     List<SettingEntry> children,
     List<String> tooltip,
     List<String> choices,
-    Supplier<String> rawKeybindSupplier
+    Supplier<String> rawKeybindSupplier,
+    BooleanSupplier visibleWhen,
+    boolean developerOnly
 ) {
     public String label() { return labelSupplier.get(); }
+
+    /** Hidden rows take no space in either menu, like Odin's settings that open under a toggle. */
+    public boolean visible() { return visibleWhen == null || visibleWhen.getAsBoolean(); }
+
+    /** Marks a row only Beng114's account sees; the menu draws a small star over it. */
+    public SettingEntry forDeveloper() {
+        return new SettingEntry(labelSupplier, kind, booleanSupplier, toggle, intSupplier, intConsumer,
+            min, max, step, choiceSupplier, cycleChoice, textSupplier, textConsumer, children, tooltip,
+            choices, rawKeybindSupplier, visibleWhen, true);
+    }
+
+    public SettingEntry withVisibleWhen(BooleanSupplier condition) {
+        return new SettingEntry(labelSupplier, kind, booleanSupplier, toggle, intSupplier, intConsumer,
+            min, max, step, choiceSupplier, cycleChoice, textSupplier, textConsumer, children, tooltip,
+            choices, rawKeybindSupplier, condition, developerOnly);
+    }
 
     public static SettingEntry toggle(String label, BooleanSupplier supplier, Runnable toggle) {
         return create(label, SettingKind.TOGGLE, supplier, toggle, null, null, 0, 0, 0, null, null, null, null);
@@ -63,12 +81,6 @@ public record SettingEntry(
         return create(label, SettingKind.SLIDER, null, null, supplier, consumer, min, max, step, null, null, null, null);
     }
 
-    public static SettingEntry stepperRemove(String label, IntSupplier supplier, IntConsumer consumer,
-                                             int min, int max, int step, Runnable remove) {
-        return create(label, SettingKind.STEPPER_REMOVE, null, null, supplier, consumer,
-            min, max, step, null, remove, null, null);
-    }
-
     public static SettingEntry choice(String label, Supplier<String> supplier, Runnable cycle) {
         return create(label, SettingKind.CHOICE, null, null, null, null, 0, 0, 0, supplier, cycle, null, null);
     }
@@ -85,11 +97,17 @@ public record SettingEntry(
         return new SettingEntry(() -> label, SettingKind.CHOICE, null, null, selected, select,
             0, options.size() - 1, 1, () -> labeler.apply(options.get(selected.getAsInt())),
             () -> select.accept((selected.getAsInt() + 1) % options.size()), null, null, List.of(), List.of(),
-            options.stream().map(labeler).toList(), null);
+            options.stream().map(labeler).toList(), null, null, false);
     }
 
     public static SettingEntry text(String label, Supplier<String> supplier, Consumer<String> consumer) {
         return create(label, SettingKind.TEXT, null, null, null, null, 0, 0, 0, null, null, supplier, consumer);
+    }
+
+    /** A group whose title follows its content, e.g. a custom emote's shortcut. */
+    public static SettingEntry group(Supplier<String> label) {
+        return new SettingEntry(label, SettingKind.GROUP, null, null, null, null, 0, 0, 0,
+            null, null, null, null, List.of(), List.of(), List.of(), null, null, false);
     }
 
     public static SettingEntry group(String label) {
@@ -103,12 +121,12 @@ public record SettingEntry(
     public static SettingEntry keybind(String label, Supplier<String> display, Supplier<String> raw,
                                       Consumer<String> consumer) {
         return new SettingEntry(() -> label, SettingKind.KEYBIND, null, null, null, null, 0, 0, 0,
-            null, null, display, consumer, List.of(), List.of(), List.of(), raw);
+            null, null, display, consumer, List.of(), List.of(), List.of(), raw, null, false);
     }
 
     public static SettingEntry dynamicLabel(Supplier<String> labelSupplier) {
         return new SettingEntry(labelSupplier, SettingKind.LABEL, null, null, null, null, 0, 0, 0,
-            null, null, null, null, List.of(), List.of(), List.of(), null);
+            null, null, null, null, List.of(), List.of(), List.of(), null, null, false);
     }
 
     public static SettingEntry button(String label, String text, Runnable action) {
@@ -122,13 +140,13 @@ public record SettingEntry(
     public SettingEntry withChildren(List<SettingEntry> children) {
         return new SettingEntry(labelSupplier, kind, booleanSupplier, toggle, intSupplier, intConsumer,
             min, max, step, choiceSupplier, cycleChoice, textSupplier, textConsumer, List.copyOf(children), tooltip,
-            choices, rawKeybindSupplier);
+            choices, rawKeybindSupplier, visibleWhen, developerOnly);
     }
 
     public SettingEntry withTooltip(String... lines) {
         return new SettingEntry(labelSupplier, kind, booleanSupplier, toggle, intSupplier, intConsumer,
             min, max, step, choiceSupplier, cycleChoice, textSupplier, textConsumer, children, List.of(lines),
-            choices, rawKeybindSupplier);
+            choices, rawKeybindSupplier, visibleWhen, developerOnly);
     }
 
     public String textValue() {
@@ -157,10 +175,6 @@ public record SettingEntry(
                 theme
             );
             case STEPPER -> drawStepper(graphics, font, theme, x, y, width, height);
-            case STEPPER_REMOVE -> {
-                drawStepper(graphics, font, theme, x, y, width - 19, height);
-                drawRemoveButton(graphics, font, theme, x, y, width, height);
-            }
             case SLIDER -> drawSlider(graphics, font, theme, x, y, width, height);
             case CHOICE, BUTTON -> drawButton(graphics, font, theme, x, y, width, height, choiceSupplier.get());
             case COLOR_REMOVE -> {
@@ -196,15 +210,6 @@ public record SettingEntry(
                     ? number.decrement(intSupplier.getAsInt())
                     : number.increment(intSupplier.getAsInt()));
             }
-            case STEPPER_REMOVE -> {
-                if (mouseX < x || mouseX >= x + width) return;
-                if (mouseX >= x + width - 16) cycleChoice.run();
-                else if (mouseX < x + width - 19) {
-                    intConsumer.accept(mouseX < x + (width - 19) / 2
-                        ? numberField().decrement(intSupplier.getAsInt())
-                        : numberField().increment(intSupplier.getAsInt()));
-                }
-            }
             case SLIDER -> {
                 int trackLeft = x + 2;
                 int trackRight = x + width - 2;
@@ -239,8 +244,7 @@ public record SettingEntry(
         graphics.fill(x + width - 13, y + 3, x + width - 1, y + height - 3, theme.accentDark());
         graphics.text(font, "-", x + 5, y + 4, theme.text(), true);
         graphics.text(font, "+", x + width - 10, y + 4, theme.text(), true);
-        String suffix = kind == SettingKind.STEPPER_REMOVE ? "t"
-            : label().toLowerCase(Locale.ROOT).matches(".*(scale|alpha).*") ? "%" : "";
+        String suffix = label().toLowerCase(Locale.ROOT).matches(".*(scale|alpha).*") ? "%" : "";
         centered(graphics, font, intSupplier.getAsInt() + suffix, x, y, width, theme.warning());
     }
 
@@ -250,6 +254,7 @@ public record SettingEntry(
         graphics.text(font, "-", x + width - 11, y + 4, theme.error(), false);
     }
 
+    /** Track and knob only; the screen prints the value beside the label, where the knob cannot cover it. */
     private void drawSlider(GuiGraphicsExtractor graphics, Font font, UiTheme theme, int x, int y, int width, int height) {
         int trackLeft = x + 2;
         int trackRight = x + width - 2;
@@ -258,15 +263,18 @@ public record SettingEntry(
         graphics.fill(trackLeft, trackY, trackRight, trackY + 2, theme.accentDark());
         graphics.fill(trackLeft, trackY, knobX, trackY + 2, theme.accent());
         graphics.fill(knobX - 2, y + 3, knobX + 2, y + height - 3, theme.text());
+    }
+
+    /** A slider's shown value: the unit comes from the label, a bare number when it names none. */
+    public String sliderValue() {
+        int value = intSupplier.getAsInt();
         String lower = label().toLowerCase(Locale.ROOT);
-        String value = lower.contains("scale") || lower.contains("alpha")
-            ? intSupplier.getAsInt() + "%"
-            : lower.contains("volume")
-            ? String.format(Locale.ROOT, "x%.1f", intSupplier.getAsInt() / 10.0)
-            : lower.contains("pitch")
-                ? String.format(Locale.ROOT, "x%.2f", intSupplier.getAsInt() / 100.0)
-                : String.format(Locale.ROOT, "%.1fs", intSupplier.getAsInt() / 10.0);
-        centered(graphics, font, value, x, y, width, theme.warning());
+        if (lower.contains("%") || lower.contains("scale") || lower.contains("alpha")) return value + "%";
+        if (lower.contains("pitch")) return String.format(Locale.ROOT, "x%.2f", value / 100.0);
+        if (lower.contains("volume")) return String.format(Locale.ROOT, "x%.1f", value / 10.0);
+        if (lower.contains("time")) return String.format(Locale.ROOT, "%.1fs", value / 10.0);
+        if (lower.contains("tick")) return value + "t";
+        return Integer.toString(value);
     }
 
     private static void drawButton(
@@ -307,6 +315,6 @@ public record SettingEntry(
         Consumer<String> textConsumer
     ) {
         return new SettingEntry(() -> label, kind, booleanSupplier, toggle, intSupplier, intConsumer,
-            min, max, step, choiceSupplier, cycleChoice, textSupplier, textConsumer, List.of(), List.of(), List.of(), null);
+            min, max, step, choiceSupplier, cycleChoice, textSupplier, textConsumer, List.of(), List.of(), List.of(), null, null, false);
     }
 }

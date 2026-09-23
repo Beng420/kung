@@ -4,7 +4,6 @@ import com.github.beng420.kung.config.category.MiscConfig;
 import com.github.beng420.kung.config.category.SlayerConfig;
 import com.github.beng420.kung.config.category.SplitsConfig;
 import com.github.beng420.kung.feature.ConfigurableFeature;
-import com.github.beng420.kung.feature.Feature;
 import com.github.beng420.kung.feature.dungeon.DungeonStateTracker;
 import com.github.beng420.kung.runtime.AppServices;
 import java.io.StringReader;
@@ -38,6 +37,8 @@ public final class ConfigRegressionTest {
         equal(true, defaults.misc.tpsChatCommandEnabled(), "tps command defaults on");
         equal(false, defaults.misc.chatEmotesEnabled(), "chat emotes default off for existing configs too");
         equal(false, defaults.misc.loadoutsCloseOnlyOnChange(), "loadouts change-only close defaults off");
+        equal(true, read("{\"misc\":{\"sackTrackerEnabled\":true}}").misc.sackTrackerInMenus(),
+            "sack tracker shows in menus by default, also for configs saved before the setting");
         KungConfig legacy = read("""
             {
               "dungeonMap": {"enabled": true, "x": 42, "debugMessages": false, "unopenedRoomAlpha": 0},
@@ -136,14 +137,13 @@ public final class ConfigRegressionTest {
               "misc":{"loadoutKeybinds":[null,"mouse:4"],"hypixelApiKey":null,
                       "superpairsHelperScale":0,"customArrowHitSounds":null,
                       "loadoutsCloseOnlyOnChange":true,
-                      "customArrowHitSoundVolumeTenths":{"ping.wav":90,"bad.wav":null},
-                      "customWitherShieldExpireSoundPitchHundredths":null},
+                      "customArrowHitSoundVolumeTenths":{"ping.wav":90,"bad.wav":null}},
               "debug":null,"dungeonChatFilter":null
             }
             """);
         equal(25, config.dungeon.scale(), "map scale clamped");
         equal(200, config.dungeon.textScale(), "map text scale clamped");
-        equal(28, config.dungeon.unopenedRoomAlpha(), "alpha clamped");
+        equal(100, config.dungeon.unopenedRoomAlpha(), "alpha clamped");
         equal("http://localhost:8765", config.dungeon.roomSyncServerUrl(), "server normalized");
         equal("", config.dungeon.roomSyncToken(), "null token normalized");
         equal(50, config.bloodRush.titleDurationTenths(), "title duration clamped");
@@ -154,8 +154,7 @@ public final class ConfigRegressionTest {
         equal("key:49:0", config.misc.loadoutKeybind(0), "null keybind uses default");
         equal("mouse:4", config.misc.loadoutKeybind(1), "custom keybind retained");
         equal(true, config.misc.loadoutsCloseOnlyOnChange(), "loadouts change-only close retained");
-        equal(50, config.misc.customArrowHitSoundVolumeTenths("ping.wav"), "per-sound volume clamped");
-        equal(100, config.misc.customWitherShieldExpireSoundPitchHundredths("ping.wav"), "missing map uses fallback");
+        equal(10, config.misc.customArrowHitVolumeTenths(), "old per-sound volumes are ignored");
         equal(false, config.debug.enabled(), "null category defaulted");
         equal(true, config.chatFilter.blessings(), "null filter defaulted");
         equal(12, read("{\"misc\":{\"loadoutKeybinds\":null}}").misc.loadoutKeybindCount(), "null keybind array handled");
@@ -285,7 +284,7 @@ public final class ConfigRegressionTest {
         }
     }
 
-    private static final class CountingFeature extends ConfigurableFeature<MiscConfig> implements Feature {
+    private static final class CountingFeature extends ConfigurableFeature<MiscConfig> {
         private int initializations;
         private int resets;
 

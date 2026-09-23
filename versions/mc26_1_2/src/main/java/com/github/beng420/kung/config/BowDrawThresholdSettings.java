@@ -6,6 +6,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Supplier;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.screens.Screen;
 
 /** Reuses the live list pattern from Hitboxes without recreating controls while a value changes. */
 final class BowDrawThresholdSettings implements Supplier<List<SettingEntry>> {
@@ -23,17 +24,30 @@ final class BowDrawThresholdSettings implements Supplier<List<SettingEntry>> {
         next.add(SettingEntry.button("Add Threshold", "+", () -> {
             config.addBowDrawThreshold();
             showList();
-        }).withTooltip("Add a marker from 1 to 20 server ticks. Maximum 20 entries."));
+        }).withTooltip("Add a marker from 0 to 20 server ticks. Maximum 20 entries."));
         for (int index = 0; index < entries.size(); index++) {
             var entry = entries.get(index);
-            next.add(SettingEntry.stepperRemove("Threshold " + (index + 1), entry::ticks,
-                ticks -> config.setBowDrawThreshold(entry, ticks), 1, 20, 1, () -> {
-                    config.removeBowDrawThreshold(entry);
-                    showList();
-                }).withTooltip("Use - / + to change server ticks; the red - removes this marker.",
-                    "3 ticks: minimum shot. 20 ticks: full power. Duplicate markers share one line."));
+            String name = "Threshold " + (index + 1);
+            next.add(SettingEntry.colorRemove(name, entry::color, () -> editColor(name, entry), () -> {
+                config.removeBowDrawThreshold(entry);
+                showList();
+            }).withTooltip("Click the color to change this marker's line; the red - removes it."));
+            next.add(SettingEntry.slider("Ticks", entry::ticks, ticks -> config.setBowDrawThreshold(entry, ticks), 0, 20, 1)
+                .withTooltip("3 ticks: minimum shot. 20 ticks: full power. Duplicate markers share one line."));
         }
         return rows = List.copyOf(next);
+    }
+
+    private void editColor(String name, BowDrawThreshold entry) {
+        Minecraft client = Minecraft.getInstance();
+        Screen parent = client.screen;
+        // The optional native menu delegates the color to the same popup the Kung menu uses.
+        if (!(parent instanceof KungConfigScreen)) {
+            parent = KungConfigScreen.fromParent(parent, "Bow Draw Indicator");
+            client.setScreen(parent);
+        }
+        client.setScreen(new HitboxEditorScreen(parent, name + " Color", entry.color(),
+            color -> config.setBowDrawThresholdColor(entry, color)));
     }
 
     private static void showList() {

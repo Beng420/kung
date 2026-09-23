@@ -38,6 +38,16 @@ public final class UiTextField {
         return this;
     }
 
+    public UiTextField bordered(boolean bordered) {
+        control.setBordered(bordered);
+        return this;
+    }
+
+    public UiTextField responder(java.util.function.Consumer<String> responder) {
+        control.setResponder(responder);
+        return this;
+    }
+
     public UiTextField canLoseFocus(boolean canLoseFocus) {
         control.setCanLoseFocus(canLoseFocus);
         return this;
@@ -96,6 +106,12 @@ public final class UiTextField {
     }
 
     public boolean mouseClicked(MouseButtonEvent event, boolean doubleClick) {
+        // Right click clears the whole field, as in most mod menus.
+        if (event.button() == 1 && contains((int) event.x(), (int) event.y())) {
+            control.setValue("");
+            control.setFocused(true);
+            return true;
+        }
         boolean handled = control.mouseClicked(event, doubleClick);
         // These fields are routed manually, outside Screen's child-widget focus handling.
         if (handled) control.setFocused(true);

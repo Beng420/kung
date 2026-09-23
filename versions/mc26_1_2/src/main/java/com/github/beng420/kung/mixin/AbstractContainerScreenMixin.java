@@ -1,6 +1,7 @@
 package com.github.beng420.kung.mixin;
 
 import com.github.beng420.kung.feature.misc.LoadoutsAutoCloseFeature;
+import com.github.beng420.kung.feature.misc.SackTrackerFeature;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.input.MouseButtonEvent;
@@ -8,6 +9,7 @@ import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.world.inventory.ContainerInput;
 import net.minecraft.world.inventory.Slot;
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -17,6 +19,9 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 @Mixin(AbstractContainerScreen.class)
 public abstract class AbstractContainerScreenMixin {
+    @Shadow
+    protected Slot hoveredSlot;
+
     @Unique
     private Slot kung$extractingSlot;
 
@@ -33,7 +38,9 @@ public abstract class AbstractContainerScreenMixin {
 
     @Inject(method = "keyPressed", at = @At("HEAD"), cancellable = true)
     private void kung$beforeKeyPressed(KeyEvent event, CallbackInfoReturnable<Boolean> callbackInfo) {
-        if (LoadoutsAutoCloseFeature.handleLoadoutHotkey((AbstractContainerScreen<?>) (Object) this, event)) {
+        var screen = (AbstractContainerScreen<?>) (Object) this;
+        if (LoadoutsAutoCloseFeature.handleLoadoutHotkey(screen, event)
+            || SackTrackerFeature.handleKey(screen, hoveredSlot, event)) {
             callbackInfo.setReturnValue(true);
         }
     }
@@ -44,7 +51,9 @@ public abstract class AbstractContainerScreenMixin {
         boolean doubleClick,
         CallbackInfoReturnable<Boolean> callbackInfo
     ) {
-        if (LoadoutsAutoCloseFeature.handleLoadoutMouseHotkey((AbstractContainerScreen<?>) (Object) this, event)) {
+        var screen = (AbstractContainerScreen<?>) (Object) this;
+        if (LoadoutsAutoCloseFeature.handleLoadoutMouseHotkey(screen, event)
+            || SackTrackerFeature.handleMouse(screen, hoveredSlot, event)) {
             callbackInfo.setReturnValue(true);
         }
     }
