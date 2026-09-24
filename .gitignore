@@ -33,3 +33,5 @@ docs/
 .codex-video-frames/
 .codex_tmp/
 *.lnk
+.agents/
+.claude/

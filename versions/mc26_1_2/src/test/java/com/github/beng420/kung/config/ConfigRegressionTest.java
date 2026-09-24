@@ -133,7 +133,6 @@ public final class ConfigRegressionTest {
                             "roomSyncToken":null,"fiveCryptPartyMessage":null},
               "bloodRushHelper":{"titleDurationTenths":100},
               "splitsOverlay":{"scale":900},
-              "slayer":{"eggSacPredictionRenderMode":"unknown"},
               "misc":{"loadoutKeybinds":[null,"mouse:4"],"hypixelApiKey":null,
                       "superpairsHelperScale":0,"customArrowHitSounds":null,
                       "loadoutsCloseOnlyOnChange":true,
@@ -148,7 +147,6 @@ public final class ConfigRegressionTest {
         equal("", config.dungeon.roomSyncToken(), "null token normalized");
         equal(50, config.bloodRush.titleDurationTenths(), "title duration clamped");
         equal(300, config.splits.scale(), "splits scale clamped");
-        equal(SlayerConfig.EggSacPredictionRenderMode.BOX, config.slayer.eggSacPredictionRenderMode(), "unknown mode defaulted");
         equal(false, config.misc.directHypixelApiEnabled(), "null API key handled");
         equal(12, config.misc.loadoutKeybindCount(), "partial keybind array expanded");
         equal("key:49:0", config.misc.loadoutKeybind(0), "null keybind uses default");

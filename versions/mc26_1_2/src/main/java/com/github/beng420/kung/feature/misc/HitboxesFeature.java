@@ -127,8 +127,10 @@ public final class HitboxesFeature extends ConfigurableFeature<HitboxesConfig> {
             String id = skyBlockId(nametag);
             if (id != null && id.length() > SKYBLOCK.length() + 2) recent.put(id, now);
             Integer color = match ? skyBlockColor(resolvedFor, nametag) : null;
-            Entity mob = color == null ? null : mobBelow(stand);
-            if (mob != null) mobs.put(mob.getId(), color);
+            if (color == null) continue;
+            // A name without a mob under it is the thing itself, such as an egg sac's SHOOT ME! stand.
+            Entity mob = mobBelow(stand);
+            mobs.put((mob == null ? stand : mob).getId(), color);
         }
         for (EntityType<?> type : types) recent.put(BuiltInRegistries.ENTITY_TYPE.getKey(type).toString(), now);
         skyBlockMobs = Map.copyOf(mobs);
@@ -203,7 +205,9 @@ public final class HitboxesFeature extends ConfigurableFeature<HitboxesConfig> {
     }
 
     private static AABB interpolatedBounds(Entity entity, float partialTick) {
-        return entity.getBoundingBox().move(entity.getPosition(partialTick).subtract(entity.position()));
+        AABB bounds = entity.getBoundingBox().move(entity.getPosition(partialTick).subtract(entity.position()));
+        // A nametag stand is a marker with a paper-thin box; boxed on its own it has to stay visible.
+        return entity instanceof ArmorStand && bounds.getYsize() < 0.5 ? bounds.inflate(0.35) : bounds;
     }
 
     /**

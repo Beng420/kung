@@ -130,7 +130,7 @@ public final class BowDrawIndicatorFeature extends ConfigurableFeature<MiscConfi
     private void render(GuiGraphicsExtractor graphics) {
         var client = Minecraft.getInstance();
         validateDraw(client);
-        if (!progress.visible(System.nanoTime()) || client.options.hideGui || client.screen != null || KungHudEditorState.externalEditing()) return;
+        if (!progress.visible(System.nanoTime()) || client.options.hideGui || KungHudEditorState.externalEditing()) return;
         draw(graphics, config(), progress.ticks(), progress.active());
     }
 

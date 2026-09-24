@@ -83,6 +83,11 @@ public final class ServerTpsTracker {
         largestGapNanos = 0L;
     }
 
+    /** Server ticks seen since the last world change; server timings belong on this clock, not on ours. */
+    public synchronized long ticks() {
+        return observedTicks;
+    }
+
     public synchronized String diagnostics() {
         long now = System.nanoTime();
         long openGap = tickTimes.isEmpty() ? 0L : Math.max(0L, now - tickTimes.getLast());

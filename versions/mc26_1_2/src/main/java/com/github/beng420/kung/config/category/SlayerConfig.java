@@ -3,7 +3,11 @@ package com.github.beng420.kung.config.category;
 public final class SlayerConfig extends ConfigCategory {
     private boolean tarantulaHelperEnabled = false;
     private boolean eggSacPredictionEnabled = false;
-    private EggSacPredictionRenderMode eggSacPredictionRenderMode = EggSacPredictionRenderMode.BOX;
+    private boolean eggSacBoxesEnabled = false;
+    private boolean eggSacCountdownEnabled = false;
+    private int eggSacCountdownX = 6;
+    private int eggSacCountdownY = 90;
+    private int eggSacCountdownScale = 100;
     private boolean tarantulaDebugSlayerSpawned = true;
     private boolean tarantulaDebugSlayerPosition = true;
     private boolean tarantulaDebugSlayerPhaseChange = true;
@@ -16,12 +20,16 @@ public final class SlayerConfig extends ConfigCategory {
     public void setTarantulaHelperEnabled(boolean value) { tarantulaHelperEnabled = value; save(); }
     public boolean eggSacPredictionEnabled() { return eggSacPredictionEnabled; }
     public void setEggSacPredictionEnabled(boolean value) { eggSacPredictionEnabled = value; save(); }
-    public EggSacPredictionRenderMode eggSacPredictionRenderMode() { return eggSacPredictionRenderMode; }
-    public void cycleEggSacPredictionRenderMode() { setEggSacPredictionRenderMode(eggSacPredictionRenderMode.next()); }
-    public void setEggSacPredictionRenderMode(EggSacPredictionRenderMode value) {
-        eggSacPredictionRenderMode = value == null ? EggSacPredictionRenderMode.BOX : value;
-        save();
-    }
+    public boolean eggSacBoxesEnabled() { return eggSacBoxesEnabled; }
+    public void setEggSacBoxesEnabled(boolean value) { eggSacBoxesEnabled = value; save(); }
+    public boolean eggSacCountdownEnabled() { return eggSacCountdownEnabled; }
+    public void setEggSacCountdownEnabled(boolean value) { eggSacCountdownEnabled = value; save(); }
+    public int eggSacCountdownX() { return eggSacCountdownX; }
+    public void setEggSacCountdownX(int value) { eggSacCountdownX = value; save(); }
+    public int eggSacCountdownY() { return eggSacCountdownY; }
+    public void setEggSacCountdownY(int value) { eggSacCountdownY = value; save(); }
+    public int eggSacCountdownScale() { return eggSacCountdownScale; }
+    public void setEggSacCountdownScale(int value) { eggSacCountdownScale = Math.clamp(value, 25, 300); save(); }
     public boolean tarantulaDebugSlayerSpawned() { return tarantulaDebugSlayerSpawned; }
     public void setTarantulaDebugSlayerSpawned(boolean value) { tarantulaDebugSlayerSpawned = value; save(); }
     public boolean tarantulaDebugSlayerPosition() { return tarantulaDebugSlayerPosition; }
@@ -36,24 +44,4 @@ public final class SlayerConfig extends ConfigCategory {
     public void setTarantulaDebugEggSacPhaseDone(boolean value) { tarantulaDebugEggSacPhaseDone = value; save(); }
     public boolean tarantulaDebugEggSacLearning() { return tarantulaDebugEggSacLearning; }
     public void setTarantulaDebugEggSacLearning(boolean value) { tarantulaDebugEggSacLearning = value; save(); }
-
-    public enum EggSacPredictionRenderMode {
-        BOX("Quader"),
-        GRID("Grid");
-
-        private final String label;
-
-        EggSacPredictionRenderMode(String label) {
-            this.label = label;
-        }
-
-        public String label() {
-            return label;
-        }
-
-        public EggSacPredictionRenderMode next() {
-            EggSacPredictionRenderMode[] values = values();
-            return values[(ordinal() + 1) % values.length];
-        }
-    }
 }

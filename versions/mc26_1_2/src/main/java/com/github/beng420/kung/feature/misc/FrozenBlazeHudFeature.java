@@ -71,7 +71,7 @@ public final class FrozenBlazeHudFeature extends ConfigurableFeature<MiscConfig>
 
     private void render(GuiGraphicsExtractor graphics) {
         var client = Minecraft.getInstance();
-        if (set == null || client.options.hideGui || client.screen != null || KungHudEditorState.externalEditing()) return;
+        if (set == null || client.options.hideGui || KungHudEditorState.externalEditing()) return;
         draw(graphics, config(), set, idleTicks);
     }
 

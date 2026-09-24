@@ -9,6 +9,7 @@ import com.github.beng420.kung.feature.misc.SuperpairsHelperFeature;
 import com.github.beng420.kung.feature.misc.BowDrawIndicatorFeature;
 import com.github.beng420.kung.feature.misc.FrozenBlazeHudFeature;
 import com.github.beng420.kung.feature.misc.PerformanceHudFeature;
+import com.github.beng420.kung.feature.slayer.TarantulaHelperFeature;
 import com.github.beng420.kung.feature.misc.SackTrackerFeature;
 import com.github.beng420.kung.feature.safari.SafariOverlayFeature;
 import java.util.List;
@@ -69,6 +70,11 @@ public final class KungHudLayout {
                 config.misc::setFrozenBlazeHudX, config.misc::setFrozenBlazeHudY,
                 config.misc::frozenBlazeHudScale, config.misc::setFrozenBlazeHudScale,
                 config.misc::frozenBlazeHudEnabled, config.misc::setFrozenBlazeHudEnabled),
+            new Entry("egg_sac_countdown", "Egg Sac Spawn Timer", () -> TarantulaHelperFeature.overlayBounds(config.slayer),
+                config.slayer::eggSacCountdownX, config.slayer::eggSacCountdownY,
+                config.slayer::setEggSacCountdownX, config.slayer::setEggSacCountdownY,
+                config.slayer::eggSacCountdownScale, config.slayer::setEggSacCountdownScale,
+                config.slayer::eggSacCountdownEnabled, config.slayer::setEggSacCountdownEnabled),
             new Entry("performance_hud", "Performance", () -> PerformanceHudFeature.overlayBounds(config.misc),
                 config.misc::performanceHudX, config.misc::performanceHudY,
                 config.misc::setPerformanceHudX, config.misc::setPerformanceHudY,

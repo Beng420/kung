@@ -3,6 +3,8 @@ package com.github.beng420.kung.mixin;
 import com.github.beng420.kung.feature.dungeon.DungeonEventRouter;
 import com.github.beng420.kung.feature.dungeon.DungeonDebuffFeature;
 import com.github.beng420.kung.feature.dungeon.M7DragonFeature;
+import com.github.beng420.kung.feature.misc.PerformanceHudFeature;
+import net.minecraft.network.protocol.ping.ClientboundPongResponsePacket;
 import com.github.beng420.kung.feature.garden.FeastOverlayFeature;
 import com.github.beng420.kung.feature.misc.CustomSoundsFeature;
 import com.github.beng420.kung.feature.misc.SuperpairsHelperFeature;
@@ -96,6 +98,11 @@ public abstract class ClientPacketListenerMixin {
     @Inject(method = {"handleLogin", "handleRespawn", "handleConfigurationStart"}, at = @At("TAIL"))
     private void kung$onWorldChanged(CallbackInfo callbackInfo) {
         HypixelInstanceTracker.INSTANCE.observeWorldChangePacket();
+    }
+
+    @Inject(method = "handlePongResponse", at = @At("TAIL"))
+    private void kung$onPong(ClientboundPongResponsePacket packet, CallbackInfo callbackInfo) {
+        PerformanceHudFeature.observePong(packet.time());
     }
 
     @Inject(method = "handleMovePlayer", at = @At("TAIL"))

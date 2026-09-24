@@ -6,7 +6,6 @@ import com.github.beng420.kung.config.category.DungeonConfig.DragonDebuffScope;
 import com.github.beng420.kung.config.category.DungeonConfig.DragonMarkerMode;
 import com.github.beng420.kung.config.category.DungeonConfig.DragonPart;
 import com.github.beng420.kung.config.category.DungeonConfig.PillarMaterial;
-import com.github.beng420.kung.config.category.SlayerConfig.EggSacPredictionRenderMode;
 import com.github.beng420.kung.config.category.SplitsConfig.PredictionMode;
 import com.github.beng420.kung.config.category.SplitsConfig.PredictionSource;
 import com.github.beng420.kung.config.category.SplitsConfig.TimeFormat;
@@ -185,7 +184,7 @@ public final class KungSettings {
                             )),
                         SettingEntry.toggle("Time Lost", config.splits::timeLost,
                             () -> config.splits.setTimeLost(!config.splits.timeLost())),
-                        SettingEntry.toggle("Run End Chat", config.splits::runEndChat,
+                        SettingEntry.toggle("Paste In Chat", config.splits::runEndChat,
                             () -> config.splits.setRunEndChat(!config.splits.runEndChat()))
                             .withTooltip("Print all splits in your local chat when the run ends.")
                     )
@@ -230,9 +229,14 @@ public final class KungSettings {
                     List.of(
                         SettingEntry.toggle("Egg Sac Prediction", config.slayer::eggSacPredictionEnabled,
                             () -> config.slayer.setEggSacPredictionEnabled(!config.slayer.eggSacPredictionEnabled())),
-                        SettingEntry.choice("Prediction Mode", EggSacPredictionRenderMode.values(),
-                            config.slayer::eggSacPredictionRenderMode, config.slayer::setEggSacPredictionRenderMode,
-                            EggSacPredictionRenderMode::label)
+                        SettingEntry.toggle("Egg Sac Boxes", config.slayer::eggSacBoxesEnabled,
+                            () -> config.slayer.setEggSacBoxesEnabled(!config.slayer.eggSacBoxesEnabled()))
+                            .withTooltip("Boxes the spawned sacs themselves. They carry no name of their own,",
+                                "so the Hitboxes feature cannot find them; Kung locates them by their timer."),
+                        SettingEntry.toggle("Egg Sac Spawn Timer", config.slayer::eggSacCountdownEnabled,
+                            () -> config.slayer.setEggSacCountdownEnabled(!config.slayer.eggSacCountdownEnabled()))
+                            .withTooltip("Counts down to the sacs from the moment the phase starts,",
+                                "then counts up while they are overdue. Move it in /kung hud.")
                     )
                 )
             )),
@@ -267,6 +271,8 @@ public final class KungSettings {
                 new FeatureEntry("Performance", config.misc::performanceHudEnabled,
                     () -> config.misc.setPerformanceHudEnabled(!config.misc.performanceHudEnabled()),
                     List.of(
+                        SettingEntry.slider("Refresh Time", config.misc::performanceRefreshTenths,
+                            config.misc::setPerformanceRefreshTenths, 1, 10, 1),
                         SettingEntry.toggle("Graph TPS", config.misc::performanceGraphTps,
                             () -> config.misc.setPerformanceGraphTps(!config.misc.performanceGraphTps())),
                         SettingEntry.toggle("Graph FPS", config.misc::performanceGraphFps,
@@ -290,6 +296,9 @@ public final class KungSettings {
                         SettingEntry.dynamicLabel(HypixelSkyBlockProfileClient.INSTANCE::statusMessage),
                         SettingEntry.text("API Key", config.misc::hypixelApiKey,
                             config.misc::setHypixelApiKey)
+                            .withTooltip("Create one at developer.hypixel.net; it looks like a UUID."),
+                        SettingEntry.button("Test Key", "Run", KungSettings::testHypixelKey)
+                            .withTooltip("Asks Hypixel once with your key and shows the answer above.")
                     )
                 ),
                 new FeatureEntry("Chat Commands", config.misc::chatCommandsEnabled,
@@ -550,6 +559,12 @@ public final class KungSettings {
             ));
         }
         return List.copyOf(settings);
+    }
+
+    /** The status line above only means something once a real request has answered. */
+    private static void testHypixelKey() {
+        var player = Minecraft.getInstance().player;
+        HypixelSkyBlockProfileClient.INSTANCE.verifyKey(player == null ? "" : player.getUUID().toString().replace("-", ""));
     }
 
     private static void openSoundSettings(KungConfig config) {

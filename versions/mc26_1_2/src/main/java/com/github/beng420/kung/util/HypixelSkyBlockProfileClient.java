@@ -36,6 +36,9 @@ public final class HypixelSkyBlockProfileClient {
     // Bonzo / Catacombs Explorer is Epic. API stacks count cumulative syphoned shards.
     private static final int[] EXPLORER_SHARD_THRESHOLDS = {1, 2, 4, 6, 9, 12, 16, 20, 25, 32};
 
+    /** Result of the last key test, so the settings row can show more than "a key is present". */
+    private volatile String lastKeyCheck = "";
+
     private final HttpClient httpClient = HttpClient.newBuilder()
         .connectTimeout(Duration.ofSeconds(5))
         .build();
@@ -346,14 +349,46 @@ public final class HypixelSkyBlockProfileClient {
 
     public String statusMessage() {
         KungConfig config = KungConfig.get();
-        if (!config.misc.hypixelApiEnabled()) {
-            return config.misc.hypixelApiKey().isBlank()
-                ? "Direct Hypixel: off, no key"
-                : "Direct Hypixel: off, key set";
+        if (config.misc.hypixelApiKey().isBlank()) {
+            return config.misc.hypixelApiEnabled() ? "No key set" : "Off, no key set";
         }
-        return config.misc.hypixelApiKey().isBlank()
-            ? "Direct Hypixel: no key"
-            : "Direct Hypixel: key set";
+        String checked = lastKeyCheck.isBlank() ? "key set, never tested" : lastKeyCheck;
+        return (config.misc.hypixelApiEnabled() ? "" : "Off, ") + checked;
+    }
+
+    /**
+     * One real request with the key. A key that is present says nothing about whether it works, and a
+     * wrong one otherwise only shows up as a failing command later.
+     */
+    public CompletableFuture<String> verifyKey(String uuid) {
+        String key = KungConfig.get().misc.hypixelApiKey();
+        if (key.isBlank()) {
+            return CompletableFuture.completedFuture(report("no key set"));
+        }
+        if (uuid == null || uuid.isBlank()) {
+            return CompletableFuture.completedFuture(report("no player to test with"));
+        }
+
+        HttpRequest request = HttpRequest.newBuilder(URI.create(HYPIXEL_PROFILES_API + "?uuid=" + uuid))
+            .timeout(Duration.ofSeconds(8))
+            .header("Accept", "application/json")
+            .header("API-Key", key)
+            .header("User-Agent", "Kung-HypixelProfile")
+            .GET()
+            .build();
+        return httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString())
+            .thenApply(response -> report(switch (response.statusCode()) {
+                case 200 -> "key works";
+                case 403 -> "key rejected";
+                case 429 -> "key works, rate limited";
+                default -> "Hypixel returned HTTP " + response.statusCode();
+            }))
+            .exceptionally(throwable -> report(shortError(throwable)));
+    }
+
+    private String report(String message) {
+        lastKeyCheck = message;
+        return message;
     }
 
     private static JsonObject objectMember(JsonObject object, String name) {

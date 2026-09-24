@@ -184,7 +184,7 @@ public record SettingEntry(
             case LABEL -> graphics.text(font, label(), x + width - font.width(label()), y + 4, theme.muted(), true);
             case TEXT -> {
                 graphics.fill(x + 1, y + 3, x + width - 1, y + height - 3, theme.accentDark());
-                graphics.text(font, font.plainSubstrByWidth(textSupplier.get(), width - 8), x + 4, y + 4, theme.text(), true);
+                graphics.text(font, font.plainSubstrByWidth(shownText(), width - 8), x + 4, y + 4, theme.text(), true);
             }
             case KEYBIND -> {
                 String text = capturing ? "Press..." : textSupplier.get();
@@ -219,6 +219,15 @@ public record SettingEntry(
             case CHOICE -> cycleChoice.run();
             case TEXT, KEYBIND, LABEL, GROUP -> { }
         }
+    }
+
+    /** A secret on the row is a secret in every screenshot, so a key shows only its last four characters. */
+    private String shownText() {
+        String value = textSupplier.get();
+        if (value.length() < 8 || !label().toLowerCase(Locale.ROOT).contains("key")) {
+            return value;
+        }
+        return "*".repeat(Math.min(12, value.length() - 4)) + value.substring(value.length() - 4);
     }
 
     public void appendText(String text) {

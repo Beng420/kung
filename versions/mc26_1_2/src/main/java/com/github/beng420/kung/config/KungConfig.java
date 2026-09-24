@@ -194,7 +194,6 @@ public final class KungConfig {
         misc.setCustomWitherShieldExpirePitchHundredths(misc.customWitherShieldExpirePitchHundredths());
         misc.normalize();
         hitboxes.normalize();
-        slayer.setEggSacPredictionRenderMode(slayer.eggSacPredictionRenderMode());
     }
 
     private void applyBundledDefaults() {

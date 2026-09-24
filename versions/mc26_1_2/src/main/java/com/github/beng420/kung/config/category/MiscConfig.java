@@ -23,6 +23,7 @@ public final class MiscConfig extends ConfigCategory {
     private int performanceHudX = 6;
     private int performanceHudY = 120;
     private int performanceHudScale = 100;
+    private int performanceRefreshTenths = 5;
     private boolean performanceGraphTps = false;
     private boolean performanceGraphFps = false;
     private boolean performanceGraphPing = false;
@@ -102,6 +103,8 @@ public final class MiscConfig extends ConfigCategory {
     public void setPerformanceHudY(int value) { performanceHudY = value; save(); }
     public int performanceHudScale() { return performanceHudScale; }
     public void setPerformanceHudScale(int value) { performanceHudScale = Math.clamp(value, 25, 300); save(); }
+    public int performanceRefreshTenths() { return performanceRefreshTenths; }
+    public void setPerformanceRefreshTenths(int value) { performanceRefreshTenths = Math.clamp(value, 1, 10); save(); }
     public boolean performanceGraphTps() { return performanceGraphTps; }
     public void setPerformanceGraphTps(boolean value) { performanceGraphTps = value; save(); }
     public boolean performanceGraphFps() { return performanceGraphFps; }
@@ -380,6 +383,7 @@ public final class MiscConfig extends ConfigCategory {
         bowDrawIndicatorScale = Math.clamp(bowDrawIndicatorScale, 25, 300);
         frozenBlazeHudScale = Math.clamp(frozenBlazeHudScale, 25, 300);
         performanceHudScale = Math.clamp(performanceHudScale, 25, 300);
+        performanceRefreshTenths = Math.clamp(performanceRefreshTenths, 1, 10);
         sackTrackerScale = Math.clamp(sackTrackerScale, 25, 300);
         sackTrackerItems = sackTrackerItems == null ? new ArrayList<>()
             : new ArrayList<>(sackTrackerItems.stream().filter(item -> item != null && !item.name().isBlank()).toList());

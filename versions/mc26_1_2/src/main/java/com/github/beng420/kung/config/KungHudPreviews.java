@@ -8,6 +8,7 @@ import com.github.beng420.kung.feature.safari.SafariOverlayFeature;
 import com.github.beng420.kung.feature.misc.BowDrawIndicatorFeature;
 import com.github.beng420.kung.feature.misc.FrozenBlazeHudFeature;
 import com.github.beng420.kung.feature.misc.PerformanceHudFeature;
+import com.github.beng420.kung.feature.slayer.TarantulaHelperFeature;
 import com.github.beng420.kung.feature.misc.SackTrackerFeature;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
@@ -28,6 +29,7 @@ public final class KungHudPreviews {
             case "dragon_debuff" -> DragonDebuffHud.drawPreview(graphics, config.dungeon);
             case "bow_draw_indicator" -> BowDrawIndicatorFeature.drawPreview(graphics, config.misc);
             case "frozen_blaze_hud" -> FrozenBlazeHudFeature.drawPreview(graphics, config.misc);
+            case "egg_sac_countdown" -> TarantulaHelperFeature.drawCountdownPreview(graphics, config.slayer);
             case "performance_hud" -> PerformanceHudFeature.drawPreview(graphics, config.misc);
             case "sack_tracker" -> SackTrackerFeature.drawPreview(graphics, config.misc);
             // Map and Superpairs retain the safe labeled placeholders used by /kung hud.
