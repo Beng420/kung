@@ -1,5 +1,6 @@
 package com.github.beng420.kung.feature.dungeon;
 
+import com.github.beng420.kung.compat.McCompat;
 import com.github.beng420.kung.config.category.DungeonConfig;
 import java.util.List;
 import com.github.beng420.kung.feature.ConfigurableFeature;
@@ -47,7 +48,7 @@ public final class M7DragonFeature extends ConfigurableFeature<DungeonConfig> {
     private final Map<UUID, EnderDragon> entities = new LinkedHashMap<>();
     private final Map<Statue, Boolean> statuePresent = new EnumMap<>(Statue.class);
     /** Resolved statues awaiting one shared title; EnumMap dedupes and keeps arena order. */
-    private final Map<Statue, Boolean> pendingTitles = new EnumMap<>(Statue.class);
+    private final Map<Statue, M7DragonTracker.Outcome> pendingTitles = new EnumMap<>(Statue.class);
     /** Tick of the last pre-spawn particle burst seen at each anchor. */
     private final Map<Statue, Long> spawnHints = new EnumMap<>(Statue.class);
     /** Server tick each dragon was first seen, and its per-tick part positions while being recorded. */
@@ -59,6 +60,8 @@ public final class M7DragonFeature extends ConfigurableFeature<DungeonConfig> {
     private boolean timelinesLoaded;
     /** Flights repeat to within a quarter block, so a few per statue are plenty. */
     private static final int MAX_TIMELINES = 5;
+    /** Most dragons die within 30 ticks; a prefire only needs the snap to the flight and the second after it. */
+    private static final int MIN_TIMELINE_ROWS = 15;
     private static final String TIMELINE_FILE = "m7-dragon-timelines.jsonl";
     /** Flight path per statue, from spawn to the point the dragon left its range. */
     private final Map<Statue, List<Vec3>> trails = new EnumMap<>(Statue.class);
@@ -78,12 +81,14 @@ public final class M7DragonFeature extends ConfigurableFeature<DungeonConfig> {
     private long witherKingEpoch = Long.MIN_VALUE;
     private long lastSampleTick = Long.MIN_VALUE;
     private long lastWaypointTrace = Long.MIN_VALUE;
+    /** Your arrows in flight while a dragon is due or up; each becomes one line of SHOT_FILE. */
+    private final List<ShotTrack> shots = new ArrayList<>();
+    private static final String SHOT_FILE = "m7-dragon-shots.jsonl";
 
     private M7DragonFeature() { super(config -> config.dungeon); }
 
     @Override public boolean isEnabled() {
-        return initialized() && KungDeveloperAccess.allowed()
-            && (config().m7DragonHelperEnabled() || config().devDragonDiagnosticsEnabled());
+        return initialized() && (config().m7DragonHelperEnabled() || config().devDragonDiagnosticsEnabled());
     }
 
     @Override protected void onInitialize() {
@@ -122,6 +127,8 @@ public final class M7DragonFeature extends ConfigurableFeature<DungeonConfig> {
         particleSamples.clear();
         spawnTicks.clear();
         timelineRows.clear();
+        shots.clear();
+        spamPlans.clear();
     }
 
     private void synchronizeEpoch() {
@@ -167,6 +174,10 @@ public final class M7DragonFeature extends ConfigurableFeature<DungeonConfig> {
     }
 
     public void observeSpawn(Entity entity) {
+        if (entity instanceof net.minecraft.world.entity.projectile.arrow.AbstractArrow arrow) {
+            observeArrow(arrow);
+            return;
+        }
         if (!(entity instanceof EnderDragon dragon) || !ready()) return;
         var previous = tracker.attempt(entity.getUUID());
         Statue statue = previous == null ? Statue.atSpawn(entity.position()) : previous.statue();
@@ -243,6 +254,8 @@ public final class M7DragonFeature extends ConfigurableFeature<DungeonConfig> {
         }
         for (String message : pendingMessages) publish(tracker.confirmMessage(message));
         pendingMessages.clear();
+        trackShots(client);
+        updateSpamPlans(client);
         if (config().devDragonDiagnosticsEnabled()
             && DungeonScanSchedule.due(tracker.tick(), lastSampleTick, 5)) {
             lastSampleTick = tracker.tick();
@@ -263,16 +276,19 @@ public final class M7DragonFeature extends ConfigurableFeature<DungeonConfig> {
         for (var entry : pendingTitles.entrySet()) {
             if (!first) line.append(Component.literal("   "));
             first = false;
-            boolean counts = entry.getValue();
+            var outcome = entry.getValue();
             line.append(Component.literal(entry.getKey().label()).withColor(entry.getKey().color() & 0xFFFFFF))
-                .append(Component.literal(counts ? " counts" : " unsure")
-                    .withColor(counts ? 0x55FF55 : 0xFFAA00));
+                .append(switch (outcome) {
+                    case COUNTS -> Component.literal(" counts").withColor(0x55FF55);
+                    case MISSED -> Component.literal(" missed").withColor(0xFF5555);
+                    case UNKNOWN -> Component.literal(" unsure").withColor(0xFFAA00);
+                });
         }
         pendingTitles.clear();
         // Subtitle slot rather than title: it draws at half the scale.
-        client.gui.setTimes(0, 30, 5);
-        client.gui.setTitle(Component.empty());
-        client.gui.setSubtitle(line);
+        McCompat.setTitleTimes(client, 0, 30, 5);
+        McCompat.setTitle(client, Component.empty());
+        McCompat.setSubtitle(client, line);
     }
 
     private static boolean inArena(Minecraft client) {
@@ -285,7 +301,7 @@ public final class M7DragonFeature extends ConfigurableFeature<DungeonConfig> {
     List<M7DragonRenderer.Marker> renderMarkers(float partialTick) {
         if (!ready()) return List.of();
         Minecraft client = Minecraft.getInstance();
-        if (client.options.hideGui || !inArena(client)) return List.of();
+        if (McCompat.hudHidden(client) || !inArena(client)) return List.of();
         List<M7DragonRenderer.Marker> markers = new ArrayList<>();
         for (Statue statue : Statue.values()) {
             if (config().m7DragonHelperEnabled() && config().dragonSpawnMarkersEnabled()) {
@@ -301,9 +317,12 @@ public final class M7DragonFeature extends ConfigurableFeature<DungeonConfig> {
             }
             if (config().m7DragonHelperEnabled() && config().dragonStatueBoxesEnabled() && !tracker.statueCounted(statue)) {
                 var attempt = tracker.latest(statue);
-                int color = attempt == null || attempt.dead() || !attempt.loaded() ? 0xFFAAAAAA
-                    : statue.contains(attempt.position()) ? 0xFF55FF55 : 0xFFFF5555;
-                markers.add(new M7DragonRenderer.Marker(statue.range(), color, 2.0F));
+                boolean live = attempt != null && !attempt.dead() && attempt.loaded();
+                // Edges name the statue; the fill, only while its dragon is up, says whether a kill right
+                // now would count. 12% per face, since you often look through two faces of a box this big.
+                markers.add(new M7DragonRenderer.Marker(statue.range(), statue.color() | 0xFF000000, 2.0F));
+                if (live) markers.add(new M7DragonRenderer.Marker(statue.range(),
+                    statue.contains(attempt.position()) ? 0x2055FF55 : 0x20FF5555, 0, true));
             }
         }
         if (config().m7DragonHelperEnabled()) addAimMarkers(markers, client, partialTick);
@@ -357,7 +376,7 @@ public final class M7DragonFeature extends ConfigurableFeature<DungeonConfig> {
      * no eyeballing, no slider. One line per dragon per run.
      */
     private void recordHitbox(EnderDragon dragon) {
-        if (!hitboxesRecorded.add(dragon.getUUID())) return;
+        if (!KungDeveloperAccess.allowed() || !hitboxesRecorded.add(dragon.getUUID())) return;
         var attempt = tracker.attempt(dragon.getUUID());
         if (attempt == null) return;
         Vec3 origin = dragon.position();
@@ -397,7 +416,7 @@ public final class M7DragonFeature extends ConfigurableFeature<DungeonConfig> {
      * this the resting core sat on the raw anchor - four blocks below the first trail point.
      */
     static Vec3 spawnCentre(Statue statue) {
-        return statue.spawn().add(0, net.minecraft.world.entity.EntityType.ENDER_DRAGON.getHeight() / 2.0, 0);
+        return statue.spawn().add(0, McCompat.ENDER_DRAGON.getHeight() / 2.0, 0);
     }
 
     static Vec3 dragonCentre(EnderDragon dragon) {
@@ -423,7 +442,7 @@ public final class M7DragonFeature extends ConfigurableFeature<DungeonConfig> {
         if (spawn == null || attempt == null || attempt.dead()) return;
         long offset = tracker.tick() - spawn;
         if (offset >= M7DragonAim.TIMELINE_TICKS) {
-            flushTimeline(uuid, true);
+            flushTimeline(uuid);
             return;
         }
         List<double[]> rows = timelineRows.computeIfAbsent(uuid, ignored -> new ArrayList<>());
@@ -443,14 +462,12 @@ public final class M7DragonFeature extends ConfigurableFeature<DungeonConfig> {
         rows.add(row);
     }
 
-    private void flushTimeline(UUID uuid) { flushTimeline(uuid, false); }
-
-    /** Keeps only whole windows: a dragon killed early leaves a flight that stops, and the aim would freeze there. */
-    private void flushTimeline(UUID uuid, boolean complete) {
+    // ponytail: newest flight wins and the aim holds still past its last row; keep the longest per statue if that bites.
+    private void flushTimeline(UUID uuid) {
         Long spawn = spawnTicks.remove(uuid);
         List<double[]> rows = timelineRows.remove(uuid);
         var attempt = tracker.attempt(uuid);
-        if (!complete || spawn == null || rows == null || attempt == null) return;
+        if (spawn == null || rows == null || rows.size() < MIN_TIMELINE_ROWS || attempt == null) return;
         loadTimelines();
         Statue statue = attempt.statue();
         Long hint = spawnHints.get(statue);
@@ -481,22 +498,14 @@ public final class M7DragonFeature extends ConfigurableFeature<DungeonConfig> {
         }
     }
 
-    /** Terminator for Archer/Berserker, Last Breath for everyone else, unless picked by hand. */
+    /** Terminator for Archer/Berserker, Last Breath for everyone else, unless picked by hand. Developer only. */
     private DungeonConfig.DragonAimMode aimMode() {
+        if (!KungDeveloperAccess.allowed()) return DungeonConfig.DragonAimMode.OFF;
         var mode = config().dragonAimMode();
         if (mode != DungeonConfig.DragonAimMode.AUTO) return mode;
         var selfClass = services().dungeonStateTracker().runStats().selfDungeonClass();
         return selfClass == DungeonRunStats.DungeonClass.ARCHER || selfClass == DungeonRunStats.DungeonClass.BERSERKER
             ? DungeonConfig.DragonAimMode.TERMINATOR : DungeonConfig.DragonAimMode.LAST_BREATH;
-    }
-
-    /** Terminator always fires at full speed; Last Breath fires on release, at whatever the draw has reached. */
-    private static double arrowSpeed(DungeonConfig.DragonAimMode mode, net.minecraft.world.entity.player.Player player) {
-        if (mode == DungeonConfig.DragonAimMode.LAST_BREATH && player.isUsingItem()
-            && player.getUseItem().getItem() instanceof net.minecraft.world.item.BowItem) {
-            return M7DragonAim.ARROW_SPEED * net.minecraft.world.item.BowItem.getPowerForTime(player.getTicksUsingItem());
-        }
-        return M7DragonAim.ARROW_SPEED;
     }
 
     /** Ticks since this statue's dragon spawned, negative while its burst counts down; null outside the aim window. */
@@ -516,21 +525,259 @@ public final class M7DragonFeature extends ConfigurableFeature<DungeonConfig> {
         if (mode == DungeonConfig.DragonAimMode.OFF || client.player == null) return;
         loadTimelines();
         Vec3 eye = client.player.getEyePosition(partialTick);
-        double speed = arrowSpeed(mode, client.player);
         for (Statue statue : Statue.values()) {
             Double since = ticksSinceSpawn(statue);
             if (since == null) continue;
             var timeline = timelines.get(statue);
-            // ponytail: without a recorded flight there is no lead - aim at the body where it spawns, then
-            // where it is. Purple is killed at spawn, so it rarely needs more.
-            Vec3 body = timeline == null ? corePoint(statue, DungeonConfig.DragonPart.BODY, partialTick) : null;
-            var aim = M7DragonAim.aim(eye, tick -> body != null ? body : timeline.body(tick), since, speed);
+            if (mode == DungeonConfig.DragonAimMode.LAST_BREATH) {
+                var plan = spamPlans.get(statue);
+                if (plan != null) addSpamMarkers(markers, plan, client, eye);
+                continue;
+            }
+            // The neck: every dragon spawns facing one way and snaps to its flight within a few ticks,
+            // and the recorded flight holds the snapped neck.
+            // ponytail: without a recorded flight there is no snap or lead - aim at the neck where it
+            // spawns, then where it is. One dragon alive for MIN_TIMELINE_ROWS ticks records one.
+            Vec3 neck = timeline == null ? corePoint(statue, DungeonConfig.DragonPart.NECK, partialTick) : null;
+            java.util.function.DoubleFunction<Vec3> neckAt =
+                tick -> neck != null ? neck : timeline.at(tick, DungeonConfig.DragonPart.NECK);
+            var aim = M7DragonAim.aim(eye, neckAt, since, M7DragonAim.ARROW_SPEED);
             if (aim == null) continue;
-            // White once an arrow fired now lands on a dragon that exists; the Terminator marker grows a
-            // second before spawn, the moment to start running in.
-            boolean runIn = mode == DungeonConfig.DragonAimMode.TERMINATOR && since < 0 && since >= -20;
-            markers.add(point(aim.point(), aim.arrivalTick() >= 0 ? 0xFFFFFFFF : 0xFF888888, runIn));
+            // The marker grows a second before spawn, the moment to start running in.
+            boolean runIn = since < 0 && since >= -20;
+            // Gray lands before the spawn, white inside the hit window, red after it.
+            int color = aim.arrivalTick() < 0 ? 0xFF888888
+                : aim.arrivalTick() <= M7DragonAim.HIT_WINDOW_TICKS ? 0xFFFFFFFF : 0xFFFF5555;
+            markers.add(point(aim.point(), color, runIn));
         }
+    }
+
+    /**
+     * Last Breath is spammed from under the dragon, hitting on the way up and on the way down.
+     * Per statue: where the body will be, the draws that get there from where you stand, and the aim
+     * for the middle one. Refreshed every client tick; the marker only rides your eye in between.
+     */
+    record SpamPlan(Vec3 body, int min, int max, int draw, Vec3 direction) { }
+    private final Map<Statue, SpamPlan> spamPlans = new EnumMap<>(Statue.class);
+
+    private void updateSpamPlans(Minecraft client) {
+        spamPlans.clear();
+        var misc = com.github.beng420.kung.config.KungConfig.get().misc;
+        // The Bow Draw bar's M7 Dragon Ticks need the plans without the aim markers.
+        boolean bar = misc.bowDrawIndicatorEnabled() && misc.bowDrawDragonTicksEnabled();
+        if (client.player == null || !inArena(client) || !config().m7DragonHelperEnabled()
+            || !bar && aimMode() != DungeonConfig.DragonAimMode.LAST_BREATH) return;
+        loadTimelines();
+        Vec3 eye = client.player.getEyePosition();
+        double nearest = Double.MAX_VALUE;
+        for (Statue statue : Statue.values()) {
+            Double since = ticksSinceSpawn(statue);
+            if (since == null || since > M7DragonAim.HIT_WINDOW_TICKS) continue;
+            var timeline = timelines.get(statue);
+            // ponytail: without a recorded flight, the body where it is (spawn pose until it spawns).
+            Vec3 body = timeline == null ? corePoint(statue, DungeonConfig.DragonPart.BODY, 1) : M7DragonAim.standSpot(timeline);
+            SpamPlan plan = plan(client, eye, body);
+            spamPlans.put(statue, plan);
+            DrawHint hint = new DrawHint(plan.min(), plan.max(), plan.draw());
+            lastHints.put(statue, hint);
+            // Two dragons can spawn at once; the bar follows the one whose square is nearest.
+            double distance = Math.hypot(body.x - eye.x, body.z - eye.z);
+            if (distance < nearest) {
+                nearest = distance;
+                drawHint = plan.draw() < 0 ? null : hint;
+                drawHintNanos = System.nanoTime();
+            }
+        }
+    }
+
+    /**
+     * Flies every draw from 3 to 20 ticks at the body: too weak ones never get there, too strong ones
+     * hit a block on the way (the statue you stand under). The clean ones are the range; aim for its middle.
+     */
+    private static SpamPlan plan(Minecraft client, Vec3 eye, Vec3 body) {
+        int min = -1;
+        int max = -1;
+        Vec3[] directions = new Vec3[M7DragonAim.FULL_DRAW_TICKS + 1];
+        for (int ticks = M7DragonAim.MIN_SHOT_TICKS; ticks <= M7DragonAim.FULL_DRAW_TICKS; ticks++) {
+            double speed = M7DragonAim.drawSpeed(ticks);
+            var shot = M7DragonAim.lobShot(eye, body, speed);
+            if (shot == null) continue;
+            if (!clear(client, eye, shot, speed)) {
+                if (min >= 0) break;
+                continue;
+            }
+            if (min < 0) min = ticks;
+            max = ticks;
+            directions[ticks] = shot.direction();
+        }
+        int draw = min < 0 ? -1 : (min + max) / 2;
+        return new SpamPlan(body, min, max, draw, draw < 0 ? null : directions[draw]);
+    }
+
+    /** Flies the shot tick by tick, a quarter tick at a time, and fails on the first block with a collision box. */
+    private static boolean clear(Minecraft client, Vec3 eye, M7DragonAim.Shot shot, double speed) {
+        Vec3 at = eye;
+        Vec3 velocity = shot.direction().scale(speed);
+        var pos = new net.minecraft.core.BlockPos.MutableBlockPos();
+        for (int tick = 0; tick < shot.ticks(); tick++) {
+            for (int quarter = 1; quarter <= 4; quarter++) {
+                pos.set(at.x + velocity.x * quarter / 4, at.y + velocity.y * quarter / 4, at.z + velocity.z * quarter / 4);
+                if (!client.level.getBlockState(pos).getCollisionShape(client.level, pos).isEmpty()) return false;
+            }
+            at = at.add(velocity);
+            velocity = velocity.scale(0.99).subtract(0, 0.05, 0);
+        }
+        return true;
+    }
+
+    /**
+     * A floor square under where the body will be (stand there; orange when nothing gets there cleanly
+     * from where you are), and the aim dot for the middle draw, ten blocks out.
+     */
+    private void addSpamMarkers(List<M7DragonRenderer.Marker> markers, SpamPlan plan, Minecraft client, Vec3 eye) {
+        Vec3 body = plan.body();
+        double floor = Math.floor(client.player.getY() + 0.01);
+        markers.add(new M7DragonRenderer.Marker(new AABB(body.x - 0.5, floor + 0.02, body.z - 0.5,
+            body.x + 0.5, floor + 0.08, body.z + 0.5), plan.draw() < 0 ? 0xB0FFAA00 : 0xB0FFFFFF, 0, true));
+        if (plan.direction() != null) {
+            markers.add(point(eye.add(plan.direction().scale(M7DragonAim.LOB_MARKER_DISTANCE)), 0xFFFFFFFF, true));
+        }
+    }
+
+    /** Draw ticks for the Bow Draw bar: min reaches the body, max still misses every block, draw is the aim's. */
+    public record DrawHint(int min, int max, int draw) { }
+    private DrawHint drawHint;
+    private long drawHintNanos;
+    /** Per statue, the range from where you stood at its last spawn; kept across runs for the menu. */
+    private final Map<Statue, DrawHint> lastHints = new EnumMap<>(Statue.class);
+
+    /** One line per dragon for the Bow Draw Indicator menu. */
+    public List<String> drawRangeLines() {
+        List<String> lines = new ArrayList<>();
+        for (Statue statue : Statue.values()) {
+            DrawHint hint = lastHints.get(statue);
+            lines.add(statue.label() + ": " + (hint == null ? "no spawn seen this session"
+                : hint.draw() < 0 ? "nothing got there cleanly from where you stood"
+                : hint.min() + "-" + hint.max() + " ticks, aim drawn at " + hint.draw()));
+        }
+        return lines;
+    }
+
+    /** The hint while the spam markers are drawn, null a moment after they stop. */
+    public DrawHint drawHint() {
+        return System.nanoTime() - drawHintNanos < 200_000_000L ? drawHint : null;
+    }
+
+    /** One of your arrows, from the packet that spawned it to the tick it hit, stuck or vanished. */
+    private static final class ShotTrack {
+        final net.minecraft.world.entity.projectile.arrow.AbstractArrow arrow;
+        final long fireTick;
+        final Vec3 feet;
+        final Vec3 eye;
+        final int draw;
+        final String mode;
+        final String dungeonClass;
+        final Map<Statue, Double> since;
+        Vec3 velocity;
+        Vec3 last;
+        int still;
+        double closest = Double.MAX_VALUE;
+        String closestAt = "null";
+        double nearestNow = Double.MAX_VALUE;
+
+        ShotTrack(net.minecraft.world.entity.projectile.arrow.AbstractArrow arrow, long fireTick, Vec3 feet, Vec3 eye,
+                  int draw, String mode, String dungeonClass, Map<Statue, Double> since) {
+            this.arrow = arrow;
+            this.fireTick = fireTick;
+            this.feet = feet;
+            this.eye = eye;
+            this.draw = draw;
+            this.mode = mode;
+            this.dungeonClass = dungeonClass;
+            this.since = since;
+            this.velocity = arrow.getDeltaMovement();
+        }
+    }
+
+    /**
+     * Logs your arrows around each spawn - where you stood, how long you drew, when you fired and
+     * where the arrow ended - so the spot, draw and timing that hit can be read off many runs.
+     * Yours: it appears at your eye (Hypixel spawns it 0.1 below) and nobody else owns it.
+     */
+    private void observeArrow(net.minecraft.world.entity.projectile.arrow.AbstractArrow arrow) {
+        // The same arrow can be added twice (every horizontal shot of the last run was logged twice).
+        if (!KungDeveloperAccess.allowed() || !ready() || shots.size() >= 64
+            || shots.stream().anyMatch(shot -> shot.arrow == arrow)) return;
+        Minecraft client = Minecraft.getInstance();
+        var player = client.player;
+        if (player == null || !inArena(client) || arrow.getOwner() != null && arrow.getOwner() != player
+            || arrow.position().distanceTo(player.getEyePosition()) > 2.5) return;
+        Map<Statue, Double> since = new EnumMap<>(Statue.class);
+        for (Statue statue : Statue.values()) {
+            Double ticks = ticksSinceSpawn(statue);
+            if (ticks != null) since.put(statue, ticks);
+        }
+        if (since.isEmpty()) return;
+        // The draw this arrow came from is the last one released - while spamming the next is already running.
+        // ponytail: -1 with the Bow Draw HUD switched off; its counter survives Hypixel rewriting the held bow.
+        shots.add(new ShotTrack(arrow, tracker.tick(), player.position(), player.getEyePosition(),
+            com.github.beng420.kung.feature.misc.BowDrawIndicatorFeature.INSTANCE.releasedTicks(), aimMode().name(),
+            String.valueOf(services().dungeonStateTracker().runStats().selfDungeonClass()), since));
+    }
+
+    private void trackShots(Minecraft client) {
+        var iterator = shots.iterator();
+        while (iterator.hasNext()) {
+            ShotTrack shot = iterator.next();
+            long flight = tracker.tick() - shot.fireTick;
+            Vec3 at = shot.arrow.position();
+            // The spawn packet may leave the velocity to a motion packet a tick later.
+            if (shot.velocity.lengthSqr() < 0.01) shot.velocity = shot.arrow.getDeltaMovement();
+            if (shot.arrow.isRemoved()) {
+                // An arrow that hits a dragon is removed; a tick earlier it was at most one step from a part.
+                finishShot(shot, shot.nearestNow <= 3.5 ? "HIT" : "GONE", flight, shot.last == null ? at : shot.last);
+                iterator.remove();
+                continue;
+            }
+            shot.nearestNow = Double.MAX_VALUE;
+            for (EnderDragon dragon : entities.values()) {
+                var attempt = tracker.attempt(dragon.getUUID());
+                if (attempt == null || attempt.dead() || !dragon.isAlive()) continue;
+                var parts = dragon.getSubEntities();
+                for (var part : DungeonConfig.DragonPart.values()) {
+                    if (part.part() < 0 || part.part() >= parts.length) continue;
+                    double distance = Math.sqrt(parts[part.part()].getBoundingBox().distanceToSqr(at));
+                    shot.nearestNow = Math.min(shot.nearestNow, distance);
+                    if (distance >= shot.closest) continue;
+                    shot.closest = distance;
+                    shot.closestAt = "{\"statue\":\"" + attempt.statue().name() + "\",\"part\":\"" + part.name()
+                        + "\",\"distance\":" + round(distance) + ",\"flight\":" + flight + ",\"at\":" + xyz(at) + "}";
+                }
+            }
+            shot.still = shot.last != null && at.distanceToSqr(shot.last) < 1e-4 ? shot.still + 1 : 0;
+            shot.last = at;
+            // Stuck in a block - the statue overhead, the floor - or never coming down.
+            if (shot.still >= 3 || flight > 200) {
+                finishShot(shot, shot.still >= 3 ? "STUCK" : "TIMEOUT", flight, at);
+                iterator.remove();
+            }
+        }
+    }
+
+    // ponytail: one file append per arrow on the client thread; buffer per wave if Terminator spam shows in frame times.
+    private void finishShot(ShotTrack shot, String end, long flight, Vec3 at) {
+        StringBuilder since = new StringBuilder("{");
+        shot.since.forEach((statue, ticks) -> since.append(since.length() > 1 ? "," : "")
+            .append('"').append(statue.name()).append("\":").append(round(ticks)));
+        appendLine(SHOT_FILE, "{\"tick\":" + shot.fireTick + ",\"mode\":\"" + shot.mode
+            + "\",\"class\":\"" + shot.dungeonClass + "\",\"draw\":" + shot.draw
+            + ",\"velocity\":" + xyz(shot.velocity) + ",\"feet\":" + xyz(shot.feet) + ",\"eye\":" + xyz(shot.eye)
+            + ",\"since\":" + since.append('}') + ",\"closest\":" + shot.closestAt
+            + ",\"end\":{\"reason\":\"" + end + "\",\"flight\":" + flight + ",\"at\":" + xyz(at) + "}}");
+    }
+
+    private static String xyz(Vec3 vector) {
+        return "[" + round(vector.x) + "," + round(vector.y) + "," + round(vector.z) + "]";
     }
 
     private void recordTrail(EnderDragon dragon) {
@@ -538,7 +785,8 @@ public final class M7DragonFeature extends ConfigurableFeature<DungeonConfig> {
         var attempt = tracker.attempt(dragon.getUUID());
         if (attempt == null) return;
         Statue statue = attempt.statue();
-        if (trailsClosed.contains(statue)) return;
+        // Purple teleports between random points; a line through them is no path.
+        if (statue == Statue.PURPLE || trailsClosed.contains(statue)) return;
         List<Vec3> points = trails.computeIfAbsent(statue, ignored -> new ArrayList<>());
         if (extendTrail(points, trailPoint(dragon, config().dragonTrailPart()), statue.contains(dragon.position()))) {
             trailsClosed.add(statue);
@@ -617,6 +865,7 @@ public final class M7DragonFeature extends ConfigurableFeature<DungeonConfig> {
                 } catch (RuntimeException malformed) {
                     continue;
                 }
+                if (statue == Statue.PURPLE) continue;
                 List<Vec3> absolute = new ArrayList<>(points.size());
                 for (var point : points) {
                     var xyz = point.getAsJsonArray();
@@ -655,7 +904,7 @@ public final class M7DragonFeature extends ConfigurableFeature<DungeonConfig> {
     List<M7DragonRenderer.Trail> renderTrails() {
         if (!ready()) return List.of();
         Minecraft client = Minecraft.getInstance();
-        if (client.options.hideGui || !inArena(client)
+        if (McCompat.hudHidden(client) || !inArena(client)
             || !config().m7DragonHelperEnabled() || !config().dragonFlightPathsEnabled()) {
             return List.of();
         }
@@ -721,7 +970,7 @@ public final class M7DragonFeature extends ConfigurableFeature<DungeonConfig> {
     /** True while the anchor is flashing its pre-spawn burst and no dragon has appeared yet. */
     private boolean spawning(Statue statue) {
         Long hint = spawnHints.get(statue);
-        if (hint == null || tracker.tick() - hint > 60) return false;
+        if (hint == null || tracker.tick() - hint > M7DragonAim.HINT_TO_SPAWN_TICKS + 20) return false;
         var attempt = tracker.latest(statue);
         return attempt == null || attempt.dead() || entities.get(attempt.uuid()) == null;
     }
@@ -740,8 +989,11 @@ public final class M7DragonFeature extends ConfigurableFeature<DungeonConfig> {
     private void publish(List<M7DragonTracker.Result> results) {
         for (var result : results) {
             String name = result.statue() == null ? "Dragon" : result.statue().label() + " dragon";
-            boolean counts = result.outcome() == M7DragonTracker.Outcome.COUNTS;
-            String text = name + (counts ? " counts." : " result unknown — no statue confirmation.");
+            String text = name + switch (result.outcome()) {
+                case COUNTS -> " counts.";
+                case MISSED -> " missed - it respawns.";
+                case UNKNOWN -> " result unknown — no statue confirmation.";
+            };
             trace("result " + text + " evidence=" + result.evidence());
             recordDeath(result);
             if (!config().m7DragonHelperEnabled() || !config().dragonCountNotificationsEnabled()) continue;
@@ -749,15 +1001,14 @@ public final class M7DragonFeature extends ConfigurableFeature<DungeonConfig> {
             if (client.player == null) continue;
             // Buffer instead of drawing now: statueBroken and confirmMessage both publish in the
             // same tick, so drawing per result stacked two titles. flushTitles draws one.
-            if (result.statue() != null) pendingTitles.put(result.statue(), counts);
+            if (result.statue() != null) pendingTitles.put(result.statue(), result.outcome());
         }
     }
 
     /**
      * Appends one line per resolved dragon so the real counting box can be fitted offline.
-     * Runs unattended - no dev command - because the feature is already Beng114-only. A dragon
-     * that first times out as UNKNOWN and is later confirmed writes a second line; dedupe by
-     * taking the highest tick per (statue, x, y, z).
+     * Runs unattended - no dev command - because the feature is already Beng114-only. Only
+     * COUNTS and MISSED are written; UNKNOWN says nothing about the box.
      */
     /** Offsets are relative to the spawn anchor, which is the frame the counting box is fitted in. */
     static String deathLine(long tick, Statue statue, M7DragonTracker.Outcome outcome, Vec3 at) {
@@ -782,7 +1033,8 @@ public final class M7DragonFeature extends ConfigurableFeature<DungeonConfig> {
         List<DeathSample> samples = new ArrayList<>();
         for (String line : lines) {
             Matcher matcher = SAMPLE_LINE.matcher(line);
-            if (!matcher.find()) continue;
+            // UNKNOWN is no evidence either way: half of them were later-confirmed counts at the same spot.
+            if (!matcher.find() || matcher.group(2).equals("UNKNOWN")) continue;
             samples.add(new DeathSample(matcher.group(1), matcher.group(2).equals("COUNTS"),
                 Double.parseDouble(matcher.group(3)), Double.parseDouble(matcher.group(4)),
                 Double.parseDouble(matcher.group(5))));
@@ -820,7 +1072,8 @@ public final class M7DragonFeature extends ConfigurableFeature<DungeonConfig> {
     private void recordDeath(M7DragonTracker.Result result) {
         Statue statue = result.statue();
         Vec3 at = result.position();
-        if (statue == null || at == null) return;
+        if (!KungDeveloperAccess.allowed() || statue == null || at == null
+            || result.outcome() == M7DragonTracker.Outcome.UNKNOWN) return;
         Minecraft client = Minecraft.getInstance();
         Path gameDirectory = client == null ? Path.of(".") : client.gameDirectory.toPath();
         Path file = new KungFileLayout(gameDirectory, gameDirectory.resolve("config"))
@@ -863,7 +1116,11 @@ public final class M7DragonFeature extends ConfigurableFeature<DungeonConfig> {
             if (Math.abs(packet.getX() - statue.spawn().x) < 0.5
                 && Math.abs(packet.getY() - (statue.spawn().y + 5)) < 0.5
                 && Math.abs(packet.getZ() - statue.spawn().z) < 0.5) {
-                if (spawnHints.put(statue, tracker.tick()) == null) {
+                // The burst repeats until the dragon spawns; HINT_TO_SPAWN_TICKS counts from its first
+                // packet. Refreshing on every packet left the countdown stuck ~100 ticks out.
+                Long first = spawnHints.get(statue);
+                if (first == null || tracker.tick() - first > M7DragonAim.HINT_TO_SPAWN_TICKS + 20) {
+                    spawnHints.put(statue, tracker.tick());
                     trace("spawn-hint " + statue.label() + " tick=" + tracker.tick());
                 }
                 return;

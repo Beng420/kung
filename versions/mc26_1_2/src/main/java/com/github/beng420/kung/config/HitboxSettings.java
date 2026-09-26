@@ -1,5 +1,6 @@
 package com.github.beng420.kung.config;
 
+import com.github.beng420.kung.compat.McCompat;
 import com.github.beng420.kung.config.category.HitboxesConfig;
 import com.github.beng420.kung.feature.misc.HitboxesFeature;
 import java.util.ArrayList;
@@ -49,13 +50,13 @@ final class HitboxSettings implements Supplier<List<SettingEntry>> {
 
     private void open(String id) {
         Minecraft client = Minecraft.getInstance();
-        Screen parent = client.screen;
+        Screen parent = McCompat.screen(client);
         // The optional native menu delegates these compound controls to the same complete editor.
         if (!(parent instanceof KungConfigScreen)) {
             parent = KungConfigScreen.fromParent(parent, "Hitboxes");
-            client.setScreen(parent);
+            McCompat.setScreen(client, parent);
         }
-        client.setScreen(new HitboxEditorScreen(parent, config, id));
+        McCompat.setScreen(client, new HitboxEditorScreen(parent, config, id));
     }
 
     /** What was around the player in the last minute first, then every vanilla entity type. */

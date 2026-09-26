@@ -1,6 +1,6 @@
 package com.github.beng420.kung.config;
 
-import com.github.beng420.kung.config.category.DebugConfig;
+import com.github.beng420.kung.compat.McCompat;
 import com.github.beng420.kung.config.category.DungeonConfig.DragonAimMode;
 import com.github.beng420.kung.config.category.DungeonConfig.DragonDebuffScope;
 import com.github.beng420.kung.config.category.DungeonConfig.DragonMarkerMode;
@@ -15,6 +15,7 @@ import com.github.beng420.kung.feature.dungeon.DungeonRoomDataSyncClient;
 import com.github.beng420.kung.feature.misc.CustomSoundsFeature;
 import com.github.beng420.kung.feature.misc.LoadoutsAutoCloseFeature;
 import com.github.beng420.kung.runtime.KungDeveloperAccess;
+import com.github.beng420.kung.ui.KungFonts;
 import com.github.beng420.kung.update.KungUpdater;
 import com.github.beng420.kung.util.HypixelSkyBlockProfileClient;
 import java.io.StringReader;
@@ -43,6 +44,16 @@ public final class KungSettings {
     }
 
     static List<CategoryEntry> categories(KungConfig config, Runnable openChangelog, boolean developer) {
+        List<CategoryEntry> all = allCategories(config, openChangelog, developer);
+        if (developer) return all;
+        // forDeveloper() puts a star on the row; for everyone else the row is simply not there.
+        return all.stream()
+            .map(category -> new CategoryEntry(category.name(),
+                category.features().stream().filter(feature -> !feature.developerOnly()).toList()))
+            .toList();
+    }
+
+    private static List<CategoryEntry> allCategories(KungConfig config, Runnable openChangelog, boolean developer) {
         return List.of(
             new CategoryEntry("Dungeon", List.of(
                 new FeatureEntry("Dungeon Map", config.dungeon::enabled,
@@ -353,6 +364,7 @@ public final class KungSettings {
                             .withTooltip("Drop .wav, .mp3 or .aiff files in here:", CustomSoundsFeature.soundsFolder().toString())
                     )
                 ).withTooltip("Plays your own sound files on an arrow hit and when the Wither shield ends."),
+                menuFontEntry(config),
                 new FeatureEntry("Loadouts Auto Close", config.misc::loadoutsAutoCloseEnabled,
                     () -> config.misc.setLoadoutsAutoCloseEnabled(!config.misc.loadoutsAutoCloseEnabled()),
                     loadoutAutoCloseSettings(config)
@@ -369,7 +381,7 @@ public final class KungSettings {
                     "Up to marks an upper bound because hidden fields may contain bonuses.",
                     "1/2 and 2/2 mean cards seen, not confirmed claimed rewards.")
             )),
-            new CategoryEntry("Debug", java.util.stream.Stream.concat(java.util.stream.Stream.of(
+            new CategoryEntry("Debug", List.of(
                 new FeatureEntry(
                     KungUpdater.INSTANCE::buttonLabel,
                     KungUpdater.INSTANCE::isUpdateAvailable,
@@ -424,17 +436,24 @@ public final class KungSettings {
                             () -> DungeonRoomDataSyncClient.INSTANCE.pingAsync(Minecraft.getInstance()))
                     )
                 )
-            ), developer ? java.util.stream.Stream.of(menuFontEntry(config)) : java.util.stream.Stream.<FeatureEntry>empty()).toList())
+            ))
         );
     }
 
-    /** Developer font trial: switches live; any other .ttf goes through a resource pack. */
+    /** Fonts are built while the game runs, so the list and the switch both take effect at once. */
     private static FeatureEntry menuFontEntry(KungConfig config) {
         return new FeatureEntry("Menu Font", () -> false, null, List.of(
-            SettingEntry.choice("Font", DebugConfig.MenuFont.values(), config.debug::menuFont,
-                config.debug::setMenuFont, DebugConfig.MenuFont::label)
-        )).withTooltip("Inter is Kung's bundled font; Minecraft is the game's own. Switches live.",
-            "Any other .ttf: a resource pack with assets/kung/font/menu.json pointing at it, then F3+T.").forDeveloper();
+            SettingEntry.choice("Font", KungFonts::available, config.misc::menuFont, config.misc::setMenuFont)
+                .withTooltip("Inter is Kung's bundled font, Minecraft is the game's own.",
+                    "Every .ttf in the font folder shows up here as well."),
+            SettingEntry.button("Font Folder", "Open", KungFonts::openFolder)
+                .withTooltip("Drop .ttf files in here:", KungFonts.folder().toString()),
+            SettingEntry.choice("Google Font", () -> KungFonts.LIBRARY, KungFonts::libraryChoice,
+                KungFonts::selectLibraryChoice),
+            SettingEntry.button("Download", "Get", KungFonts::download)
+                .withTooltip("Downloads the family above into the font folder and switches to it."),
+            SettingEntry.dynamicLabel(KungFonts::status)
+        )).withTooltip("The font Kung's own menus draw with; the game's own text stays untouched.");
     }
 
     private static List<SettingEntry> dungeonMapSettings(KungConfig config, boolean developer) {
@@ -478,7 +497,13 @@ public final class KungSettings {
         List<SettingEntry> settings = new ArrayList<>(List.of(
             SettingEntry.toggle("Debuff Tracker", config.dungeon::dragonDebuffTrackerEnabled,
                 () -> config.dungeon.setDragonDebuffTrackerEnabled(!config.dungeon.dragonDebuffTrackerEnabled()))
+                .withChildren(List.of(
+                    SettingEntry.toggle("HUD", config.dungeon::dragonDebuffHudEnabled,
+                        () -> config.dungeon.setDragonDebuffHudEnabled(!config.dungeon.dragonDebuffHudEnabled())),
+                    SettingEntry.toggle("Chat", config.dungeon::dragonDebuffChatEnabled,
+                        () -> config.dungeon.setDragonDebuffChatEnabled(!config.dungeon.dragonDebuffChatEnabled()))))
                 .withTooltip("Compact dragon times, early arrows and Ice Spray hits in the HUD and local chat.",
+                    "Right-click to turn the HUD or the chat report off on its own.",
                     "Move and scale the HUD with /kung hud.",
                     "Hover the chat report for first/fifth hits, rate and hit ticks.",
                     "Arrow feedback counts for the first 40 server ticks at your nearest spawning statue.",
@@ -488,10 +513,7 @@ public final class KungSettings {
                 .withTooltip("All Dragons: show every dragon in the HUD and chat.",
                     "Nearest Statue: choose the closest statue among each wave's spawning dragons.",
                     "Uses your position at the first spawn and keeps that target until the next wave.")
-                .withVisibleWhen(config.dungeon::dragonDebuffTrackerEnabled)));
-        // The helper stays Beng114-only: every other account sees the debuff tracker and nothing else.
-        if (!developer) return List.copyOf(settings);
-        settings.addAll(java.util.stream.Stream.of(
+                .withVisibleWhen(config.dungeon::dragonDebuffTrackerEnabled),
             SettingEntry.toggle("Spawn Markers", config.dungeon::dragonSpawnMarkersEnabled,
                 () -> config.dungeon.setDragonSpawnMarkersEnabled(!config.dungeon.dragonSpawnMarkersEnabled())),
             SettingEntry.choice("Marker", DragonMarkerMode.values(),
@@ -506,37 +528,49 @@ public final class KungSettings {
                     () -> config.dungeon.toggleDragonCorePart(part))).toList())
                 .withTooltip("Which hitbox centres get a core cube; any number can be on at once.")
                 .withVisibleWhen(() -> config.dungeon.dragonSpawnMarkersEnabled()
-                    && config.dungeon.dragonMarkerMode() == DragonMarkerMode.CORE),
+                    && config.dungeon.dragonMarkerMode() == DragonMarkerMode.CORE)));
+        if (developer) settings.add(
             SettingEntry.choice("Aim Point", DragonAimMode.values(),
                 config.dungeon::dragonAimMode, config.dungeon::setDragonAimMode, DragonAimMode::label)
-                .withTooltip("Where to shoot so your arrows meet the dragon's body, from the burst until 3 s after spawn.",
+                .withTooltip("Where to stand and shoot, from the burst until shortly after spawn.",
                     "Auto: Terminator for Archer/Berserker, Last Breath for everyone else.",
-                    "Last Breath: follows your draw; a weaker draw means a slower arrow, so more lead and drop.",
-                    "Terminator: full-speed arrows; the marker grows 1 s before spawn - start running in.",
-                    "Gray: an arrow fired now arrives before the dragon exists. White: it arrives on the dragon.",
-                    "Lead after spawn needs one recorded flight per statue; until then it aims at the body itself.",
-                    "Before spawn it sits on the body's spawn pose, so arrows go where a part will appear."),
+                    "Last Breath: a square on the floor under where the dragon's body will be - stand there -",
+                    "and a dot ten blocks out: crosshair on it, draw to the white tick on the Bow Draw bar.",
+                    "Bar, for where you stand: cyan the least draw that reaches the body, red the most that",
+                    "still misses every block on the way (the statue above you). Orange square: none gets there.",
+                    "Terminator: aims at the neck; gray lands before spawn, white on the dragon, red too late.",
+                    "Dragons spawn facing one way and snap to their flight within a few ticks; where they go",
+                    "comes from one recorded flight per statue, until then from the spawn pose.",
+                    "Your arrows around each spawn go to m7-dragon-shots.jsonl: spot, draw, timing, result.")
+                .forDeveloper());
+        settings.addAll(List.of(
             SettingEntry.toggle("Flight Paths", config.dungeon::dragonFlightPathsEnabled,
                 () -> config.dungeon.setDragonFlightPathsEnabled(!config.dungeon.dragonFlightPathsEnabled()))
                 .withTooltip("Draws each dragon's flight from spawn until it leaves its statue range,",
-                    "plus the last recorded flights of the same part, dimmed. Recording goes on while hidden."),
+                    "plus the last recorded flights of the same part, dimmed. Recording goes on while hidden.",
+                    "Purple teleports between random points, so it has none."),
             SettingEntry.choice("Path Part", DragonPart.values(),
                 config.dungeon::dragonTrailPart, config.dungeon::setDragonTrailPart,
                 DragonPart::label)
                 .withTooltip("Which dragon hitbox part the flight path follows and records.",
                     "Each part keeps its own recorded paths; a switch records from the next run.")
                 .withVisibleWhen(config.dungeon::dragonFlightPathsEnabled),
+            SettingEntry.slider("Line Thickness (%)", config.dungeon::dragonLineThickness,
+                config.dungeon::setDragonLineThickness, 25, 400, 25)
+                .withVisibleWhen(config.dungeon::dragonFlightPathsEnabled),
             SettingEntry.toggle("Statue Boxes", config.dungeon::dragonStatueBoxesEnabled,
                 () -> config.dungeon.setDragonStatueBoxesEnabled(!config.dungeon.dragonStatueBoxesEnabled()))
-                .withTooltip("Shows estimated dragon counting areas at the statues.",
-                    "Green means the origin is inside the estimate; red means outside."),
+                .withTooltip("Shows estimated dragon counting areas at the statues, edged in the statue's colour.",
+                    "While its dragon is up the box is lightly filled: green if a kill right now",
+                    "would count (origin inside the estimate), red if not."),
             SettingEntry.toggle("Count Notifications", config.dungeon::dragonCountNotificationsEnabled,
                 () -> config.dungeon.setDragonCountNotificationsEnabled(!config.dungeon.dragonCountNotificationsEnabled()))
-                .withTooltip("Local notifications for server-confirmed dragon counts."),
+                .withTooltip("Local notifications for server-confirmed dragon counts.")));
+        if (developer) settings.add(
             SettingEntry.toggle("Developer Diagnostics", config.dungeon::devDragonDiagnosticsEnabled,
                 () -> config.dungeon.setDevDragonDiagnosticsEnabled(!config.dungeon.devDragonDiagnosticsEnabled()))
                 .withTooltip("Extra local dragon capture diagnostics for Beng114 only.")
-        ).map(SettingEntry::forDeveloper).toList());
+                .forDeveloper());
         return List.copyOf(settings);
     }
 
@@ -570,7 +604,7 @@ public final class KungSettings {
     private static void openSoundSettings(KungConfig config) {
         Minecraft client = Minecraft.getInstance();
         // From the native menu too: back to wherever the player came from.
-        client.setScreen(new CustomSoundsScreen(client.screen, config.misc));
+        McCompat.setScreen(client, new CustomSoundsScreen(McCompat.screen(client), config.misc));
     }
 
     private static void toggleLocalRoomData(KungConfig config) {

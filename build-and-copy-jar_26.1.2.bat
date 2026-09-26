@@ -4,9 +4,9 @@ setlocal EnableExtensions EnableDelayedExpansion
 set "ROOT=%~dp0"
 set "MINECRAFT_VERSION=26.1.2"
 set "MOD_VERSION="
-for /F "tokens=1,* delims==" %%A in ('findstr /B /C:"mod_version_mc26_1_2=" "%ROOT%gradle.properties"') do set "MOD_VERSION=%%B"
+for /F "tokens=1,* delims==" %%A in ('findstr /B /C:"mod_version=" "%ROOT%gradle.properties"') do set "MOD_VERSION=%%B"
 if not defined MOD_VERSION (
-    echo Could not read mod_version_mc26_1_2 from gradle.properties.
+    echo Could not read mod_version from gradle.properties.
     pause
     exit /b 1
 )

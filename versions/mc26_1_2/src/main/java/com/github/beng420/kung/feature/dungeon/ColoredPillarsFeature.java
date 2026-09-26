@@ -1,5 +1,6 @@
 package com.github.beng420.kung.feature.dungeon;
 
+import com.github.beng420.kung.compat.McCompat;
 import com.github.beng420.kung.config.category.DungeonConfig;
 import com.github.beng420.kung.config.category.DungeonConfig.PillarMaterial;
 import com.github.beng420.kung.feature.ConfigurableFeature;
@@ -11,7 +12,8 @@ import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
-import net.minecraft.world.level.block.Block;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 
@@ -81,7 +83,7 @@ public final class ColoredPillarsFeature extends ConfigurableFeature<DungeonConf
         if (client.level == null) return;
         // A region-dirty request misses Sodium's in-flight initial meshes. Reload once on change
         // so those old snapshots cannot upload after the new material takes effect.
-        client.levelRenderer.allChanged();
+        McCompat.rebuildChunks(client);
     }
 
     /** Captured once by each render snapshot, never read from mutable config on a mesh worker. */
@@ -103,10 +105,10 @@ public final class ColoredPillarsFeature extends ConfigurableFeature<DungeonConf
 
     // Storm's four 7x38x7 columns; the arena floor at Y=168 is deliberately outside the bounds.
     private enum Pillar {
-        GREEN(46, 41, Blocks.LIME_WOOL, Blocks.LIME_STAINED_GLASS, Blocks.LIME_TERRACOTTA),
-        YELLOW(46, 65, Blocks.YELLOW_WOOL, Blocks.YELLOW_STAINED_GLASS, Blocks.YELLOW_TERRACOTTA),
-        PURPLE(100, 65, Blocks.PURPLE_WOOL, Blocks.PURPLE_STAINED_GLASS, Blocks.PURPLE_TERRACOTTA),
-        RED(100, 41, Blocks.RED_WOOL, Blocks.RED_STAINED_GLASS, Blocks.RED_TERRACOTTA);
+        GREEN(46, 41, "lime"),
+        YELLOW(46, 65, "yellow"),
+        PURPLE(100, 65, "purple"),
+        RED(100, 41, "red");
 
         private static final Pillar[] ALL = values();
         private final int x;
@@ -115,12 +117,17 @@ public final class ColoredPillarsFeature extends ConfigurableFeature<DungeonConf
         private final BlockState glass;
         private final BlockState terracotta;
 
-        Pillar(int x, int z, Block wool, Block glass, Block terracotta) {
+        // By id: 26.2 turned the per-colour Blocks fields into ColorCollections.
+        Pillar(int x, int z, String color) {
             this.x = x;
             this.z = z;
-            this.wool = wool.defaultBlockState();
-            this.glass = glass.defaultBlockState();
-            this.terracotta = terracotta.defaultBlockState();
+            this.wool = block(color + "_wool");
+            this.glass = block(color + "_stained_glass");
+            this.terracotta = block(color + "_terracotta");
+        }
+
+        private static BlockState block(String id) {
+            return BuiltInRegistries.BLOCK.getValue(Identifier.withDefaultNamespace(id)).defaultBlockState();
         }
 
         private BlockState state(PillarMaterial material) {

@@ -1,5 +1,6 @@
 package com.github.beng420.kung.feature.misc;
 
+import com.github.beng420.kung.compat.McCompat;
 import com.github.beng420.kung.config.category.HitboxesConfig;
 import com.github.beng420.kung.feature.ConfigurableFeature;
 import com.github.beng420.kung.util.LineBoxes;
@@ -216,14 +217,14 @@ public final class HitboxesFeature extends ConfigurableFeature<HitboxesConfig> {
      * players and mobs holding the same item would light up too. Widen it when that is wanted.
      */
     public static void observeHeldItem(EntityType<?> holder, ItemStack stack, Matrix4f pose) {
-        if (holder != EntityType.ARMOR_STAND || byItem.isEmpty() || stack.isEmpty() || heldItemBoxes.size() >= 256
+        if (holder != McCompat.ARMOR_STAND || byItem.isEmpty() || stack.isEmpty() || heldItemBoxes.size() >= 256
             || !KungConfig.get().hitboxes.enabled()) return;
         Integer color = byItem.get(itemId(stack));
         if (color == null) return;
         // Handheld items are drawn around (0, 4, 0.5)/16 from the hand anchor (item/handheld display).
         Vector3f center = pose.transformPosition(new Vector3f(0, 0.25F, 1 / 32F));
         float half = 0.3F * pose.transformDirection(new Vector3f(1, 0, 0)).length();
-        Vec3 world = Minecraft.getInstance().gameRenderer.getMainCamera().position().add(center.x, center.y, center.z);
+        Vec3 world = McCompat.camera(Minecraft.getInstance()).position().add(center.x, center.y, center.z);
         heldItemBoxes.add(new Box(new AABB(world, world).inflate(half), color));
     }
 
@@ -239,11 +240,9 @@ public final class HitboxesFeature extends ConfigurableFeature<HitboxesConfig> {
         heldItemBoxes.clear();
         if (boxes.isEmpty()) return;
         Vec3 camera = context.levelState().cameraRenderState.pos;
-        var lines = RenderTypes.lines();
-        var vertices = context.bufferSource().getBuffer(lines);
-        var pose = context.poseStack().last();
-        for (Box box : boxes) LineBoxes.box(vertices, pose, box.bounds(), camera.x, camera.y, camera.z, box.color(), 2.0F);
-        context.bufferSource().endBatch(lines);
+        McCompat.draw(context, RenderTypes.lines(), (pose, vertices) -> {
+            for (Box box : boxes) LineBoxes.box(vertices, pose, box.bounds(), camera.x, camera.y, camera.z, box.color(), 2.0F);
+        });
     }
 
     private record Box(AABB bounds, int color) { }

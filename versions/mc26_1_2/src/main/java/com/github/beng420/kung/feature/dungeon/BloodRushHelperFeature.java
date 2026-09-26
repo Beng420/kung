@@ -1,5 +1,6 @@
 package com.github.beng420.kung.feature.dungeon;
 
+import com.github.beng420.kung.compat.McCompat;
 import com.github.beng420.kung.config.category.BRHelperConfig;
 import com.github.beng420.kung.feature.ConfigurableFeature;
 import com.github.beng420.kung.feature.dungeon.room.RoomType;
@@ -446,11 +447,11 @@ public final class BloodRushHelperFeature extends ConfigurableFeature<BRHelperCo
         if (client == null || client.gui == null) {
             return;
         }
-        client.gui.setTimes(0, Math.max(1, stayTicks), 5);
-        client.gui.setSubtitle(subtitle == null || subtitle.isBlank()
+        McCompat.setTitleTimes(client, 0, Math.max(1, stayTicks), 5);
+        McCompat.setSubtitle(client, subtitle == null || subtitle.isBlank()
             ? Component.empty()
             : Component.literal(subtitle).withStyle(ChatFormatting.GRAY, ChatFormatting.BOLD));
-        client.gui.setTitle(Component.literal(text).withStyle(color, ChatFormatting.BOLD));
+        McCompat.setTitle(client, Component.literal(text).withStyle(color, ChatFormatting.BOLD));
     }
 
     private static String formatServerTickTime(long ticks) {

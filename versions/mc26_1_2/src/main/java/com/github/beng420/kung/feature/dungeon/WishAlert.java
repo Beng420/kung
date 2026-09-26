@@ -1,5 +1,6 @@
 package com.github.beng420.kung.feature.dungeon;
 
+import com.github.beng420.kung.compat.McCompat;
 import com.github.beng420.kung.config.category.DungeonConfig;
 import com.github.beng420.kung.util.KungDebugRecorder;
 import java.util.HashMap;
@@ -77,9 +78,9 @@ public final class WishAlert {
     }
 
     private static void alert(Minecraft client, String reason) {
-        client.gui.setTimes(0, 40, 10);
-        client.gui.setTitle(Component.literal("WISH").withStyle(ChatFormatting.LIGHT_PURPLE, ChatFormatting.BOLD));
-        client.gui.setSubtitle(Component.literal(reason).withStyle(ChatFormatting.GRAY));
+        McCompat.setTitleTimes(client, 0, 40, 10);
+        McCompat.setTitle(client, Component.literal("WISH").withStyle(ChatFormatting.LIGHT_PURPLE, ChatFormatting.BOLD));
+        McCompat.setSubtitle(client, Component.literal(reason).withStyle(ChatFormatting.GRAY));
         client.getSoundManager().play(SimpleSoundInstance.forUI(SoundEvents.NOTE_BLOCK_PLING.value(), 0.6F, 1.0F));
         client.getSoundManager().play(SimpleSoundInstance.forUI(SoundEvents.NOTE_BLOCK_PLING.value(), 1.8F, 1.0F));
     }

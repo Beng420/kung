@@ -1,5 +1,6 @@
 package com.github.beng420.kung.feature.misc;
 
+import com.github.beng420.kung.compat.McCompat;
 import com.github.beng420.kung.config.KungHudEditorState;
 import com.github.beng420.kung.config.category.MiscConfig;
 import com.github.beng420.kung.feature.ConfigurableFeature;
@@ -76,7 +77,7 @@ public final class SuperpairsHelperFeature extends ConfigurableFeature<MiscConfi
 
     private static void renderAfterScreen(Screen screen, GuiGraphicsExtractor graphics) {
         Minecraft client = Minecraft.getInstance();
-        if (KungHudEditorState.externalEditing() || !INSTANCE.isEnabled() || screen != client.screen || !ensureSession(client)) {
+        if (KungHudEditorState.externalEditing() || !INSTANCE.isEnabled() || screen != McCompat.screen(client) || !ensureSession(client)) {
             return;
         }
         drawPanel(graphics, client, INSTANCE.config());
@@ -110,10 +111,10 @@ public final class SuperpairsHelperFeature extends ConfigurableFeature<MiscConfi
     }
 
     private static boolean ensureSession(Minecraft client) {
-        if (client.player == null || !isSuperpairsGameScreen(client.screen)) {
+        if (client.player == null || !isSuperpairsGameScreen(McCompat.screen(client))) {
             return false;
         }
-        AbstractContainerMenu menu = ((AbstractContainerScreen<?>) client.screen).getMenu();
+        AbstractContainerMenu menu = ((AbstractContainerScreen<?>) McCompat.screen(client)).getMenu();
         if (menu != client.player.containerMenu || menu.slots.size() - PLAYER_INVENTORY_SLOT_COUNT != 54) {
             return false;
         }
@@ -124,7 +125,7 @@ public final class SuperpairsHelperFeature extends ConfigurableFeature<MiscConfi
             activeMenu = menu;
             topSlotCount = menu.slots.size() - PLAYER_INVENTORY_SLOT_COUNT;
             KungDebugRecorder.event("superpairs", "start container=" + menu.containerId
-                + " title=\"" + client.screen.getTitle().getString() + "\" top=" + topSlotCount);
+                + " title=\"" + McCompat.screen(client).getTitle().getString() + "\" top=" + topSlotCount);
             // One seed covers enabling during an open game. All subsequent reveals
             // come from packets, including brief flips and automatically revealed partners.
             for (int slot = 0; slot < topSlotCount; slot++) {

@@ -59,7 +59,7 @@ public final class KungHudLayout {
                 config.dungeon::dragonDebuffX, config.dungeon::dragonDebuffY,
                 config.dungeon::setDragonDebuffX, config.dungeon::setDragonDebuffY,
                 config.dungeon::dragonDebuffScale, config.dungeon::setDragonDebuffScale,
-                config.dungeon::dragonDebuffEnabled, config.dungeon::setDragonDebuffEnabled),
+                config.dungeon::dragonDebuffHudShown, config.dungeon::setDragonDebuffHudShown),
             new Entry("bow_draw_indicator", "Bow Draw Indicator", () -> BowDrawIndicatorFeature.overlayBounds(config.misc),
                 config.misc::bowDrawIndicatorX, config.misc::bowDrawIndicatorY,
                 config.misc::setBowDrawIndicatorX, config.misc::setBowDrawIndicatorY,

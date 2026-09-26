@@ -1,5 +1,6 @@
 package com.github.beng420.kung.feature.misc;
 
+import com.github.beng420.kung.compat.McCompat;
 import com.github.beng420.kung.config.category.MiscConfig;
 import com.github.beng420.kung.feature.ConfigurableFeature;
 import com.github.beng420.kung.util.KungDebugRecorder;
@@ -115,13 +116,13 @@ public final class LoadoutsAutoCloseFeature extends ConfigurableFeature<MiscConf
 
     public static void observeContainerInput(int containerId, int slotId, int button, ContainerInput input) {
         Minecraft client = Minecraft.getInstance();
-        if (client.player == null || !(client.screen instanceof AbstractContainerScreen<?> containerScreen)) {
+        if (client.player == null || !(McCompat.screen(client) instanceof AbstractContainerScreen<?> containerScreen)) {
             return;
         }
 
         AbstractContainerMenu menu = client.player.containerMenu;
         ItemStack stack = slotStack(menu, slotId);
-        boolean context = isLoadoutsContext(client.screen, menu, stack);
+        boolean context = isLoadoutsContext(McCompat.screen(client), menu, stack);
         if (!INSTANCE.isEnabled() && !context) {
             return;
         }
@@ -299,7 +300,7 @@ public final class LoadoutsAutoCloseFeature extends ConfigurableFeature<MiscConf
         }
 
         Minecraft client = Minecraft.getInstance();
-        if (client.player == null || !(client.screen instanceof AbstractContainerScreen<?> screen)) {
+        if (client.player == null || !(McCompat.screen(client) instanceof AbstractContainerScreen<?> screen)) {
             return;
         }
 
@@ -436,8 +437,8 @@ public final class LoadoutsAutoCloseFeature extends ConfigurableFeature<MiscConf
             clearPendingClose("cancelled");
             return;
         }
-        if (!(client.screen instanceof AbstractContainerScreen<?> containerScreen)
-            || !isLoadoutsContext(client.screen, containerScreen.getMenu(), ItemStack.EMPTY)) {
+        if (!(McCompat.screen(client) instanceof AbstractContainerScreen<?> containerScreen)
+            || !isLoadoutsContext(McCompat.screen(client), containerScreen.getMenu(), ItemStack.EMPTY)) {
             if (pendingEquipConfirmed) {
                 KungDebugRecorder.event("loadouts-auto-close", "reactive close complete source="
                     + source
@@ -844,7 +845,7 @@ public final class LoadoutsAutoCloseFeature extends ConfigurableFeature<MiscConf
     }
 
     private static String currentScreenDebug(Minecraft client) {
-        Screen screen = client == null ? null : client.screen;
+        Screen screen = client == null ? null : McCompat.screen(client);
         if (screen == null) {
             return "screen=null";
         }

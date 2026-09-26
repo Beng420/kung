@@ -25,6 +25,8 @@ public final class DungeonConfig extends ConfigCategory {
     /** Pre-merge master of M7 Dragon Debuff; only read to seed witherDragonsEnabled. */
     private boolean dragonDebuffEnabled = false;
     private boolean dragonDebuffTrackerEnabled = true;
+    private boolean dragonDebuffHudEnabled = true;
+    private boolean dragonDebuffChatEnabled = true;
     private DragonDebuffScope dragonDebuffScope = DragonDebuffScope.ALL_DRAGONS;
     private int dragonDebuffX = 8;
     private int dragonDebuffY = 230;
@@ -34,7 +36,8 @@ public final class DungeonConfig extends ConfigCategory {
     /** Null until toggled, so a config from before the merge keeps whichever dragon feature it had on. */
     private Boolean witherDragonsEnabled;
     private boolean dragonFlightPathsEnabled = true;
-    private boolean dragonSpawnMarkersEnabled = true;
+    private int dragonLineThickness = 100;
+    private boolean dragonSpawnMarkersEnabled = false;
     private boolean dragonStatueBoxesEnabled = true;
     private boolean dragonCountNotificationsEnabled = true;
     private boolean devDragonDiagnosticsEnabled = false;
@@ -42,8 +45,8 @@ public final class DungeonConfig extends ConfigCategory {
     private boolean wishAlertEnabled = false;
     private int wishAlertLowHealthPercent = 20;
     private DragonMarkerMode dragonMarkerMode = DragonMarkerMode.CORE;
-    private DragonPart dragonTrailPart = DragonPart.NECK;
-    private Set<DragonPart> dragonCoreParts = EnumSet.of(DragonPart.BOX);
+    private DragonPart dragonTrailPart = DragonPart.BODY;
+    private Set<DragonPart> dragonCoreParts = EnumSet.of(DragonPart.BODY);
     private DragonAimMode dragonAimMode = DragonAimMode.AUTO;
     private boolean devWishAlertAnyClassEnabled = false;
     private PillarMaterial pillarMaterial = PillarMaterial.WOOL;
@@ -110,10 +113,18 @@ public final class DungeonConfig extends ConfigCategory {
     public void setDragonDebuffTrackerEnabled(boolean value) { dragonDebuffTrackerEnabled = value; save(); }
     /** Debuff tracking in effect: the Wither Dragons master plus its own switch. */
     public boolean dragonDebuffEnabled() { return witherDragonsEnabled() && dragonDebuffTrackerEnabled; }
-    /** The HUD editor's switch: turning the HUD on also turns the master on, or nothing would show. */
-    public void setDragonDebuffEnabled(boolean value) {
-        dragonDebuffTrackerEnabled = value;
-        if (value) witherDragonsEnabled = true;
+    public boolean dragonDebuffHudEnabled() { return dragonDebuffHudEnabled; }
+    public void setDragonDebuffHudEnabled(boolean value) { dragonDebuffHudEnabled = value; save(); }
+    public boolean dragonDebuffChatEnabled() { return dragonDebuffChatEnabled; }
+    public void setDragonDebuffChatEnabled(boolean value) { dragonDebuffChatEnabled = value; save(); }
+    public boolean dragonDebuffHudShown() { return dragonDebuffEnabled() && dragonDebuffHudEnabled; }
+    /** The HUD editor's switch: turning the HUD on also turns the tracker and master on, or nothing would show. */
+    public void setDragonDebuffHudShown(boolean value) {
+        dragonDebuffHudEnabled = value;
+        if (value) {
+            dragonDebuffTrackerEnabled = true;
+            witherDragonsEnabled = true;
+        }
         save();
     }
     public DragonDebuffScope dragonDebuffScope() { return dragonDebuffScope == null ? DragonDebuffScope.ALL_DRAGONS : dragonDebuffScope; }
@@ -124,10 +135,12 @@ public final class DungeonConfig extends ConfigCategory {
     public void setDragonDebuffX(int value) { dragonDebuffX = value; save(); }
     public void setDragonDebuffY(int value) { dragonDebuffY = value; save(); }
     public void setDragonDebuffScale(int value) { dragonDebuffScale = Math.clamp(value, 25, 300); save(); }
-    /** The helper has no switch of its own any more; Wither Dragons turns it on for the developer account. */
+    /** The helper has no switch of its own any more; Wither Dragons turns it on. */
     public boolean m7DragonHelperEnabled() { return witherDragonsEnabled(); }
     public boolean dragonFlightPathsEnabled() { return dragonFlightPathsEnabled; }
     public void setDragonFlightPathsEnabled(boolean value) { dragonFlightPathsEnabled = value; save(); }
+    public int dragonLineThickness() { return Math.clamp(dragonLineThickness, 25, 400); }
+    public void setDragonLineThickness(int value) { dragonLineThickness = Math.clamp(value, 25, 400); save(); }
     public boolean dragonSpawnMarkersEnabled() { return dragonSpawnMarkersEnabled; }
     public void setDragonSpawnMarkersEnabled(boolean value) { dragonSpawnMarkersEnabled = value; save(); }
     public boolean dragonStatueBoxesEnabled() { return dragonStatueBoxesEnabled; }
@@ -141,7 +154,7 @@ public final class DungeonConfig extends ConfigCategory {
         dragonMarkerMode = value == null ? DragonMarkerMode.CORE : value;
         save();
     }
-    public DragonPart dragonTrailPart() { return dragonTrailPart == null ? DragonPart.NECK : dragonTrailPart; }
+    public DragonPart dragonTrailPart() { return dragonTrailPart == null ? DragonPart.BODY : dragonTrailPart; }
     public void setDragonTrailPart(DragonPart value) { dragonTrailPart = value; save(); }
     public DragonAimMode dragonAimMode() { return dragonAimMode == null ? DragonAimMode.AUTO : dragonAimMode; }
     public void setDragonAimMode(DragonAimMode value) { dragonAimMode = value; save(); }

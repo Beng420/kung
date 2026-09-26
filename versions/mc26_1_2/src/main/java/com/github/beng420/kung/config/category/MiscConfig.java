@@ -15,6 +15,7 @@ public final class MiscConfig extends ConfigCategory {
     private int bowDrawIndicatorY = 160;
     private int bowDrawIndicatorScale = 100;
     private List<BowDrawThreshold> bowDrawThresholds = defaultBowDrawThresholds();
+    private boolean bowDrawDragonTicksEnabled = true;
     private boolean frozenBlazeHudEnabled = false;
     private int frozenBlazeHudX = 6;
     private int frozenBlazeHudY = 210;
@@ -34,6 +35,7 @@ public final class MiscConfig extends ConfigCategory {
     private int sackTrackerY = 240;
     private int sackTrackerScale = 100;
     private List<SackItem> sackTrackerItems = new ArrayList<>();
+    private String menuFont = "Inter";
     private boolean hypixelApiEnabled = false;
     private String hypixelApiKey = "";
 
@@ -87,6 +89,8 @@ public final class MiscConfig extends ConfigCategory {
     public int bowDrawIndicatorScale() { return bowDrawIndicatorScale; }
     public void setBowDrawIndicatorScale(int value) { bowDrawIndicatorScale = Math.clamp(value, 25, 300); save(); }
     public List<BowDrawThreshold> bowDrawThresholds() { return Collections.unmodifiableList(bowDrawThresholds); }
+    public boolean bowDrawDragonTicksEnabled() { return bowDrawDragonTicksEnabled; }
+    public void setBowDrawDragonTicksEnabled(boolean value) { bowDrawDragonTicksEnabled = value; save(); }
     public boolean frozenBlazeHudEnabled() { return frozenBlazeHudEnabled; }
     public void setFrozenBlazeHudEnabled(boolean value) { frozenBlazeHudEnabled = value; save(); }
     public int frozenBlazeHudX() { return frozenBlazeHudX; }
@@ -231,6 +235,13 @@ public final class MiscConfig extends ConfigCategory {
     public boolean hypixelApiEnabled() { return hypixelApiEnabled; }
     public void setHypixelApiEnabled(boolean value) { hypixelApiEnabled = value; save(); }
     public boolean directHypixelApiEnabled() { return hypixelApiEnabled && !hypixelApiKey().isBlank(); }
+    /** A font file in the font folder, or the bundled Inter; see KungFonts. */
+    public String menuFont() { return menuFont == null || menuFont.isBlank() ? "Inter" : menuFont; }
+    public void setMenuFont(String value) {
+        menuFont = value == null || value.isBlank() ? "Inter" : value;
+        save();
+    }
+
     public String hypixelApiKey() { return hypixelApiKey == null ? "" : hypixelApiKey; }
     public void setHypixelApiKey(String value) { hypixelApiKey = value == null ? "" : value.trim(); save(); }
     public boolean chatCommandsEnabled() { return chatCommandsEnabled; }

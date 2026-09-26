@@ -1,7 +1,7 @@
 .gradle/
 build/
 out/
-/versions/mc26_1_2/bin/
+/versions/*/bin/
 run/
 runs/
 *.log

@@ -1,6 +1,7 @@
 package com.github.beng420.kung.feature.misc;
 
 import com.github.beng420.kung.KungMod;
+import com.github.beng420.kung.compat.McCompat;
 import com.github.beng420.kung.config.KungHudEditorState;
 import com.github.beng420.kung.config.KungHudLayout;
 import com.github.beng420.kung.config.category.MiscConfig;
@@ -88,7 +89,7 @@ public final class PerformanceHudFeature extends ConfigurableFeature<MiscConfig>
 
     private void render(GuiGraphicsExtractor graphics) {
         var client = Minecraft.getInstance();
-        if (!isEnabled() || client.level == null || client.options.hideGui
+        if (!isEnabled() || client.level == null || McCompat.hudHidden(client)
             || KungHudEditorState.externalEditing()) return;
         draw(graphics, config(), List.copyOf(history), (float) tps(), client.getFps(), ping);
     }

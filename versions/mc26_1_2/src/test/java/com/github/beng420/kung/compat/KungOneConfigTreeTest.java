@@ -37,7 +37,7 @@ public final class KungOneConfigTreeTest {
         assertEquals(false, property(tree, "Colored F7/M7 Pillars", "Enabled").get());
         assertArrayEquals(new String[] {"Wool", "Glass", "Terracotta"},
             property(tree, "Colored F7/M7 Pillars", "Material").getMetadata("options"));
-        assertFalse(tree.map.values().stream().anyMatch(node -> "Spawn Markers".equals(node.getTitle())));
+        assertFalse(tree.map.values().stream().anyMatch(node -> "Aim Point".equals(node.getTitle())));
         assertFalse(tree.map.values().stream().anyMatch(node -> "Developer Diagnostics".equals(node.getTitle())));
         // A row hidden by its switch is hidden in the native menu too, not merely greyed out.
         assertEquals(Property.Display.SHOWN, property(tree, "Wither Dragons", "Track").getDisplay());

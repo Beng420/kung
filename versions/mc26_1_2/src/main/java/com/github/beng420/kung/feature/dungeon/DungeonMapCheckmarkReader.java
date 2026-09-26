@@ -66,6 +66,8 @@ final class DungeonMapCheckmarkReader {
                     snapshot.observeMapVisibleRoom(roomGridX, roomGridZ);
                     if (isTrapRoom(map, mapX, mapZ, anchor.roomSize())) {
                         snapshot.observeMapTrapRoom(roomGridX, roomGridZ);
+                    } else if (isPuzzleRoom(map, mapX, mapZ, anchor.roomSize())) {
+                        snapshot.observeMapPuzzleRoom(roomGridX, roomGridZ);
                     }
                     visibleMapRooms.add(new DungeonMapSnapshot.GridKey(roomGridX, roomGridZ));
                     visibleRooms++;
@@ -639,19 +641,28 @@ final class DungeonMapCheckmarkReader {
     }
 
     static boolean isTrapRoom(MapItemSavedData map, int roomX, int roomZ, int roomSize) {
-        int trapPixels = 0;
+        // Hypixel uses 62 for Trap but 63 (the same base color) for normal rooms.
+        return isRoomColor(map, roomX, roomZ, roomSize, 62);
+    }
+
+    /** Purple (66). Unlike the room's blocks it survives the puzzle being solved - a solved Blaze scans as a new hash. */
+    static boolean isPuzzleRoom(MapItemSavedData map, int roomX, int roomZ, int roomSize) {
+        return isRoomColor(map, roomX, roomZ, roomSize, 66);
+    }
+
+    private static boolean isRoomColor(MapItemSavedData map, int roomX, int roomZ, int roomSize, int roomColor) {
+        int roomPixels = 0;
         int sampledPixels = 0;
         for (int z = roomZ + 1; z < roomZ + roomSize - 1; z++) {
             for (int x = roomX + 1; x < roomX + roomSize - 1; x++) {
                 int color = colorAt(map, x, z);
                 if (color < 0) return false;
                 sampledPixels++;
-                // Hypixel uses 62 for Trap but 63 (the same base color) for normal rooms.
-                if (color == 62) trapPixels++;
+                if (color == roomColor) roomPixels++;
             }
         }
         // A majority tolerates the central completion glyph without trusting isolated pixels.
-        return sampledPixels >= 9 && trapPixels > sampledPixels / 2;
+        return sampledPixels >= 9 && roomPixels > sampledPixels / 2;
     }
 
     private static boolean isVisitedRoomColor(int color) {

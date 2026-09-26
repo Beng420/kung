@@ -18,15 +18,16 @@ public final class M7DragonFeatureTest {
         net.minecraft.server.Bootstrap.bootStrap();
     }
 
-    @Test public void copiedEnabledSettingsCannotRunWithoutTheDeveloperAccount() {
+    @Test public void copiedDiagnosticsStayOffWithoutTheDeveloperAccount() {
         var config = new Gson().fromJson("""
             {"dungeonMap":{"m7DragonHelperEnabled":true,"devDragonDiagnosticsEnabled":true}}
             """, KungConfig.class);
         var feature = M7DragonFeature.INSTANCE;
         feature.initialize(AppServices.create(config, new DungeonStateTracker()));
         try {
-            assertTrue(config.dungeon.m7DragonHelperEnabled());
-            assertFalse(feature.isEnabled());
+            // The helper runs for everyone; only its diagnostics need the developer account.
+            assertTrue(feature.isEnabled());
+            assertFalse(config.dungeon.devDragonDiagnosticsEnabled());
         } finally {
             feature.shutdown();
         }
@@ -96,8 +97,11 @@ public final class M7DragonFeatureTest {
     @Test public void parseSamplesSkipsJunkAndReadsOffsets() {
         var parsed = M7DragonFeature.parseSamples(List.of(
             "not json at all",
+            // UNKNOWN is no evidence: often a count confirmed late at the same spot.
+            M7DragonFeature.deathLine(8, M7DragonTracker.Statue.RED,
+                M7DragonTracker.Outcome.UNKNOWN, new Vec3(31.5, 18.0, 56.0)),
             M7DragonFeature.deathLine(7, M7DragonTracker.Statue.RED,
-                M7DragonTracker.Outcome.UNKNOWN, new Vec3(31.5, 18.0, 56.0))));
+                M7DragonTracker.Outcome.MISSED, new Vec3(31.5, 18.0, 56.0))));
         assertEquals(1, parsed.size());
         assertEquals("RED", parsed.get(0).statue());
         assertFalse(parsed.get(0).counts());
@@ -113,11 +117,16 @@ public final class M7DragonFeatureTest {
         assertTrue(M7DragonTracker.Statue.PURPLE.contains(new Vec3(56.0, 14.0, 125.0)));
         assertTrue(M7DragonTracker.Statue.ORANGE.contains(new Vec3(79.38525390625, 18.78271484375, 61.857177734375)));
         assertTrue(M7DragonTracker.Statue.RED.contains(new Vec3(31.38330078125, 18.50244140625, 56.323974609375)));
-        // The farthest counted kills along Z, all outside Skytils' 13.5, and the one failure near the edge.
+        // The farthest counted kills along Z, and the one failure near the edge.
         assertTrue(M7DragonTracker.Statue.ORANGE.contains(new Vec3(82.57275390625, 18.93896484375, 73.419677734375)));
-        assertTrue(M7DragonTracker.Statue.GREEN.contains(new Vec3(24.89404296875, 18.87451171875, 76.45751953125)));
-        assertTrue(M7DragonTracker.Statue.BLUE.contains(new Vec3(76.025390625, 18.818359375, 109.439208984375)));
         assertFalse(M7DragonTracker.Statue.GREEN.contains(new Vec3(25.23779296875, 18.93701171875, 74.08251953125)));
+        // Red missed 12.85 out ("You just made a terrible mistake!", then respawned) and counted 10.85 out.
+        assertFalse(M7DragonTracker.Statue.RED.contains(new Vec3(39.85205078125, 18.93994140625, 48.011474609375)));
+        assertTrue(M7DragonTracker.Statue.RED.contains(new Vec3(37.85, 18.9, 49.2)));
+        // Odin's boxes leave out three kills the Wither King confirmed as counting - known disagreements.
+        assertFalse(M7DragonTracker.Statue.GREEN.contains(new Vec3(24.89404296875, 18.87451171875, 76.45751953125)));
+        assertFalse(M7DragonTracker.Statue.BLUE.contains(new Vec3(76.025390625, 18.818359375, 109.439208984375)));
+        assertFalse(M7DragonTracker.Statue.PURPLE.contains(new Vec3(70.0, 19.0, 117.0)));
         // Every spawn anchor must sit in its own range, or a dragon is outside before it moves.
         for (M7DragonTracker.Statue statue : M7DragonTracker.Statue.values()) {
             assertTrue(statue.label(), statue.contains(statue.spawn()));

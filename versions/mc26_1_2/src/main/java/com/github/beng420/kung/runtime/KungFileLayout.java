@@ -18,6 +18,7 @@ public record KungFileLayout(Path gameDirectory, Path configDirectory) {
     public Path dungeonDataDirectory() { return settingsDirectory().resolve("dungeon-data"); }
     public Path slayerDataDirectory() { return settingsDirectory().resolve("slayer-data"); }
     public Path soundsDirectory() { return settingsDirectory().resolve("custom-sounds"); }
+    public Path fontsDirectory() { return settingsDirectory().resolve("fonts"); }
     public Path updateDirectory() { return settingsDirectory().resolve("updates"); }
     public Path logDirectory() { return gameDirectory.resolve("logs/kung"); }
 

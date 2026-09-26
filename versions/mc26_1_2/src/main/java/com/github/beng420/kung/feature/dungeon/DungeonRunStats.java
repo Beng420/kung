@@ -1,5 +1,6 @@
 package com.github.beng420.kung.feature.dungeon;
 
+import com.github.beng420.kung.compat.McCompat;
 import com.github.beng420.kung.config.KungConfig;
 
 import java.util.HashMap;
@@ -637,7 +638,7 @@ public final class DungeonRunStats {
         }
 
         if (client.player != null) rememberSelf(client.player.getUUID(), client.player.getName().getString());
-        sendRunSummary(renderPlan, client.font::width, client.gui.getChat()::addClientSystemMessage);
+        sendRunSummary(renderPlan, client.font::width, McCompat.chat(client)::addClientSystemMessage);
     }
 
     void sendRunSummary(DungeonLiveMapWriter.MatchRenderPlan renderPlan, ToIntFunction<String> textWidth,
@@ -1164,7 +1165,7 @@ public final class DungeonRunStats {
     }
 
     private void observeTabOverlayText(Minecraft client) {
-        PlayerTabOverlay tabList = client.gui.getTabList();
+        PlayerTabOverlay tabList = McCompat.tabList(client);
         observeComponentLines(client, readTabComponent(tabList, true));
         observeComponentLines(client, readTabComponent(tabList, false));
     }
@@ -1983,6 +1984,11 @@ public final class DungeonRunStats {
         // identify which still-open map puzzle was solved and must not clear the wrong room.
         int tabAhead = unfinishedPuzzles(plan) == 0 ? Math.max(0, puzzles.completed() - progress.completedPuzzles()) : 0;
         return Math.max(0, progress.unfinishedClearCells() - Math.min(progress.unfinishedPuzzleCells(), tabAhead));
+    }
+
+    /** The run's puzzle names as the tab lists them, lower case. */
+    java.util.Set<String> puzzleNames() {
+        return puzzles.names();
     }
 
     private int unfinishedPuzzles(DungeonLiveMapWriter.MatchRenderPlan plan) {

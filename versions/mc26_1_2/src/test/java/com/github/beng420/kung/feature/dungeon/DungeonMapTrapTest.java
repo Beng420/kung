@@ -61,6 +61,35 @@ public final class DungeonMapTrapTest {
         }
     }
 
+    @Test public void purpleIsAPuzzleAndOnlyPurple() {
+        assertTrue(DungeonMapCheckmarkReader.isPuzzleRoom(mapRoom(16, 66), 20, 20, 16));
+        for (int color : List.of(62, 63, 74, 82, 85)) {
+            assertFalse("Background " + color, DungeonMapCheckmarkReader.isPuzzleRoom(mapRoom(16, color), 20, 20, 16));
+        }
+    }
+
+    @Test public void solvedBlazeWithAChangedHashIsNamedByTheOneTabPuzzleLeft() {
+        // Blaze changes its blocks once solved, so a player who first loads it then scans an unknown hash.
+        var snapshot = new DungeonMapSnapshot();
+        snapshot.observeStartRoom(5, 5);
+        snapshot.observeMapPuzzleRoom(1, 0);
+        snapshot.observeRoomClearState(1, 0, DungeonMapClearState.COMPLETED);
+        snapshot.addScan(1, 1, 5, 5, List.of(room(827369333)));
+        snapshot.observeTabPuzzles(java.util.Set.of("higher or lower"));
+        var plan = DungeonLiveMapWriter.MatchRenderPlan.from(snapshot, repository(null));
+        assertEquals(RoomType.PUZZLE, plan.roomTypeAt(1, 0));
+        assertTrue(plan.isCompletedRoom(1, 0));
+        var rendered = DungeonRoomRenderLayout.from(plan).rooms().getFirst().template();
+        assertEquals("Blaze", rendered.name());
+        assertEquals(-1, rendered.secrets());
+        // Two names left: no guess, just the type.
+        snapshot.observeTabPuzzles(java.util.Set.of("higher or lower", "quiz"));
+        var unsure = DungeonLiveMapWriter.MatchRenderPlan.from(snapshot, repository(null));
+        assertEquals("Puzzle", DungeonRoomRenderLayout.from(unsure).rooms().getFirst().template().name());
+        assertEquals("Ice Fill", DungeonLiveMapWriter.MatchRenderPlan.catalogPuzzleName("ice fill"));
+        assertEquals("higher or lower", DungeonLiveMapWriter.MatchRenderPlan.tabPuzzleName("Blaze"));
+    }
+
     @Test public void mapTypeIsIdempotentAndResetsWithTheInstance() {
         var snapshot = new DungeonMapSnapshot();
         snapshot.observeMapVisibleRoom(1, 0);

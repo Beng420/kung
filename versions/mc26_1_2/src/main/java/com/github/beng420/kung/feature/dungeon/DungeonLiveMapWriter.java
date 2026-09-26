@@ -63,7 +63,8 @@ public final class DungeonLiveMapWriter {
         Set<CellKey> completedRooms,
         Set<CellKey> openedSpecialDoorCells,
         CellKey fairyEntranceDoor,
-        List<CellKey> bloodRushPath
+        List<CellKey> bloodRushPath,
+        Map<CellKey, String> mapPuzzleNames
     ) {
         static MatchRenderPlan from(DungeonMapSnapshot snapshot) {
             return from(snapshot, KnownDungeonRoomRepository.INSTANCE);
@@ -168,8 +169,8 @@ public final class DungeonLiveMapWriter {
 
             for (DungeonMapSnapshot.GridKey mapRoom : snapshot.mapVisibleRooms()) {
                 CellKey roomCell = new CellKey(mapRoom.gridX(), mapRoom.gridZ());
-                roomTypes.putIfAbsent(roomCell, snapshot.isMapTrapRoom(mapRoom.gridX(), mapRoom.gridZ())
-                    ? RoomType.TRAP : RoomType.UNKNOWN);
+                roomTypes.putIfAbsent(roomCell, snapshot.isMapTrapRoom(mapRoom.gridX(), mapRoom.gridZ()) ? RoomType.TRAP
+                    : snapshot.isMapPuzzleRoom(mapRoom.gridX(), mapRoom.gridZ()) ? RoomType.PUZZLE : RoomType.UNKNOWN);
                 roomOwners.putIfAbsent(roomCell, "map:" + mapRoom.gridX() + "," + mapRoom.gridZ());
             }
 
@@ -468,8 +469,54 @@ public final class DungeonLiveMapWriter {
                 completedRooms,
                 openedSpecialDoorCells,
                 fairyEntranceDoor,
-                findBloodRushDoorPath(externalDoors, roomTypes, roomOwners)
+                findBloodRushDoorPath(externalDoors, roomTypes, roomOwners),
+                mapPuzzleNames(snapshot, matches, hints, roomTypes, matchedRoomCells)
             );
+        }
+
+        /**
+         * A solved puzzle can change its blocks (Blaze), so its scan matches nothing; the map still colors
+         * it purple and the tab names every puzzle. One such room and one name no identified puzzle took:
+         * that name. Anything less certain stays "Puzzle".
+         */
+        static Map<CellKey, String> mapPuzzleNames(
+            DungeonMapSnapshot snapshot,
+            List<DungeonKnownRoomCatalog.MatchedRoom> matches,
+            Map<CellKey, DungeonKnownRoomCatalog.KnownCoreHint> hints,
+            Map<CellKey, RoomType> roomTypes,
+            Set<CellKey> matchedRoomCells
+        ) {
+            List<CellKey> unnamed = new ArrayList<>();
+            roomTypes.forEach((cell, type) -> {
+                if (type == RoomType.PUZZLE && snapshot.isMapPuzzleRoom(cell.x(), cell.z())
+                    && !matchedRoomCells.contains(cell) && !hints.containsKey(cell)) unnamed.add(cell);
+            });
+            Set<String> left = new HashSet<>(snapshot.tabPuzzles());
+            for (var match : matches) {
+                if (match.template().type() == RoomType.PUZZLE) left.remove(tabPuzzleName(match.template().name()));
+            }
+            for (var hint : hints.values()) {
+                if (hint.type() == RoomType.PUZZLE) left.remove(tabPuzzleName(hint.name()));
+            }
+            if (unnamed.size() != 1 || left.size() != 1) return Map.of();
+            return Map.of(unnamed.getFirst(), catalogPuzzleName(left.iterator().next()));
+        }
+
+        /** The tab calls the Blaze room "Higher Or Lower"; every other puzzle has the catalog's name. */
+        static String tabPuzzleName(String catalogName) {
+            String name = catalogName.toLowerCase(java.util.Locale.ROOT);
+            return name.equals("blaze") ? "higher or lower" : name;
+        }
+
+        static String catalogPuzzleName(String tabName) {
+            if (tabName.equals("higher or lower")) return "Blaze";
+            StringBuilder name = new StringBuilder();
+            for (String word : tabName.split(" ")) {
+                if (word.isEmpty()) continue;
+                if (!name.isEmpty()) name.append(' ');
+                name.append(Character.toUpperCase(word.charAt(0))).append(word.substring(1));
+            }
+            return name.toString();
         }
 
         private static String firstDoorSideOwner(Map<CellKey, String> roomOwners, int gridX, int gridZ) {

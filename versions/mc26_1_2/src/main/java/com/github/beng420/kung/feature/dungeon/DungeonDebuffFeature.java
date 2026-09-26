@@ -1,5 +1,6 @@
 package com.github.beng420.kung.feature.dungeon;
 
+import com.github.beng420.kung.compat.McCompat;
 import com.github.beng420.kung.config.category.DungeonConfig;
 import com.github.beng420.kung.config.category.DungeonConfig.DragonDebuffScope;
 import com.github.beng420.kung.config.KungHudEditorScreen;
@@ -62,8 +63,8 @@ public final class DungeonDebuffFeature extends ConfigurableFeature<DungeonConfi
         HudElementRegistry.attachElementBefore(VanillaHudElements.PLAYER_LIST, Identifier.fromNamespaceAndPath("kung", "dragon_debuff"),
             (graphics, delta) -> {
                 Minecraft client = Minecraft.getInstance();
-                if (!ready() || !trackingDragons() || client.player == null || client.options.hideGui
-                    || client.screen instanceof KungHudEditorScreen || KungHudEditorState.externalEditing()) return;
+                if (!ready() || !trackingDragons() || !config().dragonDebuffHudEnabled() || client.player == null || McCompat.hudHidden(client)
+                    || McCompat.screen(client) instanceof KungHudEditorScreen || KungHudEditorState.externalEditing()) return;
                 DragonDebuffHud.draw(graphics, config(), tracker.displayedDragons(config().dragonDebuffScope()), tracker.tick());
             });
     }
@@ -207,7 +208,7 @@ public final class DungeonDebuffFeature extends ConfigurableFeature<DungeonConfi
             if (result.ended && !result.resultAnnounced) {
                 result.resultAnnounced = true;
                 trace("result " + result.summary(tracker.tick()) + " " + result.details());
-                if (shown) {
+                if (shown && config().dragonDebuffChatEnabled()) {
                     Component message = KungMessages.info("Debuff", result.summary(tracker.tick())).copy()
                         .withStyle(style -> style.withHoverEvent(new HoverEvent.ShowText(KungMessages.highlight(result.details()))));
                     KungMessages.send(client, message);
@@ -261,7 +262,7 @@ public final class DungeonDebuffFeature extends ConfigurableFeature<DungeonConfi
 
     static boolean sprayCandidate(EntityType<?> type, UUID uuid, boolean alive) {
         // Hypixel minibosses use NPC Player bodies; real player accounts have version-4 UUIDs.
-        return alive && type != EntityType.ARMOR_STAND && (type != EntityType.PLAYER || uuid.version() != 4);
+        return alive && type != McCompat.ARMOR_STAND && (type != McCompat.PLAYER || uuid.version() != 4);
     }
 
     private void trace(String message) {

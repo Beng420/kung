@@ -4,6 +4,7 @@ import com.github.beng420.kung.config.category.SplitsConfig;
 import com.github.beng420.kung.feature.dungeon.DungeonSplitTracker;
 import com.github.beng420.kung.ui.UiBounds;
 import com.github.beng420.kung.ui.UiMenuFont;
+import com.github.beng420.kung.ui.UiScale;
 import com.github.beng420.kung.ui.UiShapes;
 import com.github.beng420.kung.ui.UiTextField;
 import com.github.beng420.kung.ui.UiTheme;
@@ -69,7 +70,7 @@ public final class SplitPersonalBestsScreen extends Screen {
         layout();
     }
 
-    private float scale() { return Math.min(0.8F, Math.min(width / 520F, height / 428F)); }
+    private float scale() { return UiScale.menu(Math.min(0.8F, Math.min(width / 520F, height / 428F))); }
     private int coordinate(double value) { return (int) Math.floor(value / scale()); }
 
     private void layout() {

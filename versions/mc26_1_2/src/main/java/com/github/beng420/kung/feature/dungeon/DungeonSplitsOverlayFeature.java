@@ -1,6 +1,7 @@
 package com.github.beng420.kung.feature.dungeon;
 
 import com.github.beng420.kung.KungMod;
+import com.github.beng420.kung.compat.McCompat;
 import com.github.beng420.kung.config.KungHudEditorScreen;
 import com.github.beng420.kung.config.KungHudEditorState;
 import com.github.beng420.kung.config.category.SplitsConfig;
@@ -46,7 +47,7 @@ public final class DungeonSplitsOverlayFeature extends ConfigurableFeature<Split
         if (KungHudEditorState.externalEditing()) return;
         SplitsConfig config = config();
         DungeonSplitTracker tracker = dungeonStateTracker.splitTracker();
-        boolean editing = Minecraft.getInstance().screen instanceof KungHudEditorScreen;
+        boolean editing = McCompat.screen(Minecraft.getInstance()) instanceof KungHudEditorScreen;
         if (!config.enabled() || !isVisible(editing, dungeonStateTracker.isInDungeonArea(), tracker)) return;
         draw(graphics, config, tracker, editing);
     }

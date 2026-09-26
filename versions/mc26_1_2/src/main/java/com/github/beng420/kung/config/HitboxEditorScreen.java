@@ -1,9 +1,11 @@
 package com.github.beng420.kung.config;
 
+import com.github.beng420.kung.compat.McCompat;
 import com.github.beng420.kung.config.category.HitboxesConfig;
 import com.github.beng420.kung.feature.misc.HitboxesFeature;
 import com.github.beng420.kung.ui.UiBounds;
 import com.github.beng420.kung.ui.UiMenuFont;
+import com.github.beng420.kung.ui.UiScale;
 import com.github.beng420.kung.ui.UiScrollList;
 import com.github.beng420.kung.ui.UiShapes;
 import com.github.beng420.kung.ui.UiTextField;
@@ -109,9 +111,9 @@ final class HitboxEditorScreen extends Screen {
         wheelReady = false;
     }
     @Override public boolean isPauseScreen() { return false; }
-    @Override public void onClose() { minecraft.setScreen(parent); }
+    @Override public void onClose() { McCompat.setScreen(minecraft, parent); }
 
-    private float scale() { return Math.min(0.8F, Math.min(width / 344F, height / 298F)); }
+    private float scale() { return UiScale.menu(Math.min(0.8F, Math.min(width / 344F, height / 298F))); }
     private int coordinate(double value) { return (int) Math.floor(value / scale()); }
 
     private void layout() {

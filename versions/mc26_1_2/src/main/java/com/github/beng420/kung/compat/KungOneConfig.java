@@ -39,8 +39,8 @@ final class KungOneConfig {
             // HUD panels retain their controls when an audio-list edit replaces the main settings tree.
             for (var property : hudControls) property.revaluateDisplay();
             // Rebuild changing row lists outside the native editor to preserve active text input.
-            boolean oneConfigOpen = client.screen != null
-                && client.screen.getClass().getName().startsWith("org.polyfrost.oneconfig.");
+            boolean oneConfigOpen = McCompat.screen(client) != null
+                && McCompat.screen(client).getClass().getName().startsWith("org.polyfrost.oneconfig.");
             if (!oneConfigOpen && !dynamicSettings.equals(dynamicSettings())) rebuild();
         });
     }
@@ -48,7 +48,7 @@ final class KungOneConfig {
     private static void rebuild() {
         var next = new KungOneConfigTree(KungSettings.categories(() -> {
             Minecraft client = Minecraft.getInstance();
-            client.setScreen(KungConfigScreen.changelog(client.screen));
+            McCompat.setScreen(client, KungConfigScreen.changelog(McCompat.screen(client)));
         }), KungConfig.get()::save, () -> !ConfigManager.isRebindingProfiles());
         next.applyDefaults(new KungOneConfigTree(KungSettings.defaults(), () -> { }, () -> false));
         // Replace, rather than merge, so removed file-specific controls disappear and native search refreshes.

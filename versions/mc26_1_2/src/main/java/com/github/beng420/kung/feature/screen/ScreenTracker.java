@@ -1,5 +1,6 @@
 package com.github.beng420.kung.feature.screen;
 
+import com.github.beng420.kung.compat.McCompat;
 import com.github.beng420.kung.config.KungConfig;
 
 import com.github.beng420.kung.feature.misc.LoadoutsAutoCloseFeature;
@@ -43,7 +44,7 @@ public final class ScreenTracker {
     }
 
     private static void tick(Minecraft client) {
-        OpenScreen nextScreen = openScreen(client.screen);
+        OpenScreen nextScreen = openScreen(McCompat.screen(client));
         String nextKey = nextScreen == null ? "" : nextScreen.key();
         if (nextKey.equals(lastScreenKey)) {
             currentScreen = nextScreen;
@@ -52,7 +53,7 @@ public final class ScreenTracker {
 
         currentScreen = nextScreen;
         lastScreenKey = nextKey;
-        LoadoutsAutoCloseFeature.observeScreenChange(client.screen);
+        LoadoutsAutoCloseFeature.observeScreenChange(McCompat.screen(client));
         KungDebugRecorder.event("screen", nextScreen == null
             ? "closed"
             : "opened title=\"" + nextScreen.title() + "\" class=" + nextScreen.simpleClassName()

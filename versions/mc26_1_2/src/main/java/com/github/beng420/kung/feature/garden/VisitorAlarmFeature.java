@@ -1,5 +1,6 @@
 package com.github.beng420.kung.feature.garden;
 
+import com.github.beng420.kung.compat.McCompat;
 import com.github.beng420.kung.config.category.VisitorAlarmConfig;
 import com.github.beng420.kung.feature.ConfigurableFeature;
 import com.github.beng420.kung.message.KungMessages;
@@ -170,7 +171,7 @@ public final class VisitorAlarmFeature extends ConfigurableFeature<VisitorAlarmC
             || (input != ContainerInput.PICKUP && input != ContainerInput.QUICK_MOVE)
             || button < 0 || button > 1) return;
         var client = Minecraft.getInstance();
-        if (client.player == null || !(client.screen instanceof AbstractContainerScreen<?> screen)) return;
+        if (client.player == null || !(McCompat.screen(client) instanceof AbstractContainerScreen<?> screen)) return;
         var menu = screen.getMenu();
         int topSlots = menu.slots.size() - 36;
         if (menu != client.player.containerMenu || menu.containerId != containerId

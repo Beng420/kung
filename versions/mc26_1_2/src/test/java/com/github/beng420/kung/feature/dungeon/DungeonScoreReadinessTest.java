@@ -149,7 +149,7 @@ public final class DungeonScoreReadinessTest {
         var large = new MatchRenderPlan(base.matches(), base.predictedRooms(), base.matchedRoomCells(), base.internalDoors(),
             base.externalDoors(), base.roomTypes(), Map.copyOf(owners), base.hints(), base.remoteRoomCells(),
             base.remoteRoomProgress(), base.visitedRooms(), base.clearedRooms(), base.completedRooms(),
-            base.openedSpecialDoorCells(), base.fairyEntranceDoor(), base.bloodRushPath());
+            base.openedSpecialDoorCells(), base.fairyEntranceDoor(), base.bloodRushPath(), base.mapPuzzleNames());
         assertEquals(300, stats.score(large, 40));
         assertEquals(300, stats.score(large, 40));
         stats.reset();
@@ -178,6 +178,6 @@ public final class DungeonScoreReadinessTest {
         if (specialCompleted) completed.add(SPECIAL);
         return new MatchRenderPlan(List.of(), List.of(), Set.of(), Set.of(), Map.of(), Map.copyOf(types), Map.copyOf(owners),
             Map.of(), Set.of(), Map.of(), Set.copyOf(owners.keySet()), Set.copyOf(cleared), Set.copyOf(completed),
-            Set.of(), null, List.of());
+            Set.of(), null, List.of(), Map.of());
     }
 }

@@ -1,6 +1,7 @@
 package com.github.beng420.kung.feature.dungeon;
 
 import com.github.beng420.kung.KungMod;
+import com.github.beng420.kung.compat.McCompat;
 import com.github.beng420.kung.config.KungConfig;
 import com.github.beng420.kung.config.KungHudEditorState;
 import com.github.beng420.kung.config.category.DungeonConfig;
@@ -1436,7 +1437,19 @@ public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> 
         int rejectedNearLoaded = 0;
         int anonymousDrawn = 0;
         List<DungeonRunStats.DungeonPlayerSlot> playerSlots = stats.dungeonPlayerSlots(client);
-        int slotCursor = 1;
+        List<DungeonMapCheckmarkReader.MapPixel> teammatePixels = new ArrayList<>();
+        for (MapDecoration decoration : mapData.getDecorations()) {
+            if (decoration.type().equals(MapDecorationTypes.BLUE_MARKER)) {
+                teammatePixels.add(overlayPixelForDecorationOrRaw(decoration, client, snapshot));
+            }
+        }
+        List<DungeonRunStats.DungeonPlayerSlot> teammateSlots = teammateSlotsByDecoration(teammatePixels, playerSlots, slot -> {
+            AbstractClientPlayer loaded = playerByUuid(client, slot.uuid());
+            if (loaded == null) return null;
+            SmoothPlayerTarget at = smoothTargetFromEntity(loaded, partialTick);
+            return new DungeonMapCheckmarkReader.MapPixel(Math.round(at.x()), Math.round(at.y()));
+        });
+        int teammateCount = 0;
         StringBuilder details = collectDiagnostics ? new StringBuilder() : null;
         for (MapDecoration decoration : mapData.getDecorations()) {
             int markerIndex = decorationIndex++;
@@ -1446,6 +1459,7 @@ public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> 
             if (!selfMarker && !teammateMarker) {
                 continue;
             }
+            int teammateIndex = teammateMarker ? teammateCount++ : -1;
             playerDecorations++;
             if (drawnMarkers.size() >= MAX_PLAYER_MARKERS) {
                 rejectedLimit++;
@@ -1458,10 +1472,7 @@ public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> 
             if (selfMarker) {
                 playerSlot = playerSlotAt(playerSlots, 0);
             } else {
-                playerSlot = null;
-                while (slotCursor < MAX_PLAYER_MARKERS && playerSlot == null) {
-                    playerSlot = playerSlotAt(playerSlots, slotCursor++);
-                }
+                playerSlot = teammateSlots.get(teammateIndex);
             }
             String playerName = decorationPlayerName(decoration);
             if (!playerName.isEmpty()) {
@@ -1547,6 +1558,44 @@ public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> 
             anonymousDrawn,
             details == null ? "" : details.toString()
         );
+    }
+
+    /**
+     * Blue markers carry no name, and Hypixel's marker order is not reliably the tab order: after a
+     * revive the unloaded mage got the healer's marker and trailed the entity-drawn healer. Loaded
+     * teammates claim the marker nearest their entity first; the rest keep tab order.
+     */
+    static List<DungeonRunStats.DungeonPlayerSlot> teammateSlotsByDecoration(
+        List<DungeonMapCheckmarkReader.MapPixel> markers,
+        List<DungeonRunStats.DungeonPlayerSlot> playerSlots,
+        java.util.function.Function<DungeonRunStats.DungeonPlayerSlot, DungeonMapCheckmarkReader.MapPixel> loadedPixel
+    ) {
+        DungeonRunStats.DungeonPlayerSlot[] assigned = new DungeonRunStats.DungeonPlayerSlot[markers.size()];
+        List<DungeonRunStats.DungeonPlayerSlot> unloaded = new ArrayList<>();
+        for (int index = 1; index < MAX_PLAYER_MARKERS; index++) {
+            DungeonRunStats.DungeonPlayerSlot slot = playerSlotAt(playerSlots, index);
+            if (slot == null) continue;
+            DungeonMapCheckmarkReader.MapPixel at = slot.uuid() == null ? null : loadedPixel.apply(slot);
+            int nearest = -1;
+            long best = Long.MAX_VALUE;
+            for (int marker = 0; at != null && marker < assigned.length; marker++) {
+                DungeonMapCheckmarkReader.MapPixel pixel = markers.get(marker);
+                if (assigned[marker] != null || pixel == null) continue;
+                long dx = pixel.x() - at.x();
+                long dz = pixel.z() - at.z();
+                if (dx * dx + dz * dz < best) {
+                    best = dx * dx + dz * dz;
+                    nearest = marker;
+                }
+            }
+            if (nearest >= 0) assigned[nearest] = slot;
+            else unloaded.add(slot);
+        }
+        java.util.Iterator<DungeonRunStats.DungeonPlayerSlot> rest = unloaded.iterator();
+        for (int marker = 0; marker < assigned.length && rest.hasNext(); marker++) {
+            if (assigned[marker] == null) assigned[marker] = rest.next();
+        }
+        return java.util.Arrays.asList(assigned);
     }
 
     private static DungeonRunStats.DungeonPlayerSlot playerSlotAt(
@@ -1925,7 +1974,7 @@ public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> 
 
     private static float renderPartialTick() {
         Minecraft client = Minecraft.getInstance();
-        return client.gameRenderer.getMainCamera().getCameraEntityPartialTicks(client.getDeltaTracker());
+        return McCompat.camera(client).getCameraEntityPartialTicks(client.getDeltaTracker());
     }
 
     private static float shortestAngleDelta(float from, float to) {

@@ -1,5 +1,6 @@
 package com.github.beng420.kung.feature.dungeon;
 
+import com.github.beng420.kung.compat.McCompat;
 import com.github.beng420.kung.config.category.DungeonConfig;
 import com.github.beng420.kung.message.HypixelChatSender;
 import com.github.beng420.kung.message.KungMessages;
@@ -108,8 +109,8 @@ public final class DungeonAnnouncements {
         if (client == null || client.gui == null || client.player == null) {
             return;
         }
-        client.gui.setTimes(0, 30, 5);
-        client.gui.setTitle(Component.literal("5 Crypts").withStyle(ChatFormatting.GOLD, ChatFormatting.BOLD));
+        McCompat.setTitleTimes(client, 0, 30, 5);
+        McCompat.setTitle(client, Component.literal("5 Crypts").withStyle(ChatFormatting.GOLD, ChatFormatting.BOLD));
         client.getSoundManager().play(SimpleSoundInstance.forUI(SoundEvents.NOTE_BLOCK_PLING.value(), 1.35F, 1.0F));
     }
 }

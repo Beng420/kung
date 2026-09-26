@@ -21,6 +21,9 @@ public final class DungeonMapSnapshot {
     private final Set<GridKey> mapPlayerRooms = new HashSet<>();
     private final Set<GridKey> mapVisibleRooms = new HashSet<>();
     private final Set<GridKey> mapTrapRooms = new HashSet<>();
+    private final Set<GridKey> mapPuzzleRooms = new HashSet<>();
+    /** Puzzle names from the tab list, lower case - they name a purple room its blocks no longer identify. */
+    private final Set<String> tabPuzzles = new HashSet<>();
     private final Set<GridKey> fullyLoadedRooms = new HashSet<>();
     private final Set<GridKey> mapOpenDoors = new HashSet<>();
     private final Set<GridKey> mapRoomConnections = new HashSet<>();
@@ -50,6 +53,8 @@ public final class DungeonMapSnapshot {
         mapPlayerRooms.clear();
         mapVisibleRooms.clear();
         mapTrapRooms.clear();
+        mapPuzzleRooms.clear();
+        tabPuzzles.clear();
         fullyLoadedRooms.clear();
         mapOpenDoors.clear();
         mapRoomConnections.clear();
@@ -217,6 +222,32 @@ public final class DungeonMapSnapshot {
 
     boolean isMapTrapRoom(int roomGridX, int roomGridZ) {
         return mapTrapRooms.contains(new GridKey(roomGridX, roomGridZ));
+    }
+
+    void observeMapPuzzleRoom(int roomGridX, int roomGridZ) {
+        if (!DungeonScanUtils.isValidRoomGrid(roomGridX, roomGridZ)) return;
+        observeMapVisibleRoom(roomGridX, roomGridZ);
+        GridKey room = new GridKey(roomGridX, roomGridZ);
+        if (mapPuzzleRooms.add(room)) {
+            revision++;
+            scanRevision++;
+            logMapChange("map-room-type room=" + gridText(room) + " type=PUZZLE");
+        }
+    }
+
+    boolean isMapPuzzleRoom(int roomGridX, int roomGridZ) {
+        return mapPuzzleRooms.contains(new GridKey(roomGridX, roomGridZ));
+    }
+
+    void observeTabPuzzles(Set<String> names) {
+        if (tabPuzzles.equals(names)) return;
+        tabPuzzles.clear();
+        tabPuzzles.addAll(names);
+        revision++;
+    }
+
+    Set<String> tabPuzzles() {
+        return Set.copyOf(tabPuzzles);
     }
 
     public void observeMapOpenDoor(int scanGridX, int scanGridZ) {

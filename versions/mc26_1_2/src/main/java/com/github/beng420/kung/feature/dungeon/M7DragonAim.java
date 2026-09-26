@@ -21,8 +21,15 @@ final class M7DragonAim {
     static final int HINT_TO_SPAWN_TICKS = 101;
     /** Recorded and predicted window after spawn; the debuff window is the first 40 ticks. */
     static final int TIMELINE_TICKS = 60;
-    /** Body centre in the spawn pose, relative to the anchor (SPAWN_PARTS body: 5x3x5 at -2.5, 0, -3). */
-    static final Vec3 SPAWN_BODY = new Vec3(0, 1.5, -0.5);
+    /** 290 logged prefires hit when they came down 0-17 ticks after spawn; later ones found the dragon gone. */
+    static final int HIT_WINDOW_TICKS = 17;
+    /** Vanilla draw power: under 3 ticks it stays below 10% and no arrow leaves the bow. */
+    static final int MIN_SHOT_TICKS = 3;
+    static final int FULL_DRAW_TICKS = 20;
+    /** The aim marker sits this far along the launch direction, so it rides with you. */
+    static final double LOB_MARKER_DISTANCE = 10;
+    private static final double LOB_STEP = Math.toRadians(1);
+    private static final int MAX_FLIGHT_TICKS = 200;
 
     private M7DragonAim() { }
 
@@ -60,24 +67,88 @@ final class M7DragonAim {
         return new Aim(target.add(0, drop(ticks), 0), ticksSinceSpawn + ticks);
     }
 
+    /** Launch speed after this many draw ticks; Hypixel's Last Breath follows vanilla (8 ticks just reach the dragon). */
+    static double drawSpeed(int ticks) {
+        return ARROW_SPEED * net.minecraft.world.item.BowItem.getPowerForTime(Math.clamp(ticks, 0, FULL_DRAW_TICKS));
+    }
+
+    record Shot(Vec3 direction, double ticks) { }
+
+    /**
+     * The high arc that comes down on the target, for arrows shot up that rain onto the dragon.
+     * Scans down from straight up to the first pitch still at the target's height when it gets
+     * there, then bisects towards the falling side. Null when no pitch reaches the target.
+     */
+    static Shot lobShot(Vec3 eye, Vec3 target, double speed) {
+        double dx = target.x - eye.x;
+        double dz = target.z - eye.z;
+        double range = Math.sqrt(dx * dx + dz * dz);
+        double rise = target.y - eye.y;
+        double high = Math.PI / 2;
+        double low = Double.NaN;
+        for (double pitch = high - LOB_STEP; pitch > 0; pitch -= LOB_STEP) {
+            if (flight(range, pitch, speed)[0] >= rise) {
+                low = pitch;
+                break;
+            }
+            high = pitch;
+        }
+        if (Double.isNaN(low)) return null;
+        for (int round = 0; round < 12; round++) {
+            double mid = (low + high) / 2;
+            if (flight(range, mid, speed)[0] >= rise) low = mid;
+            else high = mid;
+        }
+        double yaw = Math.atan2(dz, dx);
+        return new Shot(new Vec3(Math.cos(low) * Math.cos(yaw), Math.sin(low), Math.cos(low) * Math.sin(yaw)),
+            flight(range, low, speed)[1]);
+    }
+
+    /** Height and ticks when the arrow has covered this horizontal distance; -infinity if it never does. */
+    private static double[] flight(double range, double pitch, double speed) {
+        double x = 0;
+        double y = 0;
+        double vx = speed * Math.cos(pitch);
+        double vy = speed * Math.sin(pitch);
+        for (int tick = 0; tick < MAX_FLIGHT_TICKS; tick++) {
+            if (x + vx >= range) {
+                double part = vx <= 0 ? 0 : (range - x) / vx;
+                return new double[] {y + vy * part, tick + part};
+            }
+            x += vx;
+            y += vy;
+            vx *= DRAG;
+            vy = vy * DRAG - GRAVITY;
+        }
+        return new double[] {Double.NEGATIVE_INFINITY, -1};
+    }
+
+    /**
+     * Where the dragon will be for the spam: the body's mean position over the hit window. Stand under
+     * it; checked against 592 logged arrows, it lands on the best or second-best block for four statues.
+     */
+    static Vec3 standSpot(Timeline timeline) {
+        Vec3 sum = Vec3.ZERO;
+        for (int tick = 0; tick <= HIT_WINDOW_TICKS; tick++) sum = sum.add(timeline.at(tick, DragonPart.BODY));
+        return sum.scale(1.0 / (HIT_WINDOW_TICKS + 1));
+    }
+
     /** One recorded flight: per server tick since spawn, the tick and xyz of every DragonPart, relative to the anchor. */
     record Timeline(Statue statue, int hintTicks, List<double[]> rows) {
-        /** Body centre at a fractional tick: the spawn pose before spawn, interpolated after, the last row beyond. */
-        Vec3 body(double tick) {
-            if (rows.isEmpty() || tick <= rows.getFirst()[0]) {
-                return tick <= 0 || rows.isEmpty() ? statue.spawn().add(SPAWN_BODY) : part(rows.getFirst(), DragonPart.BODY);
-            }
+        /** A part's centre at a fractional tick: the first row before it, interpolated after, the last row beyond. */
+        Vec3 at(double tick, DragonPart part) {
+            if (tick <= rows.getFirst()[0]) return centre(rows.getFirst(), part);
             for (int index = 1; index < rows.size(); index++) {
                 double[] next = rows.get(index);
                 if (next[0] < tick) continue;
                 double[] previous = rows.get(index - 1);
-                return part(previous, DragonPart.BODY).lerp(part(next, DragonPart.BODY),
+                return centre(previous, part).lerp(centre(next, part),
                     (tick - previous[0]) / (next[0] - previous[0]));
             }
-            return part(rows.getLast(), DragonPart.BODY);
+            return centre(rows.getLast(), part);
         }
 
-        private Vec3 part(double[] row, DragonPart part) {
+        private Vec3 centre(double[] row, DragonPart part) {
             int at = 1 + part.ordinal() * 3;
             return statue.spawn().add(row[at], row[at + 1], row[at + 2]);
         }

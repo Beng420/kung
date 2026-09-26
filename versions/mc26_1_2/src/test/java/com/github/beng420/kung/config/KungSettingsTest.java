@@ -8,6 +8,7 @@ import static org.junit.Assert.assertTrue;
 import com.github.beng420.kung.config.KungSettings.CategoryEntry;
 import com.github.beng420.kung.config.KungSettings.FeatureEntry;
 import com.github.beng420.kung.config.category.DungeonConfig.DragonDebuffScope;
+import com.github.beng420.kung.config.category.DungeonConfig.DragonPart;
 import com.github.beng420.kung.config.category.DungeonConfig.PillarMaterial;
 import com.github.beng420.kung.config.category.SplitsConfig.PredictionMode;
 import com.github.beng420.kung.config.category.SplitsConfig.TimeFormat;
@@ -29,7 +30,7 @@ public final class KungSettingsTest {
 
         assertEquals(List.of("Dungeon", "Garden", "Hunting", "Slayer", "Util", "Debug"),
             categories.stream().map(CategoryEntry::name).toList());
-        assertEquals(List.of(12, 2, 1, 1, 12, 3),
+        assertEquals(List.of(12, 2, 1, 1, 13, 3),
             categories.stream().map(category -> category.features().size()).toList());
         for (var category : categories) {
             for (var feature : category.features()) {
@@ -231,21 +232,20 @@ public final class KungSettingsTest {
     }
 
     @Test
-    public void witherDragonsShowsOtherAccountsTheDebuffTrackerOnly() {
+    public void witherDragonsHidesOnlyTheAimAndDiagnosticsFromOtherAccounts() {
         KungConfig config = new KungConfig(temporary.getRoot().toPath().resolve("dragon-catalog.json"));
         config.dungeon.setWitherDragonsEnabled(true);
         config.dungeon.setDevDragonDiagnosticsEnabled(true);
         var developer = KungSettings.categories(config, () -> { }, true);
         var publicCatalog = KungSettings.categories(config, () -> { }, false);
-        // Same entries for everyone except the developer's Menu Font trial; Wither Dragons differs in its settings.
+        // Same entries for everyone; Wither Dragons differs in its settings.
         for (int index = 0; index < developer.size(); index++) {
-            assertEquals(developer.get(index).features().stream().map(FeatureEntry::name)
-                    .filter(name -> !name.equals("Menu Font")).toList(),
+            assertEquals(developer.get(index).features().stream().map(FeatureEntry::name).toList(),
                 publicCatalog.get(index).features().stream().map(FeatureEntry::name).toList());
         }
-        assertEquals(List.of("Debuff Tracker", "Track", "Spawn Markers", "Marker", "Core Parts", "Aim Point", "Flight Paths", "Path Part", "Statue Boxes", "Count Notifications", "Developer Diagnostics"),
+        assertEquals(List.of("Debuff Tracker", "Track", "Spawn Markers", "Marker", "Core Parts", "Aim Point", "Flight Paths", "Path Part", "Line Thickness (%)", "Statue Boxes", "Count Notifications", "Developer Diagnostics"),
             feature(developer, "Wither Dragons").settings().stream().map(SettingEntry::label).toList());
-        assertEquals(List.of("Debuff Tracker", "Track"),
+        assertEquals(List.of("Debuff Tracker", "Track", "Spawn Markers", "Marker", "Core Parts", "Flight Paths", "Path Part", "Line Thickness (%)", "Statue Boxes", "Count Notifications"),
             feature(publicCatalog, "Wither Dragons").settings().stream().map(SettingEntry::label).toList());
     }
 
@@ -285,7 +285,9 @@ public final class KungSettingsTest {
         assertTrue(setting(dragons, "Track").visible());
         setting(dragons, "Debuff Tracker").toggle().run();
         assertFalse(setting(dragons, "Track").visible());
-        // Spawn Markers > Marker > Core Parts.
+        // Spawn Markers > Marker > Core Parts; the markers start off.
+        assertFalse(setting(dragons, "Marker").visible());
+        setting(dragons, "Spawn Markers").toggle().run();
         assertTrue(setting(dragons, "Marker").visible());
         assertTrue(setting(dragons, "Core Parts").visible());
         config.dungeon.setDragonMarkerMode(com.github.beng420.kung.config.category.DungeonConfig.DragonMarkerMode.SKELETON);
@@ -306,11 +308,13 @@ public final class KungSettingsTest {
         KungConfig config = new KungConfig(file);
         var helper = feature(KungSettings.categories(config, () -> { }, true), "Wither Dragons");
         assertFalse(helper.enabled());
-        assertEquals(List.of("Debuff Tracker", "Track", "Spawn Markers", "Marker", "Core Parts", "Aim Point", "Flight Paths", "Path Part", "Statue Boxes", "Count Notifications", "Developer Diagnostics"),
+        assertEquals(List.of("Debuff Tracker", "Track", "Spawn Markers", "Marker", "Core Parts", "Aim Point", "Flight Paths", "Path Part", "Line Thickness (%)", "Statue Boxes", "Count Notifications", "Developer Diagnostics"),
             helper.settings().stream().map(SettingEntry::label).toList());
         assertFalse(setting(helper, "Developer Diagnostics").booleanSupplier().getAsBoolean());
         // By name, not by index: the list also holds a slider, which has no boolean supplier.
-        for (String label : List.of("Spawn Markers", "Statue Boxes", "Count Notifications")) {
+        assertFalse(setting(helper, "Spawn Markers").booleanSupplier().getAsBoolean());
+        setting(helper, "Spawn Markers").toggle().run();
+        for (String label : List.of("Statue Boxes", "Count Notifications")) {
             var setting = setting(helper, label);
             assertTrue(label, setting.booleanSupplier().getAsBoolean());
             setting.toggle().run();
@@ -321,7 +325,7 @@ public final class KungSettingsTest {
         restored.load();
         assertTrue(restored.dungeon.witherDragonsEnabled());
         assertTrue(restored.dungeon.m7DragonHelperEnabled());
-        assertFalse(restored.dungeon.dragonSpawnMarkersEnabled());
+        assertTrue(restored.dungeon.dragonSpawnMarkersEnabled());
         assertFalse(restored.dungeon.dragonStatueBoxesEnabled());
         assertFalse(restored.dungeon.dragonCountNotificationsEnabled());
         assertFalse(restored.dungeon.devDragonDiagnosticsEnabled());
@@ -331,15 +335,42 @@ public final class KungSettingsTest {
     }
 
     @Test
+    public void dragonDefaultsAndDebuffOutputsPersist() {
+        Path file = temporary.getRoot().toPath().resolve("dragon-defaults.json");
+        KungConfig config = new KungConfig(file);
+        assertEquals(DragonPart.BODY, config.dungeon.dragonTrailPart());
+        assertEquals(100, config.dungeon.dragonLineThickness());
+        config.dungeon.setDragonLineThickness(1);
+        assertEquals(25, config.dungeon.dragonLineThickness());
+        config.dungeon.setDragonLineThickness(999);
+        assertEquals(400, config.dungeon.dragonLineThickness());
+        assertTrue(config.misc.bowDrawDragonTicksEnabled());
+        var tracker = setting(feature(KungSettings.categories(config, () -> { }, false), "Wither Dragons"), "Debuff Tracker");
+        assertEquals(List.of("HUD", "Chat"), tracker.children().stream().map(SettingEntry::label).toList());
+        tracker.children().get(1).toggle().run();
+        // The HUD editor's switch only hides the HUD; turning it on brings the tracker and master with it.
+        config.dungeon.setDragonDebuffHudShown(false);
+        config.dungeon.setDragonDebuffTrackerEnabled(false);
+        config.dungeon.setDragonDebuffHudShown(true);
+        KungConfig restored = new KungConfig(file);
+        restored.load();
+        assertTrue(restored.dungeon.dragonDebuffHudShown());
+        assertTrue(restored.dungeon.dragonDebuffEnabled());
+        assertFalse(restored.dungeon.dragonDebuffChatEnabled());
+        assertEquals(400, restored.dungeon.dragonLineThickness());
+    }
+
+    @Test
     public void dragonCorePartsToggleIndependentlyAndSurviveAReload() {
         Path file = temporary.getRoot().toPath().resolve("core-parts.json");
         KungConfig config = new KungConfig(file);
         var parts = setting(feature(KungSettings.categories(config, () -> { }, true), "Wither Dragons"), "Core Parts").children();
         assertEquals(9, parts.size());
-        // Box Centre stays the default, so existing setups keep their single core.
-        assertTrue(parts.getFirst().booleanSupplier().getAsBoolean());
+        // Body alone by default.
+        assertFalse(parts.getFirst().booleanSupplier().getAsBoolean());
+        assertTrue(parts.get(3).booleanSupplier().getAsBoolean());
+        parts.get(0).toggle().run();
         parts.get(2).toggle().run();
-        parts.get(3).toggle().run();
         KungConfig restored = new KungConfig(file);
         restored.load();
         assertTrue(restored.dungeon.dragonCorePart(com.github.beng420.kung.config.category.DungeonConfig.DragonPart.BOX));

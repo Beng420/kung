@@ -13,7 +13,16 @@ import net.minecraft.world.phys.Vec3;
 /** Server evidence confirms statue destruction; the displayed range is only an estimate. */
 final class M7DragonTracker {
     static final int CONFIRMATION_TICKS = 40;
+    /** Respawn lines come ~1.75 s after the death, sometimes just past CONFIRMATION_TICKS. */
+    static final int MISS_TICKS = 80;
     static final int MAX_ATTEMPTS = 32;
+    /** The wiki's "Dragon Respawn Lines": said when a dragon dies without breaking its statue. */
+    private static final java.util.Set<String> MISS_LINES = java.util.Set.of(
+        "[BOSS] Wither King: Futile.",
+        "[BOSS] Wither King: You just made a terrible mistake!",
+        "[BOSS] Wither King: I am not impressed.",
+        "[BOSS] Wither King: Your skills have faded humans.",
+        "[BOSS] Wither King: Your skills have faded, humans.");
     private final Map<UUID, Attempt> attempts = new LinkedHashMap<>();
     private final Map<UUID, Long> unknownDeaths = new LinkedHashMap<>();
     private final EnumSet<Statue> brokenStatues = EnumSet.noneOf(Statue.class);
@@ -109,6 +118,8 @@ final class M7DragonTracker {
     }
 
     List<Result> confirmMessage(String message) {
+        if (message == null) return List.of();
+        if (MISS_LINES.contains(message)) return missed(message);
         if (!"[BOSS] Wither King: Oh, this one hurts!".equals(message)
             && !"[BOSS] Wither King: I have more of those.".equals(message)
             && !"[BOSS] Wither King: My soul is disposable.".equals(message)) return List.of();
@@ -127,7 +138,24 @@ final class M7DragonTracker {
         return List.of(new Result(candidate.statue, Outcome.COUNTS, message, candidate.position));
     }
 
-    enum Outcome { COUNTS, UNKNOWN }
+    /**
+     * A respawn line names no colour, so it goes to the one recent death that has not counted -
+     * also one already timed out as UNKNOWN. With two such deaths, or an unidentified one, it says nothing.
+     */
+    private List<Result> missed(String message) {
+        if (!unknownDeaths.isEmpty()) return List.of();
+        Attempt candidate = null;
+        for (Attempt attempt : attempts.values()) {
+            if (!attempt.dead || attempt.outcome == Outcome.COUNTS || tick - attempt.deathTick > MISS_TICKS) continue;
+            if (candidate != null) return List.of();
+            candidate = attempt;
+        }
+        if (candidate == null || candidate.outcome == Outcome.MISSED) return List.of();
+        candidate.outcome = Outcome.MISSED;
+        return List.of(new Result(candidate.statue, Outcome.MISSED, message, candidate.position));
+    }
+
+    enum Outcome { COUNTS, MISSED, UNKNOWN }
 
     /** position is where the dragon died, or null when no attempt could be tied to the result. */
     record Result(Statue statue, Outcome outcome, String evidence, Vec3 position) { }
@@ -156,11 +184,12 @@ final class M7DragonTracker {
     }
 
     enum Statue {
-        RED("Red", 0xFFFF5555, new Vec3(27, 14, 59), new BlockPos(32, 22, 59)),
-        ORANGE("Orange", 0xFFFFAA00, new Vec3(85, 14, 56), new BlockPos(80, 23, 56)),
-        GREEN("Green", 0xFF55FF55, new Vec3(27, 14, 94), new BlockPos(32, 23, 94)),
-        BLUE("Blue", 0xFF55AAFF, new Vec3(84, 14, 94), new BlockPos(79, 23, 94)),
-        PURPLE("Purple", 0xFFAA00AA, new Vec3(56, 14, 125), new BlockPos(56, 22, 120));
+        // Boxes from Odin (github.com/odtheking/Odin, WitherDragonsEnum, BSD-3-Clause).
+        RED("Red", 0xFFFF5555, new Vec3(27, 14, 59), new BlockPos(32, 22, 59), new AABB(14.5, 13, 45.5, 39.5, 28, 70.5)),
+        ORANGE("Orange", 0xFFFFAA00, new Vec3(85, 14, 56), new BlockPos(80, 23, 56), new AABB(72, 8, 47, 102, 28, 77)),
+        GREEN("Green", 0xFF55FF55, new Vec3(27, 14, 94), new BlockPos(32, 23, 94), new AABB(7, 8, 80, 37, 28, 110)),
+        BLUE("Blue", 0xFF55AAFF, new Vec3(84, 14, 94), new BlockPos(79, 23, 94), new AABB(71.5, 13, 82.5, 96.5, 26, 107.5)),
+        PURPLE("Purple", 0xFFAA00AA, new Vec3(56, 14, 125), new BlockPos(56, 22, 120), new AABB(45.5, 13, 113.5, 68.5, 23, 136.5));
 
         private final String label;
         private final int color;
@@ -168,14 +197,12 @@ final class M7DragonTracker {
         private final BlockPos statueBlock;
         private final AABB range;
 
-        Statue(String label, int color, Vec3 spawn, BlockPos statueBlock) {
+        Statue(String label, int color, Vec3 spawn, BlockPos statueBlock, AABB range) {
             this.label = label;
             this.color = color;
             this.spawn = spawn;
             this.statueBlock = statueBlock;
-            // ponytail: Z from recorded kills (counted up to 17.54 out, failed at 19.92); X keeps
-            // Skytils' 13.5 because no kill has landed farther out in X. Refit once X has samples.
-            range = new AABB(spawn.x - 13.5, 6, spawn.z - 18, spawn.x + 13.5, 29.5, spawn.z + 18);
+            this.range = range;
         }
 
         String label() { return label; }

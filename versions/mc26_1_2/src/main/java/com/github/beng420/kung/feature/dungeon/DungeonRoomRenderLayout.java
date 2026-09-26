@@ -113,10 +113,16 @@ record DungeonRoomRenderLayout(List<MatchedRoom> rooms, Set<CellKey> cells, Set<
                 }
             }
         }
-        if (template == null && cells.size() == 1
-            && plan.roomTypeAt(cells.getFirst().x(), cells.getFirst().z()) == RoomType.TRAP) {
-            // Map color confirms the type, not Old/New Trap or their secret/crypt totals.
-            template = new RoomTemplate("Trap", RoomType.TRAP, -1, -1, false, 0, List.of());
+        if (template == null && cells.size() == 1) {
+            CellKey cell = cells.getFirst();
+            RoomType mapType = plan.roomTypeAt(cell.x(), cell.z());
+            // Map color confirms the type, not Old/New Trap or which puzzle, nor their secret/crypt totals.
+            if (mapType == RoomType.TRAP) {
+                template = new RoomTemplate("Trap", RoomType.TRAP, -1, -1, false, 0, List.of());
+            } else if (mapType == RoomType.PUZZLE) {
+                template = new RoomTemplate(plan.mapPuzzleNames().getOrDefault(cell, "Puzzle"),
+                    RoomType.PUZZLE, -1, -1, false, 0, List.of());
+            }
         }
         if (template == null) return;
         RoomType renderedType = plan.roomTypeAt(cells.getFirst().x(), cells.getFirst().z());

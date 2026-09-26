@@ -156,6 +156,7 @@ public final class DungeonStateTracker {
 
     public DungeonLiveMapWriter.MatchRenderPlan renderPlan() {
         DungeonMapSnapshot snapshot = scanRecorder.mapSnapshot();
+        snapshot.observeTabPuzzles(runStats.puzzleNames());
         long revision = snapshot.revision();
         long catalogRevision = roomRepository.revision();
         if (cachedRenderPlan == null

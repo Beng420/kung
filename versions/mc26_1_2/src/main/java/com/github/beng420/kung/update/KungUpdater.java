@@ -1,5 +1,6 @@
 package com.github.beng420.kung.update;
 
+import com.github.beng420.kung.KungBuild;
 import com.github.beng420.kung.KungMod;
 import com.github.beng420.kung.message.KungMessages;
 import com.github.beng420.kung.skyblock.HypixelInstanceTracker;
@@ -142,6 +143,8 @@ public enum KungUpdater {
     }
 
     public void checkForUpdatesAsync() {
+        // The Modrinth launcher updates that jar; GitHub releases carry the full build.
+        if (KungBuild.MODRINTH) return;
         long now = nowMillis();
         State previous = state.get();
         if (!checkSchedule.due(now) || installing.get()

@@ -26,6 +26,10 @@ final class DungeonPuzzleProgress {
         return true;
     }
 
+    java.util.Set<String> names() {
+        return java.util.Set.copyOf(states.keySet());
+    }
+
     int completed() {
         return (int) states.values().stream().filter(state -> state == '✓' || state == '✔').count();
     }

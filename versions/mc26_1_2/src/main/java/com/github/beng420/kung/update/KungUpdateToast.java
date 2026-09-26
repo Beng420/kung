@@ -1,6 +1,7 @@
 package com.github.beng420.kung.update;
 
 import com.github.beng420.kung.KungMod;
+import com.github.beng420.kung.compat.McCompat;
 import com.github.beng420.kung.config.KungConfigScreen;
 import com.github.beng420.kung.ui.UiBounds;
 import com.github.beng420.kung.ui.UiTheme;
@@ -39,7 +40,7 @@ final class KungUpdateToast {
         HudElementRegistry.attachElementAfter(VanillaHudElements.SUBTITLES,
             Identifier.fromNamespaceAndPath(KungMod.MOD_ID, "update_notice"), (graphics, delta) -> {
                 Minecraft client = Minecraft.getInstance();
-                if (client.screen == null) render(client, graphics, -1, -1);
+                if (McCompat.screen(client) == null) render(client, graphics, -1, -1);
             });
         ScreenEvents.AFTER_INIT.register((client, screen, width, height) -> {
             ScreenEvents.afterExtract(screen).register((current, graphics, mouseX, mouseY, delta) ->
@@ -88,7 +89,7 @@ final class KungUpdateToast {
         var window = client.getWindow();
         float scale = normalScale(client);
         var layout = state.layout(window.getGuiScaledWidth() / scale, window.getGuiScaledHeight() / scale);
-        boolean hovered = client.screen != null && layout.contains(
+        boolean hovered = McCompat.screen(client) != null && layout.contains(
             client.mouseHandler.getScaledXPos(window) / scale, client.mouseHandler.getScaledYPos(window) / scale);
         state.advance(now(), canDisplay(client), hovered);
         if (!state.active()) clear();
@@ -96,16 +97,16 @@ final class KungUpdateToast {
 
     static boolean canDisplay(Minecraft client) {
         return client.player != null && client.level != null && client.getConnection() != null
-            && !client.options.hideGui && client.getOverlay() == null
-            && !(client.screen instanceof KungConfigScreen settings && settings.hasReleaseNotesPopup())
-            && !(client.screen instanceof LevelLoadingScreen);
+            && !McCompat.hudHidden(client) && McCompat.overlay(client) == null
+            && !(McCompat.screen(client) instanceof KungConfigScreen settings && settings.hasReleaseNotesPopup())
+            && !(McCompat.screen(client) instanceof LevelLoadingScreen);
     }
 
     private void render(Minecraft client, GuiGraphicsExtractor graphics, int mouseX, int mouseY) {
         if (!state.active() || !canDisplay(client)) return;
         float scale = normalScale(client);
         var layout = state.layout(graphics.guiWidth() / scale, graphics.guiHeight() / scale);
-        boolean interactive = client.screen != null;
+        boolean interactive = McCompat.screen(client) != null;
         double pointerX = interactive ? mouseX / scale : -1;
         double pointerY = interactive ? mouseY / scale : -1;
         boolean hovered = interactive && layout.contains(pointerX, pointerY);
@@ -116,7 +117,7 @@ final class KungUpdateToast {
         }
         layout = state.layout(graphics.guiWidth() / scale, graphics.guiHeight() / scale);
         drawnLayout = layout;
-        drawnScreen = client.screen;
+        drawnScreen = McCompat.screen(client);
         drawnScale = scale;
         drawnWidth = graphics.guiWidth();
         drawnHeight = graphics.guiHeight();
@@ -158,7 +159,7 @@ final class KungUpdateToast {
             case DISMISS -> clear();
             case UPDATES -> {
                 clear();
-                client.schedule(() -> client.setScreen(KungConfigScreen.updates()));
+                client.schedule(() -> McCompat.setScreen(client, KungConfigScreen.updates()));
             }
             case GITHUB -> {
                 clear();

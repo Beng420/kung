@@ -1,6 +1,7 @@
 package com.github.beng420.kung.feature.misc;
 
 import com.github.beng420.kung.KungMod;
+import com.github.beng420.kung.compat.McCompat;
 import com.github.beng420.kung.config.KungHudEditorState;
 import com.github.beng420.kung.config.KungHudLayout;
 import com.github.beng420.kung.config.category.MiscConfig;
@@ -71,7 +72,7 @@ public final class FrozenBlazeHudFeature extends ConfigurableFeature<MiscConfig>
 
     private void render(GuiGraphicsExtractor graphics) {
         var client = Minecraft.getInstance();
-        if (set == null || client.options.hideGui || KungHudEditorState.externalEditing()) return;
+        if (set == null || McCompat.hudHidden(client) || KungHudEditorState.externalEditing()) return;
         draw(graphics, config(), set, idleTicks);
     }
 

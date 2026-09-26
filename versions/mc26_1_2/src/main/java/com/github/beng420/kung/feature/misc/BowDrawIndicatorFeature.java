@@ -1,6 +1,7 @@
 package com.github.beng420.kung.feature.misc;
 
 import com.github.beng420.kung.KungMod;
+import com.github.beng420.kung.compat.McCompat;
 import com.github.beng420.kung.config.KungHudEditorState;
 import com.github.beng420.kung.config.KungHudLayout;
 import com.github.beng420.kung.config.category.MiscConfig;
@@ -37,6 +38,8 @@ public final class BowDrawIndicatorFeature extends ConfigurableFeature<MiscConfi
     private ClientLevel level;
     private int slot;
     private long startedAtNanos;
+    private int releasedTicks = -1;
+    private long releasedAtNanos;
 
     private BowDrawIndicatorFeature() { super(config -> config.misc); }
 
@@ -72,6 +75,11 @@ public final class BowDrawIndicatorFeature extends ConfigurableFeature<MiscConfi
         KungDebugRecorder.event("bow-draw", "start hand=" + hand + " slot=" + slot);
     }
 
+    /** Server ticks of the draw in progress, or of the one released under 200 ms ago; -1 otherwise. */
+    public int drawTicks() {
+        return isEnabled() && progress.visible(System.nanoTime()) ? progress.ticks() : -1;
+    }
+
     public void observeStop(Player player) {
         if (player != owner) return;
         validateDraw(Minecraft.getInstance());
@@ -83,7 +91,17 @@ public final class BowDrawIndicatorFeature extends ConfigurableFeature<MiscConfi
         long now = System.nanoTime();
         KungDebugRecorder.event("bow-draw", "stop ticks=" + progress.ticks()
             + " heldMs=" + (now - startedAtNanos) / 1_000_000L);
+        releasedTicks = progress.ticks();
+        releasedAtNanos = now;
         progress.stop(now);
+    }
+
+    /**
+     * Ticks of the last released draw, if it ended under half a second ago. When spamming, the next
+     * draw is already running by the time the server's arrow comes back, so drawTicks would read that one.
+     */
+    public int releasedTicks() {
+        return isEnabled() && System.nanoTime() - releasedAtNanos < 500_000_000L ? releasedTicks : -1;
     }
 
     static boolean chargeableBow(ItemStack stack) {
@@ -130,7 +148,7 @@ public final class BowDrawIndicatorFeature extends ConfigurableFeature<MiscConfi
     private void render(GuiGraphicsExtractor graphics) {
         var client = Minecraft.getInstance();
         validateDraw(client);
-        if (!progress.visible(System.nanoTime()) || client.options.hideGui || KungHudEditorState.externalEditing()) return;
+        if (!progress.visible(System.nanoTime()) || McCompat.hudHidden(client) || KungHudEditorState.externalEditing()) return;
         draw(graphics, config(), progress.ticks(), progress.active());
     }
 
@@ -153,6 +171,15 @@ public final class BowDrawIndicatorFeature extends ConfigurableFeature<MiscConfi
             // Duplicate markers share one line, in the first one's color.
             var markers = new java.util.TreeMap<Integer, Integer>();
             for (var threshold : config.bowDrawThresholds()) markers.putIfAbsent(threshold.ticks(), threshold.color());
+            // M7 dragons, from where you stand: cyan the least draw that reaches the dragon, red the most
+            // that still misses every block, white the draw the aim dot is for.
+            var hint = config.bowDrawDragonTicksEnabled()
+                ? com.github.beng420.kung.feature.dungeon.M7DragonFeature.INSTANCE.drawHint() : null;
+            if (hint != null) {
+                markers.put(hint.min(), 0xFF55FFFF);
+                markers.put(hint.max(), 0xFFFF5555);
+                markers.put(hint.draw(), 0xFFFFFFFF);
+            }
             for (var line : markers.entrySet()) {
                 int marker = line.getKey();
                 int x = BAR_X + Math.round(BAR_WIDTH * BowDrawProgress.power(marker));

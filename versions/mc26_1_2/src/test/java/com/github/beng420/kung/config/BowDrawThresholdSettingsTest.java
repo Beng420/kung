@@ -56,7 +56,7 @@ public final class BowDrawThresholdSettingsTest {
         restored.load();
         assertEquals(List.of(12, 8, 10), ticks(restored.misc));
         for (var entry : List.copyOf(config.misc.bowDrawThresholds())) config.misc.removeBowDrawThreshold(entry);
-        assertEquals(1, settings.get().size());
+        assertEquals(List.of("Add Threshold", "M7 Dragon Ticks"), settings.get().stream().map(SettingEntry::label).toList());
         restored.load();
         assertTrue(restored.misc.bowDrawThresholds().isEmpty());
     }

@@ -1,5 +1,6 @@
 package com.github.beng420.kung.feature.misc;
 
+import com.github.beng420.kung.compat.McCompat;
 import com.github.beng420.kung.config.category.MiscConfig;
 import com.github.beng420.kung.feature.ConfigurableFeature;
 import com.github.beng420.kung.message.KungMessages;
@@ -102,8 +103,8 @@ public final class LobbyHopHelperFeature extends ConfigurableFeature<MiscConfig>
     private static void alert(Minecraft client, String lobbyId, long nowMillis, Visit previous) {
         String ago = formatAgo(nowMillis - previous.lastSeenMillis());
         if (INSTANCE.config().lobbyHopTitleEnabled()) {
-            client.gui.setSubtitle(Component.literal(lobbyId + " - " + ago));
-            client.gui.setTitle(Component.literal("Swap Lobbies"));
+            McCompat.setSubtitle(client, Component.literal(lobbyId + " - " + ago));
+            McCompat.setTitle(client, Component.literal("Swap Lobbies"));
         }
         if (INSTANCE.config().lobbyHopChatEnabled()) {
             KungMessages.send(client, KungMessages.Type.WARNING, "",

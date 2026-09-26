@@ -1,5 +1,6 @@
 package com.github.beng420.kung.command;
 
+import com.github.beng420.kung.compat.McCompat;
 import com.github.beng420.kung.config.KungConfig;
 
 import com.github.beng420.kung.feature.dungeon.DungeonStateTracker;
@@ -770,13 +771,13 @@ final class KungCommandActions {
 
     static int openSettings(CommandContext<FabricClientCommandSource> context) {
         Minecraft client = context.getSource().getClient();
-        client.execute(() -> client.setScreen(new KungConfigScreen()));
+        client.execute(() -> McCompat.setScreen(client, new KungConfigScreen()));
         return 1;
     }
 
     static int openSplitPersonalBests(CommandContext<FabricClientCommandSource> context, DungeonStateTracker tracker) {
         Minecraft client = context.getSource().getClient();
-        client.schedule(() -> client.setScreen(new SplitPersonalBestsScreen(tracker.splitTracker())));
+        client.schedule(() -> McCompat.setScreen(client, new SplitPersonalBestsScreen(tracker.splitTracker())));
         return 1;
     }
 
@@ -791,7 +792,7 @@ final class KungCommandActions {
     static int openUpdates(CommandContext<FabricClientCommandSource> context) {
         Minecraft client = context.getSource().getClient();
         // Chat finishes handling the click before the new screen is opened.
-        client.schedule(() -> client.setScreen(KungConfigScreen.updates()));
+        client.schedule(() -> McCompat.setScreen(client, KungConfigScreen.updates()));
         return 1;
     }
 
@@ -803,7 +804,7 @@ final class KungCommandActions {
 
     static int openChangelog(CommandContext<FabricClientCommandSource> context) {
         Minecraft client = context.getSource().getClient();
-        client.schedule(() -> client.setScreen(KungConfigScreen.changelog()));
+        client.schedule(() -> McCompat.setScreen(client, KungConfigScreen.changelog()));
         return 1;
     }
 
@@ -831,7 +832,7 @@ final class KungCommandActions {
         String username
     ) {
         Minecraft client = context.getSource().getClient();
-        client.execute(() -> client.setScreen(new CatacombsCalculatorScreen(username)));
+        client.execute(() -> McCompat.setScreen(client, new CatacombsCalculatorScreen(username)));
         return 1;
     }
 
@@ -916,7 +917,7 @@ final class KungCommandActions {
         DungeonStateTracker dungeonStateTracker
     ) {
         Minecraft client = context.getSource().getClient();
-        client.execute(() -> client.setScreen(new KungHudEditorScreen(dungeonStateTracker)));
+        client.execute(() -> McCompat.setScreen(client, new KungHudEditorScreen(dungeonStateTracker)));
         return 1;
     }
 

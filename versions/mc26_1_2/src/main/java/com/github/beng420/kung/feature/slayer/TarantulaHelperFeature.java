@@ -1,6 +1,7 @@
 package com.github.beng420.kung.feature.slayer;
 
 import com.github.beng420.kung.KungMod;
+import com.github.beng420.kung.compat.McCompat;
 import com.github.beng420.kung.config.KungConfig;
 import com.github.beng420.kung.config.KungHudEditorState;
 import com.github.beng420.kung.config.KungHudLayout;
@@ -32,7 +33,6 @@ import net.fabricmc.fabric.api.client.rendering.v1.hud.VanillaHudElements;
 import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderEvents;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
-import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.rendertype.RenderTypes;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
@@ -312,10 +312,11 @@ public final class TarantulaHelperFeature extends ConfigurableFeature<SlayerConf
         }
 
         PoseStack poseStack = context.poseStack();
-        Vec3 camera = client.gameRenderer.getMainCamera().position();
+        Vec3 camera = McCompat.camera(client).position();
         poseStack.pushPose();
         poseStack.translate(-camera.x, -camera.y, -camera.z);
-        drawEggSacPrediction(poseStack, context.bufferSource(), center);
+        McCompat.draw(context, RenderTypes.debugQuads(),
+            (pose, vertices) -> drawEggSacPredictionGrid(client, pose, vertices, center));
         poseStack.popPose();
     }
 
@@ -326,12 +327,12 @@ public final class TarantulaHelperFeature extends ConfigurableFeature<SlayerConf
 
     private float renderPartialTick() {
         Minecraft client = Minecraft.getInstance();
-        return client.gameRenderer.getMainCamera().getCameraEntityPartialTicks(client.getDeltaTracker());
+        return McCompat.camera(client).getCameraEntityPartialTicks(client.getDeltaTracker());
     }
 
     private void renderCountdown(GuiGraphicsExtractor graphics) {
         Minecraft client = Minecraft.getInstance();
-        if (!isEnabled() || !config().eggSacCountdownEnabled() || client.options.hideGui
+        if (!isEnabled() || !config().eggSacCountdownEnabled() || McCompat.hudHidden(client)
             || KungHudEditorState.externalEditing() || !eggSacPhaseActive || eggSacSeenDuringPhase) {
             return;
         }
@@ -369,16 +370,14 @@ public final class TarantulaHelperFeature extends ConfigurableFeature<SlayerConf
 
     /** The sacs themselves carry no name, so nothing but their own timer can find them. */
     private void drawEggSacBoxes(LevelRenderContext context, Minecraft client) {
-        Vec3 camera = client.gameRenderer.getMainCamera().position();
-        var lineType = RenderTypes.lines();
-        var lines = context.bufferSource().getBuffer(lineType);
-        var pose = context.poseStack().last();
-        for (EggSac sac : visibleEggSacs) {
-            AABB box = new AABB(sac.center(), sac.center()).inflate(EGG_SAC_BOX_HALF_WIDTH, sac.halfHeight(),
-                EGG_SAC_BOX_HALF_WIDTH);
-            LineBoxes.box(lines, pose, box, camera.x, camera.y, camera.z, EGG_SAC_BOX_COLOR, 2.0F);
-        }
-        context.bufferSource().endBatch(lineType);
+        Vec3 camera = McCompat.camera(client).position();
+        McCompat.draw(context, RenderTypes.lines(), (pose, lines) -> {
+            for (EggSac sac : visibleEggSacs) {
+                AABB box = new AABB(sac.center(), sac.center()).inflate(EGG_SAC_BOX_HALF_WIDTH, sac.halfHeight(),
+                    EGG_SAC_BOX_HALF_WIDTH);
+                LineBoxes.box(lines, pose, box, camera.x, camera.y, camera.z, EGG_SAC_BOX_COLOR, 2.0F);
+            }
+        });
     }
 
     private Entity activeBoss(Minecraft client) {
@@ -479,7 +478,7 @@ public final class TarantulaHelperFeature extends ConfigurableFeature<SlayerConf
 
     private boolean isSpiderBody(Entity entity) {
         EntityType<?> type = entity.getType();
-        return type == EntityType.SPIDER || type == EntityType.CAVE_SPIDER;
+        return type == McCompat.SPIDER || type == McCompat.CAVE_SPIDER;
     }
 
     private boolean hasTarantulaBossName(Entity entity) {
@@ -1148,11 +1147,6 @@ public final class TarantulaHelperFeature extends ConfigurableFeature<SlayerConf
         eggSacPredictionHalfX = EGG_SAC_PREDICTION_HALF_X;
         eggSacPredictionHalfY = EGG_SAC_PREDICTION_HALF_Y;
         eggSacPredictionHalfZ = EGG_SAC_PREDICTION_HALF_Z;
-    }
-
-    private void drawEggSacPrediction(PoseStack poseStack, MultiBufferSource buffers, Vec3 center) {
-        drawEggSacPredictionGrid(Minecraft.getInstance(), poseStack.last(),
-            buffers.getBuffer(RenderTypes.debugQuads()), center);
     }
 
     private void drawEggSacPredictionGrid(Minecraft client, PoseStack.Pose pose, VertexConsumer vertices, Vec3 center) {

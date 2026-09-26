@@ -1,9 +1,11 @@
 package com.github.beng420.kung.config;
 
+import com.github.beng420.kung.compat.McCompat;
 import com.github.beng420.kung.config.category.MiscConfig;
 import com.github.beng420.kung.feature.misc.CustomSoundsFeature;
 import com.github.beng420.kung.ui.UiBounds;
 import com.github.beng420.kung.ui.UiMenuFont;
+import com.github.beng420.kung.ui.UiScale;
 import com.github.beng420.kung.ui.UiScrollList;
 import com.github.beng420.kung.ui.UiShapes;
 import com.github.beng420.kung.ui.UiTheme;
@@ -75,9 +77,9 @@ final class CustomSoundsScreen extends Screen {
     private Bar pitchBar(Section section) { return new Bar(section.pitch(), section.setPitch(), 25, 300, 5, true); }
 
     @Override public boolean isPauseScreen() { return false; }
-    @Override public void onClose() { minecraft.setScreen(parent); }
+    @Override public void onClose() { McCompat.setScreen(minecraft, parent); }
 
-    private float scale() { return Math.min(0.8F, Math.min(width / 500F, height / 250F)); }
+    private float scale() { return UiScale.menu(Math.min(0.8F, Math.min(width / 500F, height / 250F))); }
     private int coordinate(double value) { return (int) Math.floor(value / scale()); }
     private int left() { return (coordinate(width) - WIDTH) / 2; }
     private int top() { return Math.max(8, (coordinate(height) - 60 - sections.size() * SECTION_HEIGHT) / 2); }

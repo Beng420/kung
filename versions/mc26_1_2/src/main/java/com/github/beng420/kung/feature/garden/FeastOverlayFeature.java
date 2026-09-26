@@ -1,6 +1,7 @@
 package com.github.beng420.kung.feature.garden;
 
 import com.github.beng420.kung.KungMod;
+import com.github.beng420.kung.compat.McCompat;
 import com.github.beng420.kung.config.KungHudEditorScreen;
 import com.github.beng420.kung.config.KungHudEditorState;
 import com.github.beng420.kung.config.category.FeastConfig;
@@ -214,7 +215,7 @@ public final class FeastOverlayFeature extends ConfigurableFeature<FeastConfig> 
     }
 
     private void observeMenu(Minecraft client) {
-        if (!(client.screen instanceof AbstractContainerScreen<?> screen)
+        if (!(McCompat.screen(client) instanceof AbstractContainerScreen<?> screen)
             || screen.getMenu() != client.player.containerMenu
             || FeastProgress.Kind.fromTitle(screen.getTitle().getString()) == null
                 && !FeastKernels.supportsMenu(screen.getTitle().getString())) {
@@ -311,7 +312,7 @@ public final class FeastOverlayFeature extends ConfigurableFeature<FeastConfig> 
     private static AbstractContainerMenu currentGrandMenu(Minecraft client, int containerId) {
         if (!INSTANCE.isEnabled() || client.player == null) return null;
         var server = client.getCurrentServer();
-        if (server == null || !HypixelLocation.isHypixelAddress(server.ip) || !(client.screen instanceof AbstractContainerScreen<?> screen)
+        if (server == null || !HypixelLocation.isHypixelAddress(server.ip) || !(McCompat.screen(client) instanceof AbstractContainerScreen<?> screen)
             || FeastProgress.Kind.fromTitle(screen.getTitle().getString()) != FeastProgress.Kind.GRAND) return null;
         var menu = screen.getMenu();
         int topSlots = menu.slots.size() - 36;
@@ -377,7 +378,7 @@ public final class FeastOverlayFeature extends ConfigurableFeature<FeastConfig> 
 
     private void render(GuiGraphicsExtractor graphics) {
         Minecraft client = Minecraft.getInstance();
-        if (!isEnabled() || client.player == null || client.screen instanceof KungHudEditorScreen
+        if (!isEnabled() || client.player == null || McCompat.screen(client) instanceof KungHudEditorScreen
             || KungHudEditorState.externalEditing()) return;
         // Consult fresh shared instance state at render time, including the first frame after a warp.
         updateContext();

@@ -1,19 +1,19 @@
 package com.github.beng420.kung.feature.dungeon;
 
+import com.github.beng420.kung.compat.McCompat;
 import com.github.beng420.kung.config.KungConfig;
 import com.github.beng420.kung.util.KungDebugRecorder;
+import com.github.beng420.kung.util.LineBoxes;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import net.fabricmc.fabric.api.client.rendering.v1.RenderStateDataKey;
 import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderEvents;
-import net.minecraft.client.renderer.ShapeRenderer;
 import net.minecraft.client.renderer.rendertype.RenderTypes;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
-import net.minecraft.world.phys.shapes.Shapes;
 
 final class IceSprayHighlightRenderer {
     private static final RenderStateDataKey<List<AABB>> BOXES = RenderStateDataKey.create(() -> "kung:ice-spray");
@@ -62,26 +62,22 @@ final class IceSprayHighlightRenderer {
             }
             if (boxes.isEmpty()) return;
             Vec3 camera = context.levelState().cameraRenderState.pos;
-            var fillType = RenderTypes.debugQuads();
-            var fill = context.bufferSource().getBuffer(fillType);
-            var pose = context.poseStack().last();
-            for (AABB box : boxes) {
-                AABB relative = box.move(-camera.x, -camera.y, -camera.z);
-                for (int[] face : FACES) {
-                    for (int vertex : face) {
-                        fill.addVertex(pose,
-                            (float) ((vertex & 1) == 0 ? relative.minX : relative.maxX),
-                            (float) ((vertex & 2) == 0 ? relative.minY : relative.maxY),
-                            (float) ((vertex & 4) == 0 ? relative.minZ : relative.maxZ)).setColor(FILL);
+            McCompat.draw(context, RenderTypes.debugQuads(), (pose, fill) -> {
+                for (AABB box : boxes) {
+                    AABB relative = box.move(-camera.x, -camera.y, -camera.z);
+                    for (int[] face : FACES) {
+                        for (int vertex : face) {
+                            fill.addVertex(pose,
+                                (float) ((vertex & 1) == 0 ? relative.minX : relative.maxX),
+                                (float) ((vertex & 2) == 0 ? relative.minY : relative.maxY),
+                                (float) ((vertex & 4) == 0 ? relative.minZ : relative.maxZ)).setColor(FILL);
+                        }
                     }
                 }
-            }
-            context.bufferSource().endBatch(fillType);
-            var lineType = RenderTypes.lines();
-            var lines = context.bufferSource().getBuffer(lineType);
-            for (AABB box : boxes) ShapeRenderer.renderShape(context.poseStack(), lines, Shapes.create(box),
-                -camera.x, -camera.y, -camera.z, OUTLINE, 2.0F);
-            context.bufferSource().endBatch(lineType);
+            });
+            McCompat.draw(context, RenderTypes.lines(), (pose, lines) -> {
+                for (AABB box : boxes) LineBoxes.box(lines, pose, box, camera.x, camera.y, camera.z, OUTLINE, 2.0F);
+            });
         });
     }
 }

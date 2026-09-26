@@ -1,5 +1,6 @@
 package com.github.beng420.kung.config;
 
+import com.github.beng420.kung.compat.McCompat;
 import com.github.beng420.kung.config.KungHudLayout.Bounds;
 import com.github.beng420.kung.config.KungHudLayout.Entry;
 import com.github.beng420.kung.feature.dungeon.DungeonStateTracker;
@@ -109,7 +110,7 @@ public final class KungHudEditorScreen extends Screen {
                 return true;
             }
             if (button == 1) {
-                Minecraft.getInstance().setScreen(new KungConfigScreen(entry.name()));
+                McCompat.setScreen(Minecraft.getInstance(), new KungConfigScreen(entry.name()));
                 return true;
             }
         }

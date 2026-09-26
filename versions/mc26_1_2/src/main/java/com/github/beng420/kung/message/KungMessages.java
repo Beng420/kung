@@ -1,5 +1,6 @@
 package com.github.beng420.kung.message;
 
+import com.github.beng420.kung.compat.McCompat;
 import com.github.beng420.kung.mixin.ChatComponentAccessor;
 import java.util.List;
 import java.util.Locale;
@@ -122,7 +123,7 @@ public final class KungMessages {
 
     /** Client-thread only. Retain the returned component to replace this local message next time. */
     public static Component replaceLocal(Minecraft client, Component previous, Component message) {
-        var chat = client.gui.getChat();
+        var chat = McCompat.chat(client);
         var access = (ChatComponentAccessor) chat;
         var lines = access.kung$getTrimmedMessages();
         int scroll = access.kung$getChatScrollbarPos();

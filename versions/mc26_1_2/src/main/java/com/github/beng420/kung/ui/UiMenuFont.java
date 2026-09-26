@@ -5,13 +5,10 @@ import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GlyphSource;
 import net.minecraft.client.gui.font.glyphs.EffectGlyph;
 import net.minecraft.network.chat.FontDescription;
-import net.minecraft.resources.Identifier;
 import net.minecraft.util.FormattedCharSequence;
 
 /** Menu-local font: measurements, editing and drawing share the same resource-reload-aware provider. */
 public final class UiMenuFont extends Font {
-    static final FontDescription MENU = new FontDescription.Resource(Identifier.fromNamespaceAndPath("kung", "menu"));
-
     private UiMenuFont(Font base) {
         super(menuProvider(((FontAccessor) base).kung$getProvider()));
     }
@@ -21,10 +18,9 @@ public final class UiMenuFont extends Font {
     static Provider menuProvider(Provider base) {
         return new Provider() {
             @Override public GlyphSource glyphs(FontDescription description) {
-                // The developer font trial swaps Inter for the game font without a resource reload.
-                boolean inter = com.github.beng420.kung.config.KungConfig.get().debug.menuFont()
-                    == com.github.beng420.kung.config.category.DebugConfig.MenuFont.INTER;
-                return base.glyphs(inter && FontDescription.DEFAULT.equals(description) ? MENU : description);
+                // The chosen font swaps in live; the game's own carries whatever glyphs it lacks.
+                if (!FontDescription.DEFAULT.equals(description)) return base.glyphs(description);
+                return KungFonts.glyphs(base.glyphs(description));
             }
             @Override public EffectGlyph effect() { return base.effect(); }
         };

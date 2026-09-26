@@ -83,6 +83,37 @@ public final class M7DragonTrackerTest {
         }
     }
 
+    @Test public void respawnLinesMarkTheOneUncountedDeathAsMissed() {
+        // Blue dies outside; "I am not impressed." comes ~1.75 s later, even after the UNKNOWN timeout.
+        var tracker = new M7DragonTracker();
+        UUID blue = UUID.randomUUID();
+        tracker.spawn(blue, BLUE, BLUE.spawn());
+        tracker.death(blue);
+        for (int i = 0; i < 41; i++) tracker.advance();
+        assertEquals(UNKNOWN, tracker.attempt(blue).outcome());
+        var result = tracker.confirmMessage("[BOSS] Wither King: I am not impressed.").getFirst();
+        assertSame(BLUE, result.statue());
+        assertEquals(MISSED, result.outcome());
+        assertTrue(tracker.confirmMessage("[BOSS] Wither King: Futile.").isEmpty());
+        // Green counts and Red dies right after: the respawn line can only be Red's.
+        tracker = new M7DragonTracker();
+        UUID green = UUID.randomUUID(), red = UUID.randomUUID();
+        tracker.spawn(green, GREEN, GREEN.spawn());
+        tracker.spawn(red, RED, RED.spawn());
+        tracker.death(green);
+        tracker.confirmMessage(CONFIRM);
+        tracker.death(red);
+        assertSame(RED, tracker.confirmMessage("[BOSS] Wither King: You just made a terrible mistake!").getFirst().statue());
+        // Two uncounted deaths: no guess.
+        tracker = new M7DragonTracker();
+        for (var statue : List.of(ORANGE, PURPLE)) {
+            UUID uuid = UUID.randomUUID();
+            tracker.spawn(uuid, statue, statue.spawn());
+            tracker.death(uuid);
+        }
+        assertTrue(tracker.confirmMessage("[BOSS] Wither King: Your skills have faded humans.").isEmpty());
+    }
+
     @Test public void statueBeforeDeathPacketConfirmsWithoutWaitingOrDuplicateNotice() {
         var tracker = new M7DragonTracker();
         UUID uuid = UUID.randomUUID();

@@ -1,6 +1,7 @@
 package com.github.beng420.kung.feature.misc;
 
 import com.github.beng420.kung.KungMod;
+import com.github.beng420.kung.compat.McCompat;
 import com.github.beng420.kung.config.KungHudEditorState;
 import com.github.beng420.kung.config.KungHudLayout;
 import com.github.beng420.kung.config.category.MiscConfig;
@@ -69,7 +70,7 @@ public final class SackTrackerFeature extends ConfigurableFeature<MiscConfig> {
         ClientTickEvents.END_CLIENT_TICK.register(this::syncOpenSack);
         HudElementRegistry.attachElementBefore(VanillaHudElements.PLAYER_LIST,
             Identifier.fromNamespaceAndPath(KungMod.MOD_ID, "sack_tracker"), (graphics, delta) -> {
-                if (Minecraft.getInstance().screen == null) render(graphics);
+                if (McCompat.screen(Minecraft.getInstance()) == null) render(graphics);
             });
         // Menus draw over the HUD, so the tracker draws again on top of them - there it also takes clicks.
         ScreenEvents.AFTER_INIT.register((client, screen, width, height) -> {
@@ -109,7 +110,7 @@ public final class SackTrackerFeature extends ConfigurableFeature<MiscConfig> {
         if (--ticksUntilSync > 0) return;
         ticksUntilSync = SYNC_TICKS;
         if (!isEnabled() || config().sackTrackerItems().isEmpty()
-            || !(client.screen instanceof AbstractContainerScreen<?> screen) || !isSack(plain(screen.getTitle()))) return;
+            || !(McCompat.screen(client) instanceof AbstractContainerScreen<?> screen) || !isSack(plain(screen.getTitle()))) return;
         for (Slot slot : screen.getMenu().slots) {
             ItemStack stack = slot.getItem();
             SackItem item = stack.isEmpty() ? null : config().sackTrackerItem(plain(stack.getHoverName()));
@@ -190,14 +191,14 @@ public final class SackTrackerFeature extends ConfigurableFeature<MiscConfig> {
     }
 
     private void render(GuiGraphicsExtractor graphics) {
-        if (visible() && Minecraft.getInstance().screen == null) draw(graphics, config(), lines(config().sackTrackerItems(), false));
+        if (visible() && McCompat.screen(Minecraft.getInstance()) == null) draw(graphics, config(), lines(config().sackTrackerItems(), false));
     }
 
     /** In a world only: menus over the title screen or while joining have no game to track. */
     private boolean visible() {
         var client = Minecraft.getInstance();
         return isEnabled() && !config().sackTrackerItems().isEmpty() && client.level != null
-            && !client.options.hideGui && !KungHudEditorState.externalEditing();
+            && !McCompat.hudHidden(client) && !KungHudEditorState.externalEditing();
     }
 
     /** Over a menu the tracker is interactive; Kung's own screens keep their space. */

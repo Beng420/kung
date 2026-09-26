@@ -1,6 +1,7 @@
 package com.github.beng420.kung.feature.dungeon;
 
 import com.github.beng420.kung.KungMod;
+import com.github.beng420.kung.compat.McCompat;
 import com.github.beng420.kung.config.category.DungeonConfig;
 import com.github.beng420.kung.feature.ConfigurableFeature;
 import com.github.beng420.kung.feature.dungeon.room.RoomType;
@@ -151,7 +152,7 @@ public final class DungeonMimicEspFeature extends ConfigurableFeature<DungeonCon
                     drawScreenWaypoint(client, graphics, pos);
                 }
             }
-            logRenderState(client.gameRenderer.getMainCamera().position(), sameRoomMimicChestCount(client));
+            logRenderState(McCompat.camera(client).position(), sameRoomMimicChestCount(client));
         } catch (RuntimeException | LinkageError exception) {
             tracker.reportRunError(client, "Mimic ESP waypoint", exception);
             KungMod.LOGGER.warn("Failed to render dungeon mimic waypoint.", exception);

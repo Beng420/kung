@@ -1,5 +1,6 @@
 package com.github.beng420.kung.feature.dungeon;
 
+import com.github.beng420.kung.compat.McCompat;
 import java.util.List;
 import net.fabricmc.fabric.api.client.rendering.v1.RenderStateDataKey;
 import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderContext;
@@ -32,25 +33,24 @@ final class M7DragonRenderer {
             List<Trail> trails = context.levelState().getDataOrDefault(TRAILS, List.of());
             if (markers.isEmpty() && trails.isEmpty()) return;
             Vec3 camera = context.levelState().cameraRenderState.pos;
-            var lineType = RenderTypes.lines();
-            var lines = context.bufferSource().getBuffer(lineType);
-            var pose = context.poseStack().last();
-            for (Marker marker : markers) {
-                if (!marker.filled()) LineBoxes.box(lines, pose, marker.bounds(), camera.x, camera.y, camera.z,
-                    marker.color(), marker.width());
-            }
             // A polyline: a cube per sample point cost a VoxelShape and 12 edges each, every frame.
-            for (Trail trail : trails) {
-                List<Vec3> points = trail.points();
-                for (int index = 1; index < points.size(); index++) {
-                    Vec3 from = points.get(index - 1);
-                    Vec3 to = points.get(index);
-                    LineBoxes.segment(lines, pose, (float) (from.x - camera.x), (float) (from.y - camera.y),
-                        (float) (from.z - camera.z), (float) (to.x - camera.x), (float) (to.y - camera.y),
-                        (float) (to.z - camera.z), trail.color(), 1.5F);
+            float trailWidth = 2.25F * com.github.beng420.kung.config.KungConfig.get().dungeon.dragonLineThickness() / 100F;
+            McCompat.draw(context, RenderTypes.lines(), (pose, lines) -> {
+                for (Marker marker : markers) {
+                    if (!marker.filled()) LineBoxes.box(lines, pose, marker.bounds(), camera.x, camera.y, camera.z,
+                        marker.color(), marker.width());
                 }
-            }
-            context.bufferSource().endBatch(lineType);
+                for (Trail trail : trails) {
+                    List<Vec3> points = trail.points();
+                    for (int index = 1; index < points.size(); index++) {
+                        Vec3 from = points.get(index - 1);
+                        Vec3 to = points.get(index);
+                        LineBoxes.segment(lines, pose, (float) (from.x - camera.x), (float) (from.y - camera.y),
+                            (float) (from.z - camera.z), (float) (to.x - camera.x), (float) (to.y - camera.y),
+                            (float) (to.z - camera.z), trail.color(), trailWidth);
+                    }
+                }
+            });
             drawFilled(context, markers, camera);
         });
     }
@@ -59,32 +59,31 @@ final class M7DragonRenderer {
      * Filled cubes through debugQuads (POSITION_COLOR - position and colour, nothing else), in their
      * own buffer AFTER the lines are flushed. A wrong vertex format once crashed the game from this
      * renderer; here a format surprise costs the fill, never the frame. It disables itself after the
-     * first failure instead of throwing every frame.
+     * first failure instead of throwing every frame. The catch sits inside the geometry because 26.2
+     * runs it later, when the frame's submits flush.
      */
     private static void drawFilled(LevelRenderContext context, List<Marker> markers, Vec3 camera) {
         if (fillBroken) return;
-        try {
-            var quadType = RenderTypes.debugQuads();
-            var quads = context.bufferSource().getBuffer(quadType);
-            var pose = context.poseStack().last();
-            for (Marker marker : markers) {
-                if (!marker.filled()) continue;
-                AABB box = marker.bounds().move(-camera.x, -camera.y, -camera.z);
-                for (int[] face : FACES) {
-                    for (int corner : face) {
-                        quads.addVertex(pose,
-                            (float) ((corner & 1) == 0 ? box.minX : box.maxX),
-                            (float) ((corner & 2) == 0 ? box.minY : box.maxY),
-                            (float) ((corner & 4) == 0 ? box.minZ : box.maxZ))
-                            .setColor(marker.color());
+        McCompat.draw(context, RenderTypes.debugQuads(), (pose, quads) -> {
+            try {
+                for (Marker marker : markers) {
+                    if (!marker.filled()) continue;
+                    AABB box = marker.bounds().move(-camera.x, -camera.y, -camera.z);
+                    for (int[] face : FACES) {
+                        for (int corner : face) {
+                            quads.addVertex(pose,
+                                (float) ((corner & 1) == 0 ? box.minX : box.maxX),
+                                (float) ((corner & 2) == 0 ? box.minY : box.maxY),
+                                (float) ((corner & 4) == 0 ? box.minZ : box.maxZ))
+                                .setColor(marker.color());
+                        }
                     }
                 }
+            } catch (RuntimeException exception) {
+                fillBroken = true;
+                com.github.beng420.kung.KungMod.LOGGER.warn("Dragon marker fill disabled: {}", exception.toString());
             }
-            context.bufferSource().endBatch(quadType);
-        } catch (RuntimeException exception) {
-            fillBroken = true;
-            com.github.beng420.kung.KungMod.LOGGER.warn("Dragon marker fill disabled: {}", exception.toString());
-        }
+        });
     }
 
     record Marker(AABB bounds, int color, float width, boolean filled) {

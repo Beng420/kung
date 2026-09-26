@@ -1,5 +1,6 @@
 package com.github.beng420.kung.config;
 
+import com.github.beng420.kung.compat.McCompat;
 import com.github.beng420.kung.config.KungSettings.CategoryEntry;
 import com.github.beng420.kung.config.KungSettings.FeatureEntry;
 import com.github.beng420.kung.feature.misc.LoadoutsAutoCloseFeature;
@@ -7,6 +8,7 @@ import com.github.beng420.kung.ui.UiBounds;
 import com.github.beng420.kung.ui.UiHoverDelay;
 import com.github.beng420.kung.ui.UiTextField;
 import com.github.beng420.kung.ui.UiTheme;
+import com.github.beng420.kung.ui.UiScale;
 import com.github.beng420.kung.ui.UiScrollList;
 import com.github.beng420.kung.ui.UiSpacing;
 import com.github.beng420.kung.ui.UiTextStyle;
@@ -31,13 +33,14 @@ import net.minecraft.client.input.CharacterEvent;
 import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
+import net.minecraft.util.FormattedCharSequence;
 
 public final class KungConfigScreen extends Screen {
     private static final UiTheme THEME = UiTheme.menu();
     private static final UiTextStyle TEXT_STYLE = UiTextStyle.normal(THEME);
     private static final UiTextStyle MUTED_STYLE = UiTextStyle.muted(THEME);
 
-    private static final double MENU_SCALE = 0.8;
+    private static final float MENU_SCALE = 0.8F;
     private static final int LEFT = UiSpacing.MD;
     private static final int COLUMN_WIDTH = 171;
     private static final int ROW_HEIGHT = 18;
@@ -48,6 +51,8 @@ public final class KungConfigScreen extends Screen {
     private static final int TOP = 22;
     private static final int HEADER_HEIGHT = 18;
     private static final int PANEL_RADIUS = 4;
+    private static final int CHOICE_LIST_MINIMUM = 2;
+    private static final int CHOICE_LIST_ROWS = 8;
     private static final int SEARCH_BOTTOM = 80;
     private static final int SETTING_CONTROL_WIDTH = 52;
     private static final int SETTING_ARROW_HITBOX_WIDTH = 12;
@@ -63,6 +68,7 @@ public final class KungConfigScreen extends Screen {
     private SettingEntry expandedSetting;
     private TextEditorOverlay textEditor;
     private SettingEntry capturingSetting;
+    private ChoiceDropdown dropdown;
     private SettingEntry draggingSlider;
     private int draggingSliderControlX;
     private int draggingSliderControlWidth;
@@ -129,6 +135,7 @@ public final class KungConfigScreen extends Screen {
     @Override
     protected void init() {
         tooltipDelay.reset();
+        dropdown = null;
         if (!releaseNotesChecked) {
             releaseNotesChecked = true;
             var notes = KungUpdater.INSTANCE.releaseNotes();
@@ -143,7 +150,7 @@ public final class KungConfigScreen extends Screen {
 
     @Override
     public void onClose() {
-        minecraft.setScreen(parent);
+        McCompat.setScreen(minecraft, parent);
     }
 
     public boolean hasReleaseNotesPopup() { return releaseNotesPopup != null; }
@@ -152,6 +159,7 @@ public final class KungConfigScreen extends Screen {
         var notes = KungUpdater.INSTANCE.releaseNotes();
         notes.openMenu(true);
         releaseNotesPopup = new KungReleaseNotesPopup(notes);
+        dropdown = null;
         draggingSlider = null;
         capturingSetting = null;
         searchField.setFocused(false);
@@ -166,13 +174,15 @@ public final class KungConfigScreen extends Screen {
         tooltip = null;
         graphics.pose().pushMatrix();
         try {
-            graphics.pose().scale((float) MENU_SCALE, (float) MENU_SCALE);
+            float scale = menuScale();
+            graphics.pose().scale(scale, scale);
             graphics.fill(0, 0, menuWidth(), menuHeight(), THEME.backdrop());
             drawTitle(graphics);
             drawColumns(graphics, releaseNotesPopup == null ? mouseX : -1, releaseNotesPopup == null ? mouseY : -1);
             drawSearchBox(graphics, mouseX, mouseY, partialTick);
+            if (dropdown != null) drawChoiceDropdown(graphics, mouseX, mouseY);
             boolean showTooltip = tooltip != null && textEditor == null && releaseNotesPopup == null
-                && draggingSlider == null && capturingSetting == null;
+                && draggingSlider == null && capturingSetting == null && dropdown == null;
             if (tooltipDelay.ready(showTooltip ? tooltip.owner() : null, System.nanoTime() / 1_000_000)) {
                 UiTooltip.drawBeside(graphics, menuFont, tooltip.lines(), tooltip.x(), tooltip.x() + COLUMN_WIDTH,
                     tooltip.y(), menuWidth(), menuHeight(), THEME);
@@ -197,6 +207,11 @@ public final class KungConfigScreen extends Screen {
 
         if (releaseNotesPopup != null) {
             if (releaseNotesPopup.click(this, mouseX, mouseY, button)) releaseNotesPopup = null;
+            return true;
+        }
+
+        if (dropdown != null) {
+            clickChoiceDropdown(mouseX, mouseY);
             return true;
         }
 
@@ -233,7 +248,7 @@ public final class KungConfigScreen extends Screen {
             return textEditor.mouseDragged(event, dragX, dragY);
         }
         if (searchField.isFocused()) {
-            return searchField.mouseDragged(menuEvent(event), dragX / MENU_SCALE, dragY / MENU_SCALE);
+            return searchField.mouseDragged(menuEvent(event), dragX / menuScale(), dragY / menuScale());
         }
         if (draggingSlider == null) {
             return super.mouseDragged(event, dragX, dragY);
@@ -263,6 +278,10 @@ public final class KungConfigScreen extends Screen {
         if (scrollY == 0) {
             return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
         }
+        if (dropdown != null) {
+            dropdown.scroll(scrollY < 0 ? 1 : -1);
+            return true;
+        }
 
         CategoryScrollArea categoryScrollArea = categoryScrollAreaAt(toMenuCoordinate(mouseX), toMenuCoordinate(mouseY));
         if (categoryScrollArea != null) {
@@ -288,6 +307,10 @@ public final class KungConfigScreen extends Screen {
     public boolean keyPressed(KeyEvent event) {
         if (releaseNotesPopup != null) {
             if (releaseNotesPopup.key(event.key())) releaseNotesPopup = null;
+            return true;
+        }
+        if (dropdown != null) {
+            dropdown = null;
             return true;
         }
         if (textEditor != null) {
@@ -414,7 +437,10 @@ public final class KungConfigScreen extends Screen {
         }
         boolean hovered = inside(mouseX, mouseY, x, rowY, COLUMN_WIDTH, ROW_HEIGHT);
         boolean clickable = feature.clickable() || !feature.settings().isEmpty();
-        int color = feature.enabled() ? THEME.accent() : hovered && clickable ? THEME.panelSoft() : THEME.panelDark();
+        boolean settingsOnly = feature.toggle() == null && !feature.actionOnly();
+        int color = feature.enabled() ? THEME.accent()
+            : hovered && clickable ? THEME.panelSoft()
+            : settingsOnly ? THEME.control() : THEME.panelDark();
         UiShapes.rounded(graphics, x, rowY, COLUMN_WIDTH, ROW_HEIGHT, 0,
             rowY + ROW_HEIGHT == viewportBottom ? PANEL_RADIUS : 0, color);
         drawCentered(graphics, trimToWidth(feature.name(), COLUMN_WIDTH - 8), x + COLUMN_WIDTH / 2, rowY + 5, THEME.text(), true);
@@ -464,8 +490,11 @@ public final class KungConfigScreen extends Screen {
         }
         int labelX = x + 5 + indent + (setting.expandable() ? 11 : 0);
         if (setting.kind() == SettingKind.LABEL) {
-            graphics.text(menuFont, trimToWidth(setting.label(), COLUMN_WIDTH - indent - 10), labelX, rowY + 4,
-                MUTED_STYLE.color(), MUTED_STYLE.shadow());
+            int lineY = rowY + 4;
+            for (var line : labelLines(setting)) {
+                graphics.text(menuFont, line, labelX, lineY, MUTED_STYLE.color(), MUTED_STYLE.shadow());
+                lineY += menuFont.lineHeight + 1;
+            }
             return;
         }
         // Odin-style two-line rows: sliders and text fields put the label (and a slider's value) on the
@@ -485,7 +514,7 @@ public final class KungConfigScreen extends Screen {
             setting == capturingSetting);
         if (setting.developerOnly()) drawDeveloperStar(graphics, x + COLUMN_WIDTH, rowY);
         addClickRegion(x, rowY, COLUMN_WIDTH, height, (clickX, clickY, button) ->
-            clickSetting(setting, clickX, button, controlX, controlWidth)
+            clickSetting(setting, clickX, button, controlX, controlY, controlWidth)
         );
         if (setting.expandable()) {
             addClickRegion(x + 2 + indent, rowY, SETTING_ARROW_HITBOX_WIDTH, height, (clickX, clickY, button) -> {
@@ -493,8 +522,69 @@ public final class KungConfigScreen extends Screen {
                     toggleSettingExpansion(setting);
                     return true;
                 }
-                return clickSetting(setting, clickX, button, controlX, controlWidth);
+                return clickSetting(setting, clickX, button, controlX, controlY, controlWidth);
             });
+        }
+    }
+
+    /** An open choice list: too many options to cycle through one click at a time. */
+    private void openChoiceDropdown(SettingEntry setting, int controlX, int controlY, int controlWidth) {
+        int width = Math.clamp(setting.choices().stream().mapToInt(menuFont::width).max().orElse(0) + 12,
+            controlWidth, COLUMN_WIDTH);
+        dropdown = new ChoiceDropdown(setting, controlX + controlWidth - width, controlY + SETTING_HEIGHT, width);
+        capturingSetting = null;
+    }
+
+    private void drawChoiceDropdown(GuiGraphicsExtractor graphics, int mouseX, int mouseY) {
+        List<String> options = dropdown.setting.choices();
+        int top = dropdown.top(menuHeight());
+        int selected = dropdown.setting.intSupplier().getAsInt();
+        UiShapes.rounded(graphics, dropdown.x, top, dropdown.width, dropdown.height(), PANEL_RADIUS, THEME.panelDark());
+        for (int row = 0; row < dropdown.rows(); row++) {
+            int index = row + dropdown.offset;
+            int rowY = top + 1 + row * SETTING_HEIGHT;
+            boolean hovered = inside(mouseX, mouseY, dropdown.x, rowY, dropdown.width, SETTING_HEIGHT);
+            if (hovered || index == selected) {
+                UiShapes.rounded(graphics, dropdown.x + 1, rowY, dropdown.width - 2, SETTING_HEIGHT, 2,
+                    index == selected ? THEME.accent() : THEME.panelSoft());
+            }
+            graphics.text(menuFont, trimToWidth(options.get(index), dropdown.width - 8),
+                dropdown.x + 4, rowY + 4, THEME.text(), true);
+        }
+    }
+
+    private void clickChoiceDropdown(int mouseX, int mouseY) {
+        ChoiceDropdown open = dropdown;
+        dropdown = null;
+        int top = open.top(menuHeight());
+        if (!inside(mouseX, mouseY, open.x, top, open.width, open.height())) return;
+        int index = open.offset + (mouseY - top - 1) / SETTING_HEIGHT;
+        if (index >= 0 && index < open.setting.choices().size()) open.setting.intConsumer().accept(index);
+    }
+
+    private static final class ChoiceDropdown {
+        private final SettingEntry setting;
+        private final int x;
+        private final int y;
+        private final int width;
+        private int offset;
+
+        private ChoiceDropdown(SettingEntry setting, int x, int y, int width) {
+            this.setting = setting;
+            this.x = x;
+            this.y = y;
+            this.width = width;
+        }
+
+        private int rows() { return Math.min(CHOICE_LIST_ROWS, setting.choices().size()); }
+
+        private int height() { return rows() * SETTING_HEIGHT + 2; }
+
+        /** Opens downwards, and slides back up when the row sits near the bottom of the menu. */
+        private int top(int menuHeight) { return Math.max(2, Math.min(y, menuHeight - height() - 2)); }
+
+        private void scroll(int direction) {
+            offset = Math.clamp(offset + direction, 0, setting.choices().size() - rows());
         }
     }
 
@@ -503,8 +593,16 @@ public final class KungConfigScreen extends Screen {
         tooltip = new TooltipRequest(owner, help.isEmpty() ? List.of(title) : List.copyOf(help), rowX, rowY);
     }
 
-    private static int rowHeight(SettingEntry setting) {
+    private int rowHeight(SettingEntry setting) {
+        if (setting.kind() == SettingKind.LABEL) {
+            return Math.max(SETTING_HEIGHT, labelLines(setting).size() * (menuFont.lineHeight + 1) + 5);
+        }
         return setting.kind() == SettingKind.SLIDER || setting.kind() == SettingKind.TEXT ? TWO_LINE_HEIGHT : SETTING_HEIGHT;
+    }
+
+    /** A status line carries the reason something failed, so it wraps instead of ending in "...". */
+    private List<FormattedCharSequence> labelLines(SettingEntry setting) {
+        return menuFont.split(Component.literal(setting.label()), COLUMN_WIDTH - 22);
     }
 
     /** Controls take the room they need, so the label keeps the rest of the row. */
@@ -580,7 +678,8 @@ public final class KungConfigScreen extends Screen {
         return true;
     }
 
-    private boolean clickSetting(SettingEntry setting, int mouseX, int button, int controlX, int controlWidth) {
+    private boolean clickSetting(SettingEntry setting, int mouseX, int button, int controlX, int controlY,
+                                 int controlWidth) {
         if (button == 1 && setting.expandable()) {
             toggleSettingExpansion(setting);
             return true;
@@ -597,6 +696,11 @@ public final class KungConfigScreen extends Screen {
             }
             if (setting.kind() == SettingKind.KEYBIND) {
                 capturingSetting = setting;
+                return true;
+            }
+            // Short lists cycle in place; clicking through a folder full of fonts would be a chore.
+            if (setting.kind() == SettingKind.CHOICE && setting.choices().size() > CHOICE_LIST_MINIMUM) {
+                openChoiceDropdown(setting, controlX, controlY, controlWidth);
                 return true;
             }
             capturingSetting = null;
@@ -766,12 +870,16 @@ public final class KungConfigScreen extends Screen {
     }
 
     // Layout and input share menu coordinates; Screen's dimensions remain in Minecraft GUI units.
-    private int menuWidth() { return (int) Math.ceil(width / MENU_SCALE); }
+    private int menuWidth() { return (int) Math.ceil(width / menuScale()); }
 
-    private int menuHeight() { return (int) Math.ceil(height / MENU_SCALE); }
+    private int menuHeight() { return (int) Math.ceil(height / menuScale()); }
 
     private static int toMenuCoordinate(double value) {
-        return (int) Math.floor(value / MENU_SCALE);
+        return (int) Math.floor(value / menuScale());
+    }
+
+    private static float menuScale() {
+        return UiScale.menu(MENU_SCALE);
     }
 
     private void drawCentered(GuiGraphicsExtractor graphics, String text, int centerX, int y, int color, boolean shadow) {
@@ -856,7 +964,7 @@ public final class KungConfigScreen extends Screen {
 
         private boolean mouseDragged(MouseButtonEvent event, double dragX, double dragY) {
             MouseButtonEvent guiEvent = new MouseButtonEvent(toMenuCoordinate(event.x()), toMenuCoordinate(event.y()), event.buttonInfo());
-            return editBox.mouseDragged(guiEvent, dragX / MENU_SCALE, dragY / MENU_SCALE);
+            return editBox.mouseDragged(guiEvent, dragX / menuScale(), dragY / menuScale());
         }
 
         private boolean mouseReleased(MouseButtonEvent event) {
