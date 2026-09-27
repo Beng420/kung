@@ -3,6 +3,7 @@ package com.github.beng420.kung.command;
 import static net.fabricmc.fabric.api.client.command.v2.ClientCommands.argument;
 import static net.fabricmc.fabric.api.client.command.v2.ClientCommands.literal;
 
+import com.github.beng420.kung.KungBuild;
 import com.github.beng420.kung.feature.dungeon.DungeonSplitTracker;
 import com.github.beng420.kung.feature.dungeon.DungeonStateTracker;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
@@ -16,6 +17,15 @@ final class DungeonDebugCommandGroup {
     }
 
     static void register(LiteralArgumentBuilder<FabricClientCommandSource> root, DungeonStateTracker tracker) {
+        if (!KungBuild.MODRINTH) root.then(literal("test")
+            .then(literal("title")
+                .executes(context -> KungCommandActions.testDoorTitle(context, tracker, 4))
+                .then(argument("doors", IntegerArgumentType.integer(0, 20))
+                    .executes(context -> KungCommandActions.testDoorTitle(context, tracker))))
+            .then(literal("dungeonstart")
+                .executes(context -> KungCommandActions.testDungeonStartTitle(context, tracker, 4))
+                .then(argument("doors", IntegerArgumentType.integer(0, 20))
+                    .executes(context -> KungCommandActions.testDungeonStartTitle(context, tracker)))));
         root.then(literal("dungeon").then(literal("debug")
                 .executes(context -> KungCommandActions.copyUltraDebug(context, tracker))))
             .then(literal("instance").executes(KungCommandActions::debugInstanceContext))
@@ -31,15 +41,6 @@ final class DungeonDebugCommandGroup {
                         ))))
                 .then(literal("save").executes(KungCommandActions::saveDebugLog))
                 .then(literal("clear").executes(KungCommandActions::clearDebugLog)))
-            .then(literal("test")
-                .then(literal("title")
-                    .executes(context -> KungCommandActions.testDoorTitle(context, tracker, 4))
-                    .then(argument("doors", IntegerArgumentType.integer(0, 20))
-                        .executes(context -> KungCommandActions.testDoorTitle(context, tracker))))
-                .then(literal("dungeonstart")
-                    .executes(context -> KungCommandActions.testDungeonStartTitle(context, tracker, 4))
-                    .then(argument("doors", IntegerArgumentType.integer(0, 20))
-                        .executes(context -> KungCommandActions.testDungeonStartTitle(context, tracker)))))
             .then(literal("door").then(literal("probe")
                 .executes(KungCommandActions::probeDoorAhead)
                 .then(argument("direction", StringArgumentType.word())

@@ -1,5 +1,6 @@
 package com.github.beng420.kung.feature.dungeon;
 
+import com.github.beng420.kung.KungBuild;
 import com.github.beng420.kung.config.KungConfig;
 
 import com.github.beng420.kung.KungMod;
@@ -51,7 +52,6 @@ public final class DungeonStateTracker {
     private List<DungeonSplitMessages.Notice> pendingSplitSummary;
     private long pendingSplitSummaryTick;
     private static final long SPLIT_SUMMARY_DELAY_TICKS = 10;
-    private final BloodRushHelperFeature bloodRushHelper = BloodRushHelperFeature.INSTANCE;
     private boolean dungeonInstanceActive;
     // Commit scan readiness only after instance setup/reset reaches its existing boundary.
     private boolean scanReady;
@@ -119,11 +119,13 @@ public final class DungeonStateTracker {
     }
 
     boolean doorTitlePending() {
-        return bloodRushHelper.doorTitlePending(dungeonTick);
+        if (KungBuild.MODRINTH) return false;
+        return BloodRushHelperFeature.INSTANCE.doorTitlePending(dungeonTick);
     }
 
     boolean shouldFastScanDoors() {
-        return bloodRushHelper.shouldFastScanDoors(dungeonTick);
+        if (KungBuild.MODRINTH) return false;
+        return BloodRushHelperFeature.INSTANCE.shouldFastScanDoors(dungeonTick);
     }
 
     boolean realRunStarted() {
@@ -756,8 +758,8 @@ public final class DungeonStateTracker {
     void serverTick() {
         if (dungeonInstanceActive) {
             splitTracker.serverTick(System.nanoTime() / 1_000_000L);
-            if (realRunStarted) {
-                bloodRushHelper.serverTick();
+            if (!KungBuild.MODRINTH && realRunStarted) {
+                BloodRushHelperFeature.INSTANCE.serverTick();
             }
         }
     }
@@ -825,7 +827,7 @@ public final class DungeonStateTracker {
         }
         DungeonWorkload workload = DungeonWorkload.current();
         if (workload.players()) runStats.observeMessage(client, text, dungeonTick, source);
-        bloodRushHelper.observeMessage(client, text, realRunStarted, this);
+        if (!KungBuild.MODRINTH) BloodRushHelperFeature.INSTANCE.observeMessage(client, text, realRunStarted, this);
         if (overlay && workload.rooms()) {
             runStats.observeRoomSecretOverlay(client, text, renderPlan());
         }
@@ -1648,8 +1650,10 @@ public final class DungeonStateTracker {
         if (mapVisibleArea && workload.rooms()) {
             observeClearStates(client);
             syncLiveRooms(client);
-            bloodRushHelper.observeProgress(client, this);
-            bloodRushHelper.maybeShowDoorTitle(client, this);
+            if (!KungBuild.MODRINTH) {
+                BloodRushHelperFeature.INSTANCE.observeProgress(client, this);
+                BloodRushHelperFeature.INSTANCE.maybeShowDoorTitle(client, this);
+            }
         }
         if (pendingSplitSummary != null && dungeonTick >= pendingSplitSummaryTick) {
             DungeonSplitMessages.send(pendingSplitSummary);
@@ -1663,11 +1667,11 @@ public final class DungeonStateTracker {
     }
 
     public void debugShowDoorTitle(Minecraft client, int doorCount) {
-        bloodRushHelper.debugShowDoorTitle(client, doorCount);
+        if (!KungBuild.MODRINTH) BloodRushHelperFeature.INSTANCE.debugShowDoorTitle(client, doorCount);
     }
 
     public void debugScheduleDoorTitle(int doorCount) {
-        bloodRushHelper.debugScheduleDoorTitle(doorCount, dungeonTick);
+        if (!KungBuild.MODRINTH) BloodRushHelperFeature.INSTANCE.debugScheduleDoorTitle(doorCount, dungeonTick);
     }
 
     private boolean shouldObserve(long lastObserveTick, long intervalTicks) {
@@ -1979,7 +1983,7 @@ public final class DungeonStateTracker {
         if (consumePendingRunStartSignal()) {
             startSplitRun();
             realRunStarted = true;
-            bloodRushHelper.scheduleInitial(dungeonTick);
+            if (!KungBuild.MODRINTH) BloodRushHelperFeature.INSTANCE.scheduleInitial(dungeonTick);
             scanRecorder.restartRecording();
             sendRunStartedMessage(client);
         }
@@ -1992,7 +1996,7 @@ public final class DungeonStateTracker {
             KungDebugRecorder.event("dungeon", "restart requested without active instance");
             startDungeonInstance(client);
             startSplitRun();
-            bloodRushHelper.scheduleInitial(dungeonTick);
+            if (!KungBuild.MODRINTH) BloodRushHelperFeature.INSTANCE.scheduleInitial(dungeonTick);
             realRunStarted = true;
             scanRecorder.restartRecording();
             sendRunStartedMessage(client);
@@ -2024,7 +2028,7 @@ public final class DungeonStateTracker {
         runStats.startRun(dungeonTick);
         runStats.configureForFloor(floor, masterMode);
         startSplitRun();
-        bloodRushHelper.scheduleInitial(dungeonTick);
+        if (!KungBuild.MODRINTH) BloodRushHelperFeature.INSTANCE.scheduleInitial(dungeonTick);
         // The countdown belongs to the same instance. Keep pre-run cores and door evidence;
         // the bounded scanner will pick up changed columns after the run starts.
         sendRunStartedMessage(client);
@@ -2067,7 +2071,7 @@ public final class DungeonStateTracker {
         runStartMessageSent = false;
         runEndMessageSent = false;
         realRunStarted = false;
-        bloodRushHelper.clear(dungeonTick);
+        if (!KungBuild.MODRINTH) BloodRushHelperFeature.INSTANCE.clear(dungeonTick);
         cachedRenderPlan = null;
         cachedRenderPlanRevision = Long.MIN_VALUE;
         cachedRenderPlanCatalogRevision = Long.MIN_VALUE;

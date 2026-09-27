@@ -1,5 +1,6 @@
 package com.github.beng420.kung.runtime;
 
+import com.github.beng420.kung.KungBuild;
 import com.github.beng420.kung.feature.dungeon.BloodRushHelperFeature;
 import com.github.beng420.kung.feature.screen.ScreenTracker;
 import com.github.beng420.kung.skyblock.HypixelGuildTracker;
@@ -26,12 +27,12 @@ public final class ServiceRegistry {
         CatacombsRecentXpTracker.initializeClient();
         services.dungeonStateTracker().initializeClient();
         ScreenTracker.initializeClient();
-        BloodRushHelperFeature.INSTANCE.initialize(services);
+        if (!KungBuild.MODRINTH) BloodRushHelperFeature.INSTANCE.initialize(services);
         initialized = true;
     }
 
     public static void shutdown() {
-        BloodRushHelperFeature.INSTANCE.shutdown();
+        if (!KungBuild.MODRINTH) BloodRushHelperFeature.INSTANCE.shutdown();
         initialized = false;
     }
 }

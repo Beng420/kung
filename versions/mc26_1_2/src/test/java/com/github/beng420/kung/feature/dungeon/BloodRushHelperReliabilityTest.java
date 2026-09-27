@@ -16,6 +16,11 @@ import java.util.function.Consumer;
 import org.junit.Test;
 
 public final class BloodRushHelperReliabilityTest {
+    @org.junit.Before
+    public void fullBuildOnly() {
+        org.junit.Assume.assumeFalse("Blood Rush is not in the Modrinth build", com.github.beng420.kung.KungBuild.MODRINTH);
+    }
+
     private static final DungeonRoomRepository EMPTY_REPOSITORY = new DungeonRoomRepository() {
         @Override
         public long revision() {

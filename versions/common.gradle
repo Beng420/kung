@@ -128,14 +128,17 @@ tasks.register("generateKungDefaults") {
   inputs.property("roomSyncToken", kungRoomSyncDefaultToken)
   inputs.property("roomSyncEnabled", kungRoomSyncDefaultEnabled)
   inputs.property("roomSyncUpload", kungRoomSyncDefaultUpload)
+  inputs.property("flavor", flavor)
   outputs.file(outputFile)
 
   doLast {
+    // The Modrinth jar is public: it never carries a room sync server or token.
+    boolean publicJar = flavor == "modrinth"
     Properties properties = new Properties()
-    properties.setProperty("roomSync.serverUrl", kungRoomSyncDefaultServerUrl.get())
-    properties.setProperty("roomSync.token", kungRoomSyncDefaultToken.get())
-    properties.setProperty("roomSync.enabled", kungRoomSyncDefaultEnabled.get())
-    properties.setProperty("roomSync.upload", kungRoomSyncDefaultUpload.get())
+    properties.setProperty("roomSync.serverUrl", publicJar ? "" : kungRoomSyncDefaultServerUrl.get())
+    properties.setProperty("roomSync.token", publicJar ? "" : kungRoomSyncDefaultToken.get())
+    properties.setProperty("roomSync.enabled", publicJar ? "false" : kungRoomSyncDefaultEnabled.get())
+    properties.setProperty("roomSync.upload", publicJar ? "false" : kungRoomSyncDefaultUpload.get())
 
     File target = outputFile.get().asFile
     target.parentFile.mkdirs()
@@ -231,5 +234,37 @@ tasks.named("test") {
   workingDir = layout.buildDirectory.dir("test-run").get().asFile
   doFirst {
     workingDir.mkdirs()
+  }
+}
+
+// Blood Rush and Mimic ESP are not in the Modrinth jar. Every use of these classes sits in
+// if (!KungBuild.MODRINTH), which javac drops; the check fails the build if one slips through.
+def modrinthCut = [
+  "feature/dungeon/BloodRushHelperFeature", "feature/dungeon/BloodRushDoorEstimate",
+  "feature/dungeon/DungeonMimicEspFeature", "feature/dungeon/DungeonMimicChestScanner",
+  "feature/dungeon/DungeonMimicStaticChests", "feature/dungeon/DungeonMimicChestMemory",
+  "feature/dungeon/DungeonStaticChestCatalog", "feature/dungeon/DungeonStaticChestPattern",
+  "command/MimicCommandGroup"
+].collect { "com/github/beng420/kung/${it}" }
+def modrinthCutResources = ["kung-dungeon-scans/static-trapped-chests.json"]
+
+if (flavor == "modrinth") {
+  tasks.named("jar") {
+    modrinthCut.each { exclude("${it}.class", "${it}\$*.class") }
+    exclude(modrinthCutResources)
+    doLast {
+      def leaks = []
+      new java.util.zip.ZipFile(archiveFile.get().asFile).withCloseable { zip ->
+        zip.entries().toList().findAll { it.name.endsWith(".class") }.each { entry ->
+          String bytes = new String(zip.getInputStream(entry).readAllBytes(), "ISO-8859-1")
+          modrinthCut.findAll { bytes.contains(it) }.each { leaks << "${entry.name} -> ${it}" }
+        }
+      }
+      if (leaks) throw new GradleException("The Modrinth jar still uses cut classes:\n" + leaks.join("\n"))
+    }
+  }
+  tasks.named("sourcesJar") {
+    modrinthCut.each { exclude("${it}.java") }
+    exclude(modrinthCutResources)
   }
 }

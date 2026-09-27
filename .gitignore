@@ -1,12 +1,15 @@
 .gradle/
 build/
 out/
+release/
 /versions/*/bin/
 run/
 runs/
 *.log
 *.class
 *.jar
+# Without it gradlew.bat cannot run on a fresh clone.
+!gradle/wrapper/gradle-wrapper.jar
 *.zip
 
 .idea/

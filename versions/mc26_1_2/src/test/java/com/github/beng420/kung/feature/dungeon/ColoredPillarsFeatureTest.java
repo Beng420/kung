@@ -2,6 +2,7 @@ package com.github.beng420.kung.feature.dungeon;
 
 import static org.junit.Assert.*;
 
+import com.github.beng420.kung.KungBuild;
 import com.github.beng420.kung.config.category.DungeonConfig;
 import com.github.beng420.kung.config.category.DungeonConfig.PillarMaterial;
 import com.github.beng420.kung.skyblock.HypixelDungeonFloor;
@@ -28,7 +29,7 @@ public final class ColoredPillarsFeatureTest {
         };
         for (int index = 0; index < centers.length; index++) {
             int x = centers[index][0], z = centers[index][1];
-            for (PillarMaterial material : PillarMaterial.values()) {
+            for (PillarMaterial material : PillarMaterial.choices()) {
                 for (Block original : new Block[] {Blocks.DIORITE, Blocks.POLISHED_DIORITE}) {
                     for (int dx : new int[] {-3, 0, 3}) {
                         for (int dz : new int[] {-3, 0, 3}) {
@@ -59,7 +60,9 @@ public final class ColoredPillarsFeatureTest {
             ColoredPillarsFeature.replace(46, 169, 41, Blocks.DIORITE.defaultBlockState(), null));
         assertSame(Blocks.DIORITE.defaultBlockState(),
             ColoredPillarsFeature.replace(73, 180, 53, Blocks.DIORITE.defaultBlockState(), PillarMaterial.GLASS));
-        assertFalse(ColoredPillarsFeature.replace(46, 169, 41, Blocks.DIORITE.defaultBlockState(), PillarMaterial.GLASS).isSolidRender());
+        // The Modrinth build never draws see-through pillars, even from a copied config.
+        assertEquals(KungBuild.MODRINTH,
+            ColoredPillarsFeature.replace(46, 169, 41, Blocks.DIORITE.defaultBlockState(), PillarMaterial.GLASS).isSolidRender());
     }
 
     @Test public void onlyConfirmedF7AndM7EnableRenderingIndependentlyOfMap() {
@@ -68,12 +71,12 @@ public final class ColoredPillarsFeatureTest {
         var floor = new HypixelDungeonFloor(7, false);
         assertNull(feature.selectedMaterial(config, true, floor, 35));
         config.setColoredPillarsEnabled(true);
-        config.setPillarMaterial(PillarMaterial.GLASS);
+        config.setPillarMaterial(PillarMaterial.TERRACOTTA);
         assertFalse(config.enabled());
         for (boolean master : new boolean[] {false, true}) {
             for (int number = -1; number <= 7; number++) {
                 floor = new HypixelDungeonFloor(number, master);
-                assertEquals(number == 7 ? PillarMaterial.GLASS : null,
+                assertEquals(number == 7 ? PillarMaterial.TERRACOTTA : null,
                     feature.selectedMaterial(config, true, floor, 35));
                 assertNull(feature.selectedMaterial(config, false, floor, 35));
             }
@@ -93,8 +96,8 @@ public final class ColoredPillarsFeatureTest {
         config.setColoredPillarsEnabled(true);
         assertEquals(PillarMaterial.TERRACOTTA,
             feature.selectedMaterial(config, true, HypixelDungeonFloor.UNKNOWN, 35));
-        config.setPillarMaterial(PillarMaterial.GLASS);
-        assertEquals(PillarMaterial.GLASS,
+        config.setPillarMaterial(PillarMaterial.WOOL);
+        assertEquals(PillarMaterial.WOOL,
             feature.selectedMaterial(config, true, HypixelDungeonFloor.UNKNOWN, 35));
         for (int floor = 0; floor < 7; floor++) {
             assertNull(feature.selectedMaterial(config, true, new HypixelDungeonFloor(floor, false), 35));

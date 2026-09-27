@@ -282,6 +282,10 @@ public final class DungeonMapSnapshot {
         return mapOpenDoors.contains(door) && !mapRoomConnections.contains(door);
     }
 
+    boolean isFullyLoadedRoom(int roomGridX, int roomGridZ) {
+        return fullyLoadedRooms.contains(new GridKey(roomGridX, roomGridZ));
+    }
+
     boolean allowsRoomPrediction(int roomGridX, int roomGridZ) {
         // Confirmed visibility lasts for this instance, even after its chunks unload.
         GridKey room = new GridKey(roomGridX, roomGridZ);

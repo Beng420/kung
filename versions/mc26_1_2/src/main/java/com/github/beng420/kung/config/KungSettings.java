@@ -1,5 +1,6 @@
 package com.github.beng420.kung.config;
 
+import com.github.beng420.kung.KungBuild;
 import com.github.beng420.kung.compat.McCompat;
 import com.github.beng420.kung.config.category.DungeonConfig.DragonAimMode;
 import com.github.beng420.kung.config.category.DungeonConfig.DragonDebuffScope;
@@ -55,7 +56,7 @@ public final class KungSettings {
 
     private static List<CategoryEntry> allCategories(KungConfig config, Runnable openChangelog, boolean developer) {
         return List.of(
-            new CategoryEntry("Dungeon", List.of(
+            new CategoryEntry("Dungeon", present(
                 new FeatureEntry("Dungeon Map", config.dungeon::enabled,
                     () -> config.dungeon.setEnabled(!config.dungeon.enabled()),
                     dungeonMapSettings(config, developer)
@@ -83,7 +84,7 @@ public final class KungSettings {
                         "Stays silent while Wish is on cooldown."),
                 new FeatureEntry("Colored F7/M7 Pillars", config.dungeon::coloredPillarsEnabled,
                     () -> config.dungeon.setColoredPillarsEnabled(!config.dungeon.coloredPillarsEnabled()), List.of(
-                        SettingEntry.choice("Material", PillarMaterial.values(), config.dungeon::pillarMaterial,
+                        SettingEntry.choice("Material", PillarMaterial.choices(), config.dungeon::pillarMaterial,
                             config.dungeon::setPillarMaterial, PillarMaterial::label)
                     ))
                     .withTooltip("Show Storm's crush pillars in their matching colors in F7 and M7."),
@@ -137,7 +138,7 @@ public final class KungSettings {
                             config.dungeon::setFiveCryptPartyMessage)
                     )
                 ),
-                new FeatureEntry("Blood rush helper", config.bloodRush::enabled,
+                KungBuild.MODRINTH ? null : new FeatureEntry("Blood rush helper", config.bloodRush::enabled,
                     () -> config.bloodRush.setEnabled(!config.bloodRush.enabled()),
                     List.of(
                         SettingEntry.slider("Title Time", config.bloodRush::titleDurationTenths,
@@ -383,17 +384,20 @@ public final class KungSettings {
             )),
             new CategoryEntry("Debug", List.of(
                 new FeatureEntry(
-                    KungUpdater.INSTANCE::buttonLabel,
+                    // The Modrinth jar never checks GitHub; the Modrinth App updates it.
+                    KungBuild.MODRINTH ? () -> "Updates: Modrinth App" : KungUpdater.INSTANCE::buttonLabel,
                     KungUpdater.INSTANCE::isUpdateAvailable,
                     KungUpdater.INSTANCE::canInstallUpdate,
                     () -> KungUpdater.INSTANCE.installLatestAsync(Minecraft.getInstance()),
-                    List.of(
+                    present(
                         SettingEntry.dynamicLabel(() -> "Installed: v" + KungUpdater.currentVersion()),
-                        SettingEntry.dynamicLabel(KungUpdater.INSTANCE::latestVersionLabel),
+                        KungBuild.MODRINTH ? null : SettingEntry.dynamicLabel(KungUpdater.INSTANCE::latestVersionLabel),
                         SettingEntry.button("Changelogs", "Open", openChangelog)
                     )
-                ).pinnedOpen().withTooltip("Download and verify the latest compatible update from GitHub.",
-                    "Close Minecraft to apply it automatically, then start the game again."),
+                ).pinnedOpen().withTooltip(KungBuild.MODRINTH
+                    ? new String[] {"Updates come through the Modrinth App."}
+                    : new String[] {"Download and verify the latest compatible update from GitHub.",
+                        "Close Minecraft to apply it automatically, then start the game again."}),
                 new FeatureEntry("Debug Messages", config.debug::enabled,
                     () -> config.debug.setEnabled(!config.debug.enabled()),
                     List.of(
@@ -456,16 +460,23 @@ public final class KungSettings {
         )).withTooltip("The font Kung's own menus draw with; the game's own text stays untouched.");
     }
 
+    /** List.of without the entries a build flavor leaves out (null). */
+    @SafeVarargs
+    private static <T> List<T> present(T... entries) {
+        return java.util.Arrays.stream(entries).filter(java.util.Objects::nonNull).toList();
+    }
+
     private static List<SettingEntry> dungeonMapSettings(KungConfig config, boolean developer) {
-        List<SettingEntry> settings = new ArrayList<>(List.of(
-            SettingEntry.slider("Unopened Alpha", config.dungeon::unopenedRoomAlpha,
+        // The Modrinth map draws entered rooms only: nothing unopened to dim, and no Mimic ESP.
+        List<SettingEntry> settings = new ArrayList<>(present(
+            KungBuild.MODRINTH ? null : SettingEntry.slider("Unopened Alpha", config.dungeon::unopenedRoomAlpha,
                 config.dungeon::setUnopenedRoomAlpha, 0, 100, 1)
                 .withTooltip("How dark rooms you have not opened yet are drawn."),
             SettingEntry.toggle("Boss Map", config.dungeon::showInBoss,
                 () -> config.dungeon.setShowInBoss(!config.dungeon.showInBoss())),
             SettingEntry.toggle("Prince Icons", config.dungeon::princeIconsEnabled,
                 () -> config.dungeon.setPrinceIconsEnabled(!config.dungeon.princeIconsEnabled())),
-            SettingEntry.toggle("Mimic ESP", config.dungeon::mimicEspEnabled,
+            KungBuild.MODRINTH ? null : SettingEntry.toggle("Mimic ESP", config.dungeon::mimicEspEnabled,
                 () -> config.dungeon.setMimicEspEnabled(!config.dungeon.mimicEspEnabled())),
             SettingEntry.toggle("Force Paul", config.dungeon::forcePaulScoreEnabled,
                 () -> config.dungeon.setForcePaulScoreEnabled(!config.dungeon.forcePaulScoreEnabled())),

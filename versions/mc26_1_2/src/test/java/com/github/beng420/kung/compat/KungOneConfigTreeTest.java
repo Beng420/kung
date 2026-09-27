@@ -35,7 +35,8 @@ public final class KungOneConfigTreeTest {
         assertEquals(13, keybinds);
         assertEquals(Property.Display.DISABLED, property(tree, "Crypt Messages", "Enabled").getDisplay());
         assertEquals(false, property(tree, "Colored F7/M7 Pillars", "Enabled").get());
-        assertArrayEquals(new String[] {"Wool", "Glass", "Terracotta"},
+        assertArrayEquals(java.util.Arrays.stream(com.github.beng420.kung.config.category.DungeonConfig.PillarMaterial.choices())
+                .map(com.github.beng420.kung.config.category.DungeonConfig.PillarMaterial::label).toArray(String[]::new),
             property(tree, "Colored F7/M7 Pillars", "Material").getMetadata("options"));
         assertFalse(tree.map.values().stream().anyMatch(node -> "Aim Point".equals(node.getTitle())));
         assertFalse(tree.map.values().stream().anyMatch(node -> "Developer Diagnostics".equals(node.getTitle())));
@@ -121,7 +122,9 @@ public final class KungOneConfigTreeTest {
         var defaults = new KungOneConfigTree(KungSettings.defaults(), () -> { }, () -> true);
         Tree tree = defaults.tree();
         assertEquals(70, property(tree, "6th Visitor Alarm", "Volume (%)").get());
-        assertEquals(0.5, (Double) property(tree, "Blood rush helper", "Title Time (s)").get(), 0.00001);
+        if (!com.github.beng420.kung.KungBuild.MODRINTH) {
+            assertEquals(0.5, (Double) property(tree, "Blood rush helper", "Title Time (s)").get(), 0.00001);
+        }
         var live = new KungOneConfigTree(KungSettings.defaults(), () -> { }, () -> true);
         live.applyDefaults(defaults);
         assertEquals(false, property(live.tree(), "Feast Progress", "Enabled").getMetadata("default"));

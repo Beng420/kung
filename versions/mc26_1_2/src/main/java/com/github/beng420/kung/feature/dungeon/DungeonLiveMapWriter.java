@@ -1,5 +1,6 @@
 package com.github.beng420.kung.feature.dungeon;
 
+import com.github.beng420.kung.KungBuild;
 import com.github.beng420.kung.feature.dungeon.room.RoomType;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -469,7 +470,7 @@ public final class DungeonLiveMapWriter {
                 completedRooms,
                 openedSpecialDoorCells,
                 fairyEntranceDoor,
-                findBloodRushDoorPath(externalDoors, roomTypes, roomOwners),
+                KungBuild.MODRINTH ? List.of() : findBloodRushDoorPath(externalDoors, roomTypes, roomOwners),
                 mapPuzzleNames(snapshot, matches, hints, roomTypes, matchedRoomCells)
             );
         }

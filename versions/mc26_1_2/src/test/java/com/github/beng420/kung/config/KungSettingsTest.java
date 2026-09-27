@@ -30,7 +30,8 @@ public final class KungSettingsTest {
 
         assertEquals(List.of("Dungeon", "Garden", "Hunting", "Slayer", "Util", "Debug"),
             categories.stream().map(CategoryEntry::name).toList());
-        assertEquals(List.of(12, 2, 1, 1, 13, 3),
+        // The Modrinth build has no Blood Rush helper.
+        assertEquals(List.of(com.github.beng420.kung.KungBuild.MODRINTH ? 11 : 12, 2, 1, 1, 13, 3),
             categories.stream().map(category -> category.features().size()).toList());
         for (var category : categories) {
             for (var feature : category.features()) {
@@ -207,11 +208,12 @@ public final class KungSettingsTest {
         assertFalse(pillars.enabled());
         assertEquals("Wool", material.choiceSupplier().get());
         assertEquals(List.of("Material"), pillars.settings().stream().map(SettingEntry::label).toList());
-        assertEquals(List.of("Wool", "Glass", "Terracotta"), material.choices());
+        var choices = List.of(PillarMaterial.choices());
+        assertEquals(choices.stream().map(PillarMaterial::label).toList(), material.choices());
 
         pillars.toggle().run();
-        for (var choice : PillarMaterial.values()) {
-            material.intConsumer().accept(choice.ordinal());
+        for (var choice : choices) {
+            material.intConsumer().accept(choices.indexOf(choice));
             KungConfig restored = new KungConfig(file);
             restored.load();
             assertTrue(restored.dungeon.coloredPillarsEnabled());
@@ -358,6 +360,18 @@ public final class KungSettingsTest {
         assertTrue(restored.dungeon.dragonDebuffEnabled());
         assertFalse(restored.dungeon.dragonDebuffChatEnabled());
         assertEquals(400, restored.dungeon.dragonLineThickness());
+    }
+
+    @Test
+    public void oldConfigsDoNotKeepTheFormerDragonMarkerDefaults() {
+        // Written by 0.4.x: its defaults were saved to every config, though only the developer saw them.
+        var old = KungConfig.read(new java.io.StringReader("""
+            {"dungeonMap":{"dragonSpawnMarkersEnabled":true,"dragonTrailPart":"NECK","dragonCoreParts":["BOX"]}}
+            """));
+        assertFalse(old.dungeon.dragonSpawnMarkersEnabled());
+        assertEquals(DragonPart.BODY, old.dungeon.dragonTrailPart());
+        assertTrue(old.dungeon.dragonCorePart(DragonPart.BODY));
+        assertFalse(old.dungeon.dragonCorePart(DragonPart.BOX));
     }
 
     @Test

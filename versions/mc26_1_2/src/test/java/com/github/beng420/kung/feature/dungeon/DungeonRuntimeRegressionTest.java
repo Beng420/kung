@@ -2,6 +2,7 @@ package com.github.beng420.kung.feature.dungeon;
 
 import static org.junit.Assert.*;
 
+import com.github.beng420.kung.KungBuild;
 import com.github.beng420.kung.config.KungConfig;
 import com.github.beng420.kung.feature.dungeon.room.RoomType;
 import com.google.gson.Gson;
@@ -41,8 +42,10 @@ public final class DungeonRuntimeRegressionTest {
             KungConfig config = config();
             if (map) config.dungeon.setEnabled(true);
             else config.bloodRush.setEnabled(true);
-            assertTrue(DungeonWorkload.from(config).rooms());
-            assertTrue(DungeonWorkload.from(config).mapData());
+            // The Modrinth build has no Blood Rush, so it never scans for it.
+            boolean scans = map || !KungBuild.MODRINTH;
+            assertEquals(scans, DungeonWorkload.from(config).rooms());
+            assertEquals(scans, DungeonWorkload.from(config).mapData());
         }
     }
 
@@ -59,7 +62,7 @@ public final class DungeonRuntimeRegressionTest {
         assertTrue(DungeonWorkload.from(config).rooms());
         config.bloodRush.setEnabled(true);
         config.dungeon.setEnabled(false);
-        assertTrue(DungeonWorkload.from(config).rooms());
+        assertEquals(!KungBuild.MODRINTH, DungeonWorkload.from(config).rooms());
         config.bloodRush.setEnabled(false);
         assertFalse(DungeonWorkload.from(config).rooms());
         config.dungeon.setEnabled(true);

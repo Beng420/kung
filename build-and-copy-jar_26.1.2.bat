@@ -11,9 +11,11 @@ if not defined MOD_VERSION (
     exit /b 1
 )
 set "SOURCE_JAR=%ROOT%versions\mc26_1_2\build\libs\kung-%MINECRAFT_VERSION%-%MOD_VERSION%.jar"
+set "SOURCE_JAR_26_2=%ROOT%versions\mc26_2\build\libs\kung-26.2-%MOD_VERSION%.jar"
 set "DEFAULT_PROFILE=Dungeons 26.1.2"
 set "SECONDARY_PROFILE=Here We Go Again (2)"
-set "TERTIARY_PROFILE=GSFSDGF"
+rem The 26.2 pack gets the 26.2 jar. Profiles passed as arguments get the 26.1.2 jar only.
+set "PROFILE_26_2=test"
 set "PROFILE_NAME=%~1"
 if "%PROFILE_NAME%"=="" set "PROFILE_NAME=%DEFAULT_PROFILE%"
 set "PROFILE_DIR=%APPDATA%\ModrinthApp\profiles\%PROFILE_NAME%"
@@ -56,9 +58,9 @@ if exist "!RESOURCE_SCAN_DIR!\known-rooms.json" (
 )
 
 :after_room_sync
-echo Building kung jar...
+echo Building kung jars for 26.1.2 and 26.2...
 pushd "!ROOT!" >nul
-call "!ROOT!gradlew.bat" :versions:mc26_1_2:build -PkungPrivateRoomSyncDefaults=true
+call "!ROOT!gradlew.bat" :versions:mc26_1_2:build :versions:mc26_2:build -PkungPrivateRoomSyncDefaults=true
 set "BUILD_RESULT=%ERRORLEVEL%"
 popd >nul
 
@@ -69,10 +71,10 @@ if not "!BUILD_RESULT!"=="0" (
     exit /b !BUILD_RESULT!
 )
 
-if not exist "!SOURCE_JAR!" (
+for %%J in ("!SOURCE_JAR!" "!SOURCE_JAR_26_2!") do if not exist "%%~J" (
     echo.
     echo Built jar was not found:
-    echo !SOURCE_JAR!
+    echo %%~J
     pause
     exit /b 1
 )
@@ -89,18 +91,18 @@ if not errorlevel 1 (
 
 echo.
 if "%~1"=="" (
-    call :copyProfile "%PROFILE_NAME%"
+    call :copyProfile "%PROFILE_NAME%" "%MINECRAFT_VERSION%" "!SOURCE_JAR!"
     if errorlevel 1 exit /b 1
-    call :copyProfile "%SECONDARY_PROFILE%"
+    call :copyProfile "%SECONDARY_PROFILE%" "%MINECRAFT_VERSION%" "!SOURCE_JAR!"
     if errorlevel 1 exit /b 1
-    call :copyProfile "%TERTIARY_PROFILE%"
+    call :copyProfile "%PROFILE_26_2%" "26.2" "!SOURCE_JAR_26_2!"
     if errorlevel 1 exit /b 1
     goto copied_all
 )
 
 :copy_loop
 if "%~1"=="" goto copied_all
-call :copyProfile "%~1"
+call :copyProfile "%~1" "%MINECRAFT_VERSION%" "!SOURCE_JAR!"
 if errorlevel 1 exit /b 1
 shift
 goto copy_loop
@@ -110,14 +112,17 @@ echo.
 echo Done.
 echo.
 certutil -hashfile "!SOURCE_JAR!" SHA256
+certutil -hashfile "!SOURCE_JAR_26_2!" SHA256
 pause
 exit /b 0
 
 :copyProfile
 set "TARGET_PROFILE=%~1"
+set "TARGET_MC=%~2"
+set "TARGET_SOURCE=%~3"
 set "TARGET_DIR=%APPDATA%\ModrinthApp\profiles\%TARGET_PROFILE%\mods"
-set "TARGET_JAR=%TARGET_DIR%\kung-%MINECRAFT_VERSION%-%MOD_VERSION%.jar"
-set "STAGED_JAR=%TARGET_DIR%\kung-%MINECRAFT_VERSION%-%MOD_VERSION%.jar.new"
+set "TARGET_JAR=%TARGET_DIR%\kung-%TARGET_MC%-%MOD_VERSION%.jar"
+set "STAGED_JAR=%TARGET_DIR%\kung-%TARGET_MC%-%MOD_VERSION%.jar.new"
 
 if not exist "!TARGET_DIR!" (
     echo Creating mods folder:
@@ -125,8 +130,17 @@ if not exist "!TARGET_DIR!" (
     mkdir "!TARGET_DIR!"
 )
 
+rem Only the Modrinth App switches between the Kung jars: it ignores a jar a script flipped.
+rem So the new build takes the GitHub jar's current state - active, unless the pack runs
+rem the Modrinth jar or has Kung switched off - and the Modrinth jar is never touched.
+set "TARGET_SUFFIX="
+set "FOUND="
+for %%F in ("!TARGET_DIR!\kung-%TARGET_MC%-*.jar*" "!TARGET_DIR!\kung-modrinth-%TARGET_MC%-*.jar*") do set "FOUND=1"
+if defined FOUND set "TARGET_SUFFIX=.disabled"
+for %%F in ("!TARGET_DIR!\kung-%TARGET_MC%-*.jar") do set "TARGET_SUFFIX="
+
 echo Staging jar for Modrinth profile: !TARGET_PROFILE!
-copy /Y "!SOURCE_JAR!" "!STAGED_JAR!" >nul
+copy /Y "!TARGET_SOURCE!" "!STAGED_JAR!" >nul
 if errorlevel 1 (
     echo.
     echo Staging failed:
@@ -136,7 +150,7 @@ if errorlevel 1 (
 )
 
 echo Removing old Kung jars...
-for %%F in ("!TARGET_DIR!\kung-%MINECRAFT_VERSION%-*.jar") do (
+for %%F in ("!TARGET_DIR!\kung-%TARGET_MC%-*.jar" "!TARGET_DIR!\kung-%TARGET_MC%-*.jar.disabled") do (
     if exist "%%~fF" (
         echo   %%~nxF
         del /F /Q "%%~fF" >nul
@@ -151,14 +165,15 @@ for %%F in ("!TARGET_DIR!\kung-%MINECRAFT_VERSION%-*.jar") do (
     )
 )
 
-move /Y "!STAGED_JAR!" "!TARGET_JAR!" >nul
+move /Y "!STAGED_JAR!" "!TARGET_JAR!!TARGET_SUFFIX!" >nul
 if errorlevel 1 (
     echo.
     echo Could not activate the new jar:
-    echo !TARGET_JAR!
+    echo !TARGET_JAR!!TARGET_SUFFIX!
     pause
     exit /b 1
 )
 echo Installed jar:
-echo !TARGET_JAR!
+echo !TARGET_JAR!!TARGET_SUFFIX!
+if defined TARGET_SUFFIX echo   Installed disabled: this pack runs the Modrinth jar or has Kung off. Switch in the Modrinth App.
 exit /b 0

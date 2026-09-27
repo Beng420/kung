@@ -1,6 +1,8 @@
 package com.github.beng420.kung.config.category;
 
+import com.github.beng420.kung.KungBuild;
 import com.github.beng420.kung.runtime.KungDeveloperAccess;
+import com.google.gson.annotations.SerializedName;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.EnumSet;
@@ -37,6 +39,9 @@ public final class DungeonConfig extends ConfigCategory {
     private Boolean witherDragonsEnabled;
     private boolean dragonFlightPathsEnabled = true;
     private int dragonLineThickness = 100;
+    // New keys in 0.5.0: every config had the old defaults (on, Neck, Box Centre) written out,
+    // though only the developer could see these rows. The old keys are dropped on the next save.
+    @SerializedName("dragonSpawnMarkers")
     private boolean dragonSpawnMarkersEnabled = false;
     private boolean dragonStatueBoxesEnabled = true;
     private boolean dragonCountNotificationsEnabled = true;
@@ -45,7 +50,9 @@ public final class DungeonConfig extends ConfigCategory {
     private boolean wishAlertEnabled = false;
     private int wishAlertLowHealthPercent = 20;
     private DragonMarkerMode dragonMarkerMode = DragonMarkerMode.CORE;
+    @SerializedName("dragonPathPart")
     private DragonPart dragonTrailPart = DragonPart.BODY;
+    @SerializedName("dragonMarkerCoreParts")
     private Set<DragonPart> dragonCoreParts = EnumSet.of(DragonPart.BODY);
     private DragonAimMode dragonAimMode = DragonAimMode.AUTO;
     private boolean devWishAlertAnyClassEnabled = false;
@@ -175,7 +182,11 @@ public final class DungeonConfig extends ConfigCategory {
     public void setWishAlertLowHealthPercent(int value) { wishAlertLowHealthPercent = Math.clamp(value, 0, 100); save(); }
     public boolean coloredPillarsEnabled() { return coloredPillarsEnabled; }
     public void setColoredPillarsEnabled(boolean value) { coloredPillarsEnabled = value; save(); }
-    public PillarMaterial pillarMaterial() { return pillarMaterial == null ? PillarMaterial.WOOL : pillarMaterial; }
+    public PillarMaterial pillarMaterial() {
+        // A config copied from the full build may still hold Glass.
+        return pillarMaterial == null || KungBuild.MODRINTH && pillarMaterial == PillarMaterial.GLASS
+            ? PillarMaterial.WOOL : pillarMaterial;
+    }
     public void setPillarMaterial(PillarMaterial value) { pillarMaterial = value == null ? PillarMaterial.WOOL : value; save(); }
     public boolean forcePaulScoreEnabled() { return forcePaulScoreEnabled; }
     public void setForcePaulScoreEnabled(boolean value) { forcePaulScoreEnabled = value; save(); }
@@ -269,6 +280,11 @@ public final class DungeonConfig extends ConfigCategory {
         private final String label;
         PillarMaterial(String label) { this.label = label; }
         public String label() { return label; }
+
+        /** See-through Glass pillars are not offered in the Modrinth build. */
+        public static PillarMaterial[] choices() {
+            return KungBuild.MODRINTH ? new PillarMaterial[] {WOOL, TERRACOTTA} : values();
+        }
     }
 
     /** Which prefire aim point to show; Auto picks the weapon from the dungeon class. */

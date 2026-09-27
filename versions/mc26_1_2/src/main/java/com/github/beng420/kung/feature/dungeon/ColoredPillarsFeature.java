@@ -1,5 +1,6 @@
 package com.github.beng420.kung.feature.dungeon;
 
+import com.github.beng420.kung.KungBuild;
 import com.github.beng420.kung.compat.McCompat;
 import com.github.beng420.kung.config.category.DungeonConfig;
 import com.github.beng420.kung.config.category.DungeonConfig.PillarMaterial;
@@ -122,7 +123,7 @@ public final class ColoredPillarsFeature extends ConfigurableFeature<DungeonConf
             this.x = x;
             this.z = z;
             this.wool = block(color + "_wool");
-            this.glass = block(color + "_stained_glass");
+            this.glass = KungBuild.MODRINTH ? wool : block(color + "_stained_glass");
             this.terracotta = block(color + "_terracotta");
         }
 

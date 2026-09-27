@@ -1,5 +1,6 @@
 package com.github.beng420.kung.feature.dungeon;
 
+import com.github.beng420.kung.KungBuild;
 import com.github.beng420.kung.KungMod;
 import com.github.beng420.kung.compat.McCompat;
 import com.github.beng420.kung.config.KungConfig;
@@ -62,6 +63,7 @@ public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> 
     private static final int MAP_BORDER = 0xFF9AA0A8;
     private static final int OPEN_DOOR = 0xFF82511F;
     private static final int WITHER_DOOR = 0xFF050506;
+    private static final int UNEXPLORED_ROOM = 0xFF3A3D42;
     private static final int TEXT = 0xFFFFFFFF;
     private static final int SECRET_FOUND_TEXT = 0xFF55FFFF;
     private static final int SECRET_TARGET_TEXT = 0xFFFFFF55;
@@ -175,7 +177,9 @@ public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> 
         }
         if (!visible) return;
         DungeonMapSnapshot snapshot = dungeonStateTracker.mapSnapshot();
-        DungeonLiveMapWriter.MatchRenderPlan renderPlan = dungeonStateTracker.renderPlan();
+        DungeonLiveMapWriter.MatchRenderPlan fullPlan = dungeonStateTracker.renderPlan();
+        DungeonLiveMapWriter.MatchRenderPlan renderPlan = KungBuild.MODRINTH ? DungeonEnteredRooms.view(fullPlan) : fullPlan;
+        boolean totalsShown = !KungBuild.MODRINTH || DungeonEnteredRooms.allEntered(snapshot, fullPlan);
         float scale = effectiveScale(config);
         graphics.pose().pushMatrix();
         try {
@@ -200,7 +204,7 @@ public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> 
             try {
                 graphics.pose().translate(left, gridTop + footerTop(config));
                 graphics.pose().scale(textScale(config), textScale(config));
-                drawFooter(graphics, 0, 0, dungeonStateTracker.runStats(), snapshot, renderPlan);
+                drawFooter(graphics, 0, 0, dungeonStateTracker.runStats(), snapshot, renderPlan, totalsShown);
             } finally {
                 graphics.pose().popMatrix();
             }
@@ -279,7 +283,7 @@ public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> 
             graphics.pose().scale(viewport.scale(), viewport.scale());
             graphics.pose().translate(-viewport.minPixelX(), -viewport.minPixelY());
             drawGridContent(graphics, snapshot, renderPlan, stats, viewport);
-            drawMimicRoomHighlights(graphics, snapshot, renderPlan, stats, viewport);
+            if (!KungBuild.MODRINTH) drawMimicRoomHighlights(graphics, snapshot, renderPlan, stats, viewport);
             if (!recording) {
                 drawPreRunStartRoom(graphics, 0, 0);
             }
@@ -335,8 +339,24 @@ public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> 
             }
         }
 
+        if (KungBuild.MODRINTH) drawUnexploredRooms(graphics, renderPlan, viewport);
         drawMatchedRooms(graphics, 0, 0, renderPlan, viewport);
         drawExternalDoors(graphics, 0, 0, renderPlan.externalDoors(), viewport);
+    }
+
+    /** Modrinth: a 1x1 "?" behind every exit of an entered room. */
+    private static void drawUnexploredRooms(GuiGraphicsExtractor graphics, DungeonLiveMapWriter.MatchRenderPlan renderPlan,
+                                            GridViewport viewport) {
+        for (DungeonLiveMapWriter.CellKey cell : DungeonEnteredRooms.unexplored(renderPlan)) {
+            int gridX = cell.x() * 2;
+            int gridZ = cell.z() * 2;
+            if (!viewport.containsScanCell(gridX, gridZ)) continue;
+            int x = scanGridToPixel(gridX);
+            int y = scanGridToPixel(gridZ);
+            int size = sizeFor(gridX, gridZ);
+            graphics.fill(x, y, x + size, y + size, UNEXPLORED_ROOM);
+            drawCenteredText(graphics, "?", x + size / 2, y + size / 2 - 4, MUTED_TEXT, false);
+        }
     }
 
     private static void drawMimicRoomHighlights(
@@ -928,6 +948,8 @@ public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> 
         int y,
         int size
     ) {
+        if (KungBuild.MODRINTH && !DungeonEnteredRooms.entered(renderPlan,
+            new DungeonLiveMapWriter.CellKey(gridX / 2, gridZ / 2))) return;
         DungeonMapSnapshot.ObservedPoint observedPoint = snapshot.pointAt(gridX, gridZ);
         if (observedPoint == null) {
             DungeonKnownRoomCatalog.KnownCoreHint remoteHint = DungeonScanUtils.isRoomScanPoint(gridX, gridZ)
@@ -2076,7 +2098,8 @@ public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> 
         int top,
         DungeonRunStats stats,
         DungeonMapSnapshot snapshot,
-        DungeonLiveMapWriter.MatchRenderPlan renderPlan
+        DungeonLiveMapWriter.MatchRenderPlan renderPlan,
+        boolean totalsShown
     ) {
         graphics.fill(left - 3, top, left + GRID_PIXEL_SIZE + 3, top + FOOTER_HEIGHT - 4, PANEL);
         int estimatedSecretsAvailable = stats.catalogSecretsAvailable(renderPlan);
@@ -2090,9 +2113,9 @@ public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> 
         x = drawFooterText(graphics, "Secrets: ", x, firstLineY, TEXT);
         x = drawFooterText(graphics, foundSecrets >= 0 ? String.valueOf(foundSecrets) : "?", x, firstLineY, SECRET_FOUND_TEXT);
         x = drawFooterText(graphics, "-", x, firstLineY, TEXT);
-        x = drawFooterText(graphics, sPlusSecrets >= 0 ? String.valueOf(sPlusSecrets) : "?", x, firstLineY, SECRET_TARGET_TEXT);
+        x = drawFooterText(graphics, totalsShown && sPlusSecrets >= 0 ? String.valueOf(sPlusSecrets) : "?", x, firstLineY, SECRET_TARGET_TEXT);
         x = drawFooterText(graphics, "-", x, firstLineY, TEXT);
-        x = drawFooterText(graphics, fullSecrets > 0 ? String.valueOf(fullSecrets) : "?", x, firstLineY, SECRET_FULL_TEXT);
+        x = drawFooterText(graphics, totalsShown && fullSecrets > 0 ? String.valueOf(fullSecrets) : "?", x, firstLineY, SECRET_FULL_TEXT);
         x = drawFooterText(graphics, "   Score: ", x, firstLineY, TEXT);
         drawFooterText(graphics, score >= 0 ? String.valueOf(score) : "?", x, firstLineY, scoreColor(score));
 
@@ -2109,7 +2132,7 @@ public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> 
         x = drawFooterText(graphics, " | Crypts: ", x, secondLineY, TEXT);
         x = drawFooterText(graphics, String.valueOf(stats.cryptsOpened()), x, secondLineY, cryptColor(stats.cryptsOpened()));
         x = drawFooterText(graphics, "/", x, secondLineY, TEXT);
-        drawFooterText(graphics, cryptTotalText(stats, snapshot, renderPlan), x, secondLineY, TEXT);
+        drawFooterText(graphics, cryptTotalText(stats, snapshot, renderPlan, totalsShown), x, secondLineY, TEXT);
     }
 
     private static int displayedSecretsFound(DungeonRunStats stats, int secretsAvailable) {
@@ -2151,18 +2174,20 @@ public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> 
     private static String cryptTotalText(
         DungeonRunStats stats,
         DungeonMapSnapshot snapshot,
-        DungeonLiveMapWriter.MatchRenderPlan renderPlan
+        DungeonLiveMapWriter.MatchRenderPlan renderPlan,
+        boolean totalsShown
     ) {
         if (stats.cryptsAvailable() >= 0) {
             return String.valueOf(stats.cryptsAvailable());
         }
 
         CryptEstimate estimate = estimatedCryptTotal(snapshot, renderPlan);
-        if (!estimate.hasUnknownRooms()) {
+        // Modrinth: the entered rooms' crypts plus "?" until every room is entered.
+        if (totalsShown && !estimate.hasUnknownRooms()) {
             return String.valueOf(estimate.knownTotal());
         }
         if (estimate.knownTotal() > 0) {
-            return estimate.knownTotal() + (estimate.hasUnknownRooms() ? "+?" : "");
+            return estimate.knownTotal() + "+?";
         }
         return "?";
     }
@@ -2210,6 +2235,12 @@ public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> 
     }
 
     private record GridViewport(int minPixelX, int minPixelY, int maxPixelX, int maxPixelY, float scale) {
+        /**
+         * Rooms across and down per floor, Entrance to VII (master mode alike), from the SkyBlock wiki;
+         * every layout starts at room 0,0.
+         * ponytail: the wiki does not say which side is the width - a wrong guess only widens the view once.
+         */
+        private static final int[][] FLOOR_ROOMS = {{4, 4}, {4, 5}, {5, 5}, {5, 5}, {6, 5}, {6, 5}, {6, 6}, {6, 6}};
         private static final int MIN_VISIBLE_ROOMS = 5;
         private static final float MAX_AUTO_SCALE = 1.22F;
 
@@ -2219,6 +2250,13 @@ public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> 
             DungeonRunStats stats
         ) {
             MutableRoomBounds bounds = new MutableRoomBounds();
+            // The floor's whole grid, so the map stays put while rooms appear (the Modrinth map
+            // starts with the entrance alone). Anything outside it still widens the view.
+            var floor = HypixelInstanceTracker.INSTANCE.dungeonFloor();
+            if (floor.known() && floor.floor() >= 0 && floor.floor() < FLOOR_ROOMS.length) {
+                bounds.includeRoom(0, 0);
+                bounds.includeRoom(FLOOR_ROOMS[floor.floor()][0] - 1, FLOOR_ROOMS[floor.floor()][1] - 1);
+            }
             for (int gridZ = 0; gridZ < DungeonScanUtils.SCAN_GRID_SIZE; gridZ++) {
                 for (int gridX = 0; gridX < DungeonScanUtils.SCAN_GRID_SIZE; gridX++) {
                     DungeonMapSnapshot.ObservedPoint point = snapshot.pointAt(gridX, gridZ);
@@ -2230,6 +2268,10 @@ public final class DungeonMapFeature extends ConfigurableFeature<DungeonConfig> 
                         continue;
                     }
                     if (point.point().kind() == DungeonScanPointKind.SEPARATOR) {
+                        continue;
+                    }
+                    if (KungBuild.MODRINTH && !DungeonEnteredRooms.entered(renderPlan,
+                        new DungeonLiveMapWriter.CellKey(gridX / 2, gridZ / 2))) {
                         continue;
                     }
                     bounds.includeScanCell(gridX, gridZ);

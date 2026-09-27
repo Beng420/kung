@@ -1,5 +1,6 @@
 package com.github.beng420.kung.feature;
 
+import com.github.beng420.kung.KungBuild;
 import com.github.beng420.kung.feature.dungeon.DungeonChatFilterFeature;
 import com.github.beng420.kung.feature.dungeon.ColoredPillarsFeature;
 import com.github.beng420.kung.feature.dungeon.DungeonDebuffFeature;
@@ -42,7 +43,7 @@ public final class FeatureRegistry {
 
         DungeonStateTracker tracker = services.dungeonStateTracker();
         register(new DungeonMapFeature(tracker));
-        register(new DungeonMimicEspFeature(tracker));
+        if (!KungBuild.MODRINTH) register(new DungeonMimicEspFeature(tracker));
         register(new DungeonChatFilterFeature(tracker));
         register(new DungeonSplitsOverlayFeature(tracker));
         register(DungeonDebuffFeature.INSTANCE);
