@@ -5,6 +5,7 @@ maps, run splits and statistics, slayer and garden helpers, hitboxes, HUD overla
 quality-of-life chat tools.
 
 Owner: [Beng420](https://github.com/Beng420)
+Official Discord Server: [KUNG](https://discord.com/invite/EDD4ujq3NM)
 
 ## Requirements
 
