@@ -6,6 +6,8 @@ import com.github.beng420.kung.config.category.DungeonConfig.DragonAimMode;
 import com.github.beng420.kung.config.category.DungeonConfig.DragonDebuffScope;
 import com.github.beng420.kung.config.category.DungeonConfig.DragonMarkerMode;
 import com.github.beng420.kung.config.category.DungeonConfig.DragonPart;
+import com.github.beng420.kung.config.category.DungeonConfig.DragonPrioSplit;
+import com.github.beng420.kung.config.category.DungeonConfig.DragonPrioUnit;
 import com.github.beng420.kung.config.category.DungeonConfig.PillarMaterial;
 import com.github.beng420.kung.config.category.SplitsConfig.PredictionMode;
 import com.github.beng420.kung.config.category.SplitsConfig.PredictionSource;
@@ -20,6 +22,7 @@ import com.github.beng420.kung.ui.KungFonts;
 import com.github.beng420.kung.update.KungUpdater;
 import com.github.beng420.kung.util.HypixelSkyBlockProfileClient;
 import java.io.StringReader;
+import java.net.URI;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.BooleanSupplier;
@@ -27,9 +30,12 @@ import java.util.function.IntConsumer;
 import java.util.function.IntSupplier;
 import java.util.function.Supplier;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.screens.ConfirmLinkScreen;
 
 /** Shared settings and callbacks; persistence remains owned by KungConfig. */
 public final class KungSettings {
+    private static final URI HYPIXEL_DEVELOPER_DASHBOARD = URI.create("https://developer.hypixel.net/dashboard");
+
     private KungSettings() { }
 
     public static List<CategoryEntry> categories(Runnable openChangelog) {
@@ -252,7 +258,7 @@ public final class KungSettings {
                     )
                 )
             )),
-            new CategoryEntry("Util", List.of(
+            new CategoryEntry("Util", present(
                 new FeatureEntry("Bow Draw Indicator", config.misc::bowDrawIndicatorEnabled,
                     () -> config.misc.setBowDrawIndicatorEnabled(!config.misc.bowDrawIndicatorEnabled()), new BowDrawThresholdSettings(config.misc))
                     .withTooltip("Shows estimated bow power while drawing on Hypixel, paced by server ticks.",
@@ -261,9 +267,15 @@ public final class KungSettings {
                         "Power rises between markers; network delay can shift the estimate.",
                         "Move and resize in /kung hud. Shortbows do not charge."),
                 new FeatureEntry("Frozen Blaze HUD", config.misc::frozenBlazeHudEnabled,
-                    () -> config.misc.setFrozenBlazeHudEnabled(!config.misc.frozenBlazeHudEnabled()), List.of())
+                    () -> config.misc.setFrozenBlazeHudEnabled(!config.misc.frozenBlazeHudEnabled()),
+                    List.of(
+                        SettingEntry.toggle("Alarm", config.misc::frozenBlazeAlarmEnabled,
+                            () -> config.misc.setFrozenBlazeAlarmEnabled(!config.misc.frozenBlazeAlarmEnabled()))
+                            .withTooltip("Plays a sound and shows a title when the aura turns off.",
+                                "Fires once per shutdown; walk and look around to rearm it.")
+                    ))
                     .withTooltip("Shows whether the (Frozen) Blaze Armor aura is active while wearing the full set.",
-                        "The aura stops after 30 seconds without walking. Turning does not count.",
+                        "The aura stops after 30 seconds without walking or turning the camera; it needs both.",
                         "Move and resize in /kung hud."),
                 new FeatureEntry("Hitboxes", config.hitboxes::enabled,
                     () -> config.hitboxes.setEnabled(!config.hitboxes.enabled()), new HitboxSettings(config.hitboxes))
@@ -302,6 +314,12 @@ public final class KungSettings {
                         "Set the Track Key, then press it over an item in a sack.",
                         "Counts follow SkyBlock's [Sacks] messages; keep them on in /settings.",
                         "Move and resize in /kung hud."),
+                KungBuild.MODRINTH ? null : new FeatureEntry("Skip NPC Dialogue", config.misc::skipNpcDialogueEnabled,
+                    () -> config.misc.setSkipNpcDialogueEnabled(!config.misc.skipNpcDialogueEnabled()), List.of())
+                    .withTooltip("Answers NPC dialogue prompts: a single option, or a known choice.",
+                        "Clicks the NPC a \"Talk to\", \"Check on\" or \"Give\" quest objective names once it is in reach.",
+                        "Never clicks in menus, sends chat or moves you. Off in dungeons and Kuudra.",
+                        "Automates gameplay, which Hypixel's rules forbid. Use at your own risk."),
                 new FeatureEntry("Hypixel API", config.misc::hypixelApiEnabled,
                     () -> config.misc.setHypixelApiEnabled(!config.misc.hypixelApiEnabled()),
                     List.of(
@@ -309,6 +327,8 @@ public final class KungSettings {
                         SettingEntry.text("API Key", config.misc::hypixelApiKey,
                             config.misc::setHypixelApiKey)
                             .withTooltip("Create one at developer.hypixel.net; it looks like a UUID."),
+                        SettingEntry.button("Get API Key", "Open", KungSettings::openHypixelDeveloperDashboard)
+                            .withTooltip("Opens the Hypixel developer dashboard in your browser."),
                         SettingEntry.button("Test Key", "Run", KungSettings::testHypixelKey)
                             .withTooltip("Asks Hypixel once with your key and shows the answer above.")
                     )
@@ -430,8 +450,6 @@ public final class KungSettings {
                         SettingEntry.dynamicLabel(() -> "Status: " + DungeonRoomDataSyncClient.INSTANCE.menuStatus()),
                         SettingEntry.text("Server", config.dungeon::roomSyncServerUrl,
                             config.dungeon::setRoomSyncServerUrl),
-                        SettingEntry.text("Token", config.dungeon::roomSyncToken,
-                            config.dungeon::setRoomSyncToken),
                         SettingEntry.toggle("Upload", config.dungeon::roomSyncUploadEnabled,
                             () -> config.dungeon.setRoomSyncUploadEnabled(!config.dungeon.roomSyncUploadEnabled())),
                         SettingEntry.button("Pull", "Rooms",
@@ -525,6 +543,26 @@ public final class KungSettings {
                     "Nearest Statue: choose the closest statue among each wave's spawning dragons.",
                     "Uses your position at the first spawn and keeps that target until the next wave.")
                 .withVisibleWhen(config.dungeon::dragonDebuffTrackerEnabled),
+            SettingEntry.toggle("Dragon Prio", config.dungeon::dragonPrioEnabled,
+                () -> config.dungeon.setDragonPrioEnabled(!config.dungeon.dragonPrioEnabled()))
+                .withTooltip("Shows a spawn countdown (ticks or milliseconds, see Prio Unit) and a line from your crosshair to the spawn of your dragon.",
+                    "The Bers split (Berserker + Mage) takes the first dragon, the Arch split (Archer + Healer + Tank) the second.",
+                    "Every later dragon, including respawns, is shown to both splits.",
+                    "Archer is always Arch and Berserker always Bers; Mage, Healer and Tank are set below.",
+                    "While your class is not known yet you see every dragon.",
+                    "Move and scale the countdown with /kung hud; the line follows Line Thickness."),
+            SettingEntry.choice("Mage Split", DragonPrioSplit.values(), config.dungeon::dragonPrioMage,
+                config.dungeon::setDragonPrioMage, DragonPrioSplit::label)
+                .withVisibleWhen(config.dungeon::dragonPrioEnabled),
+            SettingEntry.choice("Healer Split", DragonPrioSplit.values(), config.dungeon::dragonPrioHealer,
+                config.dungeon::setDragonPrioHealer, DragonPrioSplit::label)
+                .withVisibleWhen(config.dungeon::dragonPrioEnabled),
+            SettingEntry.choice("Tank Split", DragonPrioSplit.values(), config.dungeon::dragonPrioTank,
+                config.dungeon::setDragonPrioTank, DragonPrioSplit::label)
+                .withVisibleWhen(config.dungeon::dragonPrioEnabled),
+            SettingEntry.choice("Prio Unit", DragonPrioUnit.values(), config.dungeon::dragonPrioUnit,
+                config.dungeon::setDragonPrioUnit, DragonPrioUnit::label)
+                .withVisibleWhen(config.dungeon::dragonPrioEnabled),
             SettingEntry.toggle("Spawn Markers", config.dungeon::dragonSpawnMarkersEnabled,
                 () -> config.dungeon.setDragonSpawnMarkersEnabled(!config.dungeon.dragonSpawnMarkersEnabled())),
             SettingEntry.choice("Marker", DragonMarkerMode.values(),
@@ -604,6 +642,10 @@ public final class KungSettings {
             ));
         }
         return List.copyOf(settings);
+    }
+
+    private static void openHypixelDeveloperDashboard() {
+        ConfirmLinkScreen.confirmLinkNow(McCompat.screen(Minecraft.getInstance()), HYPIXEL_DEVELOPER_DASHBOARD);
     }
 
     /** The status line above only means something once a real request has answered. */

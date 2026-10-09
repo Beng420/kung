@@ -9,10 +9,14 @@ import com.github.beng420.kung.util.LineBoxes;
 import net.minecraft.client.renderer.rendertype.RenderTypes;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
+import org.joml.Vector3f;
 
 final class M7DragonRenderer {
     private static final RenderStateDataKey<List<Marker>> MARKERS = RenderStateDataKey.create(() -> "kung:m7-dragons");
     private static final RenderStateDataKey<List<Trail>> TRAILS = RenderStateDataKey.create(() -> "kung:m7-dragon-trails");
+    private static final RenderStateDataKey<List<M7DragonTracker.Statue>> PRIO = RenderStateDataKey.create(() -> "kung:m7-dragon-prio");
+    /** Blocks ahead of the camera where a Dragon Prio line starts; the farther, the less view bobbing moves it off the crosshair. */
+    private static final float PRIO_START = 2.0F;
 
     /** Corner indices per face; bit 0 picks x, bit 1 picks y, bit 2 picks z. */
     private static final int[][] FACES = {{0, 4, 6, 2}, {5, 1, 3, 7}, {0, 1, 5, 4},
@@ -27,18 +31,30 @@ final class M7DragonRenderer {
             context.levelState().setData(MARKERS,
                 List.copyOf(M7DragonFeature.INSTANCE.renderMarkers(partialTick)));
             context.levelState().setData(TRAILS, List.copyOf(M7DragonFeature.INSTANCE.renderTrails()));
+            // Only which statues: the start of each line is worked out from the camera when it is drawn.
+            context.levelState().setData(PRIO, List.copyOf(M7DragonFeature.INSTANCE.prioLines()));
         });
         LevelRenderEvents.END_MAIN.register(context -> {
             List<Marker> markers = context.levelState().getDataOrDefault(MARKERS, List.of());
             List<Trail> trails = context.levelState().getDataOrDefault(TRAILS, List.of());
-            if (markers.isEmpty() && trails.isEmpty()) return;
+            List<M7DragonTracker.Statue> prio = context.levelState().getDataOrDefault(PRIO, List.of());
+            if (markers.isEmpty() && trails.isEmpty() && prio.isEmpty()) return;
             Vec3 camera = context.levelState().cameraRenderState.pos;
+            // Straight ahead of this frame's camera is the crosshair, so the line turns with the view
+            // in the frame it is drawn - nothing here comes from a tick.
+            Vector3f start = context.levelState().cameraRenderState.orientation.transform(0, 0, -PRIO_START, new Vector3f());
             // A polyline: a cube per sample point cost a VoxelShape and 12 edges each, every frame.
             float trailWidth = 2.25F * com.github.beng420.kung.config.KungConfig.get().dungeon.dragonLineThickness() / 100F;
             McCompat.draw(context, RenderTypes.lines(), (pose, lines) -> {
                 for (Marker marker : markers) {
                     if (!marker.filled()) LineBoxes.box(lines, pose, marker.bounds(), camera.x, camera.y, camera.z,
                         marker.color(), marker.width());
+                }
+                for (M7DragonTracker.Statue statue : prio) {
+                    if (!M7DragonFeature.INSTANCE.prioPending(statue)) continue;
+                    Vec3 to = statue.spawn();
+                    LineBoxes.segment(lines, pose, start.x, start.y, start.z, (float) (to.x - camera.x),
+                        (float) (to.y - camera.y), (float) (to.z - camera.z), statue.color(), trailWidth);
                 }
                 for (Trail trail : trails) {
                     List<Vec3> points = trail.points();

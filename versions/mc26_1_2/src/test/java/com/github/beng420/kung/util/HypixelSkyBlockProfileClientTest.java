@@ -2,6 +2,10 @@ package com.github.beng420.kung.util;
 
 import static org.junit.Assert.*;
 
+import com.github.beng420.kung.config.KungConfig;
+import com.github.beng420.kung.config.category.DungeonConfig;
+import com.github.beng420.kung.feature.dungeon.KungServerSession;
+import com.github.beng420.kung.util.HypixelSkyBlockProfileClient.ProfileResult;
 import com.google.gson.JsonObject;
 import com.sun.net.httpserver.HttpServer;
 import java.io.BufferedReader;
@@ -17,11 +21,14 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.function.UnaryOperator;
+import org.junit.AfterClass;
+import org.junit.BeforeClass;
 import org.junit.Test;
 
 public final class HypixelSkyBlockProfileClientTest {
     @Test public void providersKeepTheirHeadersAndRefreshTimestampsAcrossRateLimitAndServerRetries() throws Exception {
-        for (String provider : List.of("Hypixel", "Adjectils")) {
+        for (String provider : PROVIDERS) {
             try (var server = new Server(new int[] {429, 503, 200}, "{\"success\":true}")) {
                 assertTrue(load(provider, server.uri()).get(10, TimeUnit.SECONDS).get("success").getAsBoolean());
                 assertEquals(3, server.requests.size());
@@ -31,43 +38,41 @@ public final class HypixelSkyBlockProfileClientTest {
                     String query = request.getRequestURI().getRawQuery();
                     assertEquals("GET", request.getRequestMethod());
                     assertEquals("application/json", headers.getFirst("Accept"));
+                    assertEquals("Kung-HypixelProfile", headers.getFirst("User-Agent"));
                     assertTrue(query.startsWith("uuid=sample+id%2B"));
-                    long timestamp;
                     if (provider.equals("Hypixel")) {
                         assertEquals("test-key", headers.getFirst("API-Key"));
+                        assertNull(headers.getFirst("Authorization"));
                         assertEquals("no-cache, no-store, max-age=0", headers.getFirst("Cache-Control"));
                         assertEquals("no-cache", headers.getFirst("Pragma"));
-                        assertEquals("Kung-HypixelProfile", headers.getFirst("User-Agent"));
-                        assertNull(headers.getFirst("X-Timestamp"));
-                        timestamp = Long.parseLong(query.substring(query.indexOf("&_kungFresh=") + 12));
+                        long timestamp = Long.parseLong(query.substring(query.indexOf("&_kungFresh=") + 12));
+                        assertTrue("Retries need a fresh provider timestamp", timestamp > previousTimestamp);
+                        previousTimestamp = timestamp;
                     } else {
+                        // The Hypixel key stays on the Kung server; the client only sends its session token.
                         assertEquals("uuid=sample+id%2B", query);
+                        assertEquals("Bearer session-token", headers.getFirst("Authorization"));
                         assertNull(headers.getFirst("API-Key"));
-                        assertNull(headers.getFirst("Cache-Control"));
-                        assertNull(headers.getFirst("Pragma"));
-                        assertEquals("Kung-CA50-AdjectilsFallback", headers.getFirst("User-Agent"));
-                        timestamp = Long.parseLong(headers.getFirst("X-Timestamp"));
                     }
-                    assertTrue("Retries need a fresh provider timestamp", timestamp > previousTimestamp);
-                    previousTimestamp = timestamp;
                 }
             }
         }
     }
 
     @Test public void retryableFailuresStopAtThreeWhileClientErrorsAndInvalidBodiesFailImmediately() throws Exception {
-        for (String provider : List.of("Hypixel", "Adjectils")) {
+        for (String provider : PROVIDERS) {
+            String service = provider.equals("Hypixel") ? "Hypixel" : "Kung server";
             for (int status : new int[] {500, 400}) {
                 try (var server = new Server(new int[] {status}, "{}")) {
                     var failure = assertThrows(ExecutionException.class, () -> load(provider, server.uri()).get(10, TimeUnit.SECONDS));
-                    assertEquals(provider + " returned HTTP " + status, failure.getCause().getMessage());
+                    assertEquals(service + " returned HTTP " + status, failure.getCause().getMessage());
                     assertEquals(status == 500 ? 3 : 1, server.requests.size());
                 }
             }
             for (String body : List.of("{\"success\":false}", "not json")) {
                 try (var server = new Server(new int[] {200}, body)) {
                     var failure = assertThrows(ExecutionException.class, () -> load(provider, server.uri()).get(10, TimeUnit.SECONDS));
-                    if (body.startsWith("{")) assertEquals(provider + " returned success=false", failure.getCause().getMessage());
+                    if (body.startsWith("{")) assertEquals(service + " returned success=false", failure.getCause().getMessage());
                     assertEquals(1, server.requests.size());
                 }
             }
@@ -75,7 +80,7 @@ public final class HypixelSkyBlockProfileClientTest {
     }
 
     @Test public void truncatedResponsesRetryAndKeepTheirTransportFailureAfterThreeAttempts() throws Exception {
-        for (String provider : List.of("Hypixel", "Adjectils")) {
+        for (String provider : PROVIDERS) {
             try (var server = new ServerSocket()) {
                 server.bind(new InetSocketAddress("127.0.0.1", 0));
                 server.setSoTimeout(5_000);
@@ -104,16 +109,87 @@ public final class HypixelSkyBlockProfileClientTest {
         }
     }
 
+    @Test public void errorsNameTheUpstreamReasonAndCombinedErrorsKeepTheChatMessages() throws Exception {
+        try (var server = new Server(new int[] {403}, "{\"success\":false,\"cause\":\"Invalid API key\"}")) {
+            var failure = assertThrows(ExecutionException.class, () -> load("KungServer", server.uri()).get(10, TimeUnit.SECONDS));
+            assertEquals("Kung server returned HTTP 403: Invalid API key", failure.getCause().getMessage());
+        }
+        try (var server = new Server(new int[] {403}, "<html><body>" + "Blocked ".repeat(200) + "</body></html>")) {
+            var failure = assertThrows(ExecutionException.class, () -> load("Hypixel", server.uri()).get(10, TimeUnit.SECONDS));
+            assertEquals("Hypixel returned HTTP 403", failure.getCause().getMessage());
+        }
+        assertEquals("X returned HTTP 403: nope", HypixelSkyBlockProfileClient.httpError("X", 403, "{\"error\":\"nope\"}"));
+        assertEquals("X returned HTTP 403: a b c", HypixelSkyBlockProfileClient.httpError("X", 403, "{\"message\":\"a\\n b | c\"}"));
+        assertEquals("X returned HTTP 403", HypixelSkyBlockProfileClient.httpError("X", 403, "{\"cause\":{\"a\":1},\"error\":true}"));
+        assertEquals("X returned HTTP 403: " + "y".repeat(100),
+            HypixelSkyBlockProfileClient.httpError("X", 403, "{\"cause\":\"" + "y".repeat(500) + "\"}"));
+
+        String own = "Hypixel returned HTTP 403: Invalid API key";
+        String[][] chat = {
+            {"Kung server returned HTTP 403: Invalid API key", "CA data service blocked the request"},
+            {"Kung server returned HTTP 429", "CA data service is rate limited"},
+            {"request timed out", "CA data service timed out"},
+            {"Kung server returned HTTP 500", "CA data service unavailable"},
+            {KungServerSession.NOT_ALLOWED, "not allowed on the Kung server; set your own Hypixel API key"}};
+        for (String[] row : chat) {
+            var combined = HypixelSkyBlockProfileClient.combine(ProfileResult.error(own), ProfileResult.error(row[0]));
+            assertEquals(own + " | " + row[0], combined.error());
+            assertEquals(row[1], CatacombsAverageCalculator.externalProfileError(combined.error()));
+            assertEquals(row[1], CatacombsAverageCalculator.externalProfileError(row[0]));
+        }
+        String noSource = HypixelSkyBlockProfileClient.NO_SOURCE;
+        assertEquals(noSource, CatacombsAverageCalculator.externalProfileError(noSource));
+        assertEquals("Kung server returned HTTP 403", HypixelSkyBlockProfileClient.combine(
+            ProfileResult.error(noSource), ProfileResult.error("Kung server returned HTTP 403")).error());
+        assertEquals("invalid username", HypixelSkyBlockProfileClient.combine(
+            ProfileResult.error("invalid username"), ProfileResult.error("invalid username")).error());
+        var served = ProfileResult.ok(null, 0);
+        assertSame(served, HypixelSkyBlockProfileClient.combine(ProfileResult.error(own), served));
+    }
+
+    private static final List<String> PROVIDERS = List.of("Hypixel", "KungServer");
+    private static HttpServer authServer;
+    private static DungeonConfig previousDungeonConfig;
+
+    /** The Kung server signs in at its own address; this one only answers the two sign-in calls. */
+    @BeforeClass public static void startAuthServer() throws IOException {
+        authServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        authServer.createContext("/auth/", exchange -> {
+            exchange.getRequestBody().readAllBytes();
+            byte[] body = (exchange.getRequestURI().getPath().endsWith("/challenge")
+                ? "{\"challenge\":\"00000000000000000000000000000001\",\"expiresInMs\":60000}"
+                : "{\"token\":\"session-token\",\"expiresAt\":" + (System.currentTimeMillis() + 3_600_000L) + "}")
+                .getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200, body.length);
+            try (var output = exchange.getResponseBody()) { output.write(body); }
+        });
+        authServer.start();
+        previousDungeonConfig = KungConfig.get().dungeon;
+        KungConfig.get().dungeon = new DungeonConfig();
+        KungConfig.get().dungeon.setRoomSyncServerUrl("http://127.0.0.1:" + authServer.getAddress().getPort());
+    }
+
+    @AfterClass public static void stopAuthServer() {
+        KungConfig.get().dungeon = previousDungeonConfig;
+        authServer.stop(0);
+    }
+
     @SuppressWarnings("unchecked")
     private static CompletableFuture<JsonObject> load(String provider, URI endpoint) throws Exception {
-        boolean hypixel = provider.equals("Hypixel");
+        Object credential = "test-key";
+        Class<?> credentialType = String.class;
+        if (provider.equals("KungServer")) {
+            // The session constructor is package-private so only tests can swap out the Mojang join.
+            var constructor = KungServerSession.class.getDeclaredConstructor(UnaryOperator.class);
+            constructor.setAccessible(true);
+            credential = constructor.newInstance((UnaryOperator<String>) challenge -> "Tester");
+            credentialType = KungServerSession.class;
+        }
         var method = HypixelSkyBlockProfileClient.class.getDeclaredMethod("load" + provider + "Object",
-            hypixel ? new Class<?>[] {URI.class, String.class, String.class, String.class}
-                : new Class<?>[] {URI.class, String.class, String.class});
+            URI.class, String.class, String.class, credentialType);
         method.setAccessible(true);
         return (CompletableFuture<JsonObject>) method.invoke(HypixelSkyBlockProfileClient.INSTANCE,
-            hypixel ? new Object[] {endpoint, "uuid", "sample id+", "test-key"}
-                : new Object[] {endpoint, "uuid", "sample id+"});
+            endpoint, "uuid", "sample id+", credential);
     }
 
     private static final class Server implements AutoCloseable {

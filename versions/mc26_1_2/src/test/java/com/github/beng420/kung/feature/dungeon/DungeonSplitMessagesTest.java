@@ -66,14 +66,16 @@ public final class DungeonSplitMessagesTest {
         }
         assertFalse(tracker.hasKnownFloor());
         assertTrue(phases.stream().noneMatch(DungeonSplitTracker.PhaseMessage::personalBest));
-        clock.addAndGet(1_000L);
+        // Wither King dialogue reveals Master mode but is not a boundary: Relics runs until the next line.
         tracker.observeMessage("[BOSS] Wither King: You... again?", 0L);
         assertTrue(tracker.hasKnownFloor());
+        assertEquals("Necron", phases.getLast().phase());
+        assertFalse(phases.getLast().masterMode());
+        clock.addAndGet(1_000L);
+        tracker.observeMessage("[BOSS] Wither King: We will decide it all, here, now.", 0L);
         assertEquals("Relics", phases.getLast().phase());
         assertTrue(phases.getLast().masterMode());
         assertTrue(phases.getLast().personalBest());
-        clock.addAndGet(1_000L);
-        tracker.observeMessage("[BOSS] Wither King: We will decide it all, here, now.", 0L);
         clock.addAndGet(1_000L);
         tracker.observeMessage("[BOSS] Wither King: Incredible. You did what I couldn't do myself.", 0L);
         clock.addAndGet(1_000L);
@@ -260,7 +262,6 @@ public final class DungeonSplitMessagesTest {
             "The Core entrance is opening!",
             "[BOSS] Necron: You went further than any human before, congratulations.",
             "[BOSS] Necron: All this, for nothing...",
-            "[BOSS] Wither King: You... again?",
             "[BOSS] Wither King: We will decide it all, here, now.",
             "[BOSS] Wither King: Incredible. You did what I couldn't do myself.")) {
             clock.addAndGet(1_000L);
@@ -278,15 +279,15 @@ public final class DungeonSplitMessagesTest {
         config.setTimeLost(false);
         var hiddenLoss = DungeonSplitMessages.summary(tracker, 7, true, config);
         assertEquals("Blood Open: 1.00s (0.05s)", hiddenLoss.get(1).text());
-        assertEquals("Total: 12.00s (0.60s)", hiddenLoss.getLast().text());
+        assertEquals("Total: 11.00s (0.55s)", hiddenLoss.getLast().text());
         tracker.reset();
         assertEquals(1, summaries.size());
         assertEquals(List.of("M7 Run Splits (server time in parentheses)",
             "Blood Open: 1.00s (0.05s) -1.0s", "Blood Clear: 1.00s (0.05s) -1.0s", "Portal Entry: 1.00s (0.05s) -1.0s",
             "Maxor: 1.00s (0.05s) -1.0s", "Storm: 1.00s (0.05s) -1.0s", "Terminals: 1.00s (0.05s) -1.0s",
             "Goldor: 1.00s (0.05s) -1.0s", "Necron: 1.00s (0.05s) -1.0s", "Relics: 1.00s (0.05s) -1.0s",
-            "Wither King: 1.00s (0.05s) -1.0s", "Dragons: 1.00s (0.05s) -1.0s",
-            "Boss Entry: 3.00s (0.15s) -2.9s", "Total: 12.00s (0.60s) -11.4s", "Time Lost: -11.4s"),
+            "Dragons: 1.00s (0.05s) -1.0s",
+            "Boss Entry: 3.00s (0.15s) -2.9s", "Total: 11.00s (0.55s) -10.5s", "Time Lost: -10.5s"),
             summaries.getFirst().stream().map(DungeonSplitMessages.Notice::text).toList());
         var summary = summaries.getFirst();
         String[] names = DungeonSplitTracker.defaultSplitNames();
@@ -297,11 +298,11 @@ public final class DungeonSplitMessagesTest {
             assertEquals(0x858B95, colorAt(row, "(0.05s)"));
             assertEquals(0xFF5555, colorAt(row, "-1.0s"));
         }
-        assertEquals(0x7777FF, colorAt(summary.get(12).component(), "Boss Entry"));
-        assertEquals(0x55FFFF, colorAt(summary.get(13).component(), "Total"));
-        assertEquals(0xFF5555, colorAt(summary.get(13).component(), "-11.4s"));
+        assertEquals(0x7777FF, colorAt(summary.get(11).component(), "Boss Entry"));
+        assertEquals(0x55FFFF, colorAt(summary.get(12).component(), "Total"));
+        assertEquals(0xFF5555, colorAt(summary.get(12).component(), "-10.5s"));
         assertEquals(0xFF5555, colorAt(summary.getLast().component(), "Time Lost"));
-        assertEquals(0xFF5555, colorAt(summary.getLast().component(), "-11.4s"));
+        assertEquals(0xFF5555, colorAt(summary.getLast().component(), "-10.5s"));
     }
 
     @Test public void scoreFirstAndWipeSummariesRespectFormatAndMissingMeasurements() {

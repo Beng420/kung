@@ -156,6 +156,67 @@ public final class DungeonScoreReadinessTest {
         assertTrue(stats.score(null, 40) < 300);
     }
 
+    /** Floor 1 run of 2026-10-03 19:40-19:41: three deaths, tab and sidebar as logged by score-calc. */
+    private static DungeonRunStats floorOneRun(int completedRooms, double clearedPercent, int secrets, double secretsPercent, int crypts) {
+        var stats = new DungeonRunStats();
+        stats.configureForFloor(1, false);
+        stats.observeTabLine(null, "Completed Rooms: " + completedRooms, null);
+        stats.observeTabLine(null, "Opened Rooms: " + completedRooms, null);
+        stats.observeTabLine(null, "Secrets Found: " + secrets, null);
+        stats.observeTabLine(null, "Secrets Found: " + secretsPercent + "%", null);
+        stats.observeTabLine(null, "Crypts: " + crypts, null);
+        stats.observeTabLine(null, "Team Deaths: 3", null);
+        stats.observeMessage(null, "[BOSS] The Watcher: You have proven yourself. You may pass.", 100L);
+        stats.observeScoreboardLine(null, "Cleared: " + clearedPercent + "%");
+        return stats;
+    }
+
+    @Test public void serverCompletedRoomsAreNeverCappedBelowByUnfinishedMapCells() {
+        var map = planWithOpenRooms(2); // the map kept two clear cells open for the whole run
+        // 19:40:57, 17/20: Blood done, boss forecast. Matches the logged score=258 (skill 87, explore 71).
+        assertEquals(258, floorOneRun(17, 85.0, 4, 12.9, 0).score(map, 31));
+        // 19:40:58, 19/20: the old cap (20 - 2 open cells = 18) was below the 19 the server had counted.
+        assertTrue(floorOneRun(19, 95.0, 4, 12.9, 0).score(map, 31) > 258);
+        // 19:41:20, 20/20 at boss entry: reported 263 = 20+72-5 + 54+21 + 100 + 1 instead of the full room credit.
+        // Estimate = 20+80-5 + 60+21 + 100 + 1; Kung assumes a Legendary Spirit pet (first death costs 1, not 2).
+        assertEquals(277, floorOneRun(20, 100.0, 5, 16.1, 1).score(map, 31));
+    }
+
+    @Test public void sidebarScoreIsAuthoritativeOnceEveryRoomIsCredited() {
+        var map = planWithOpenRooms(2);
+        var stats = floorOneRun(20, 100.0, 5, 16.1, 1);
+        // Hypixel: 20+80-6 (no Spirit pet, three deaths cost 2 each) + 60+21 + 100 + 1 = 276.
+        stats.observeScoreboardLine(null, "§aCleared: §f100% §7(276)");
+        assertEquals(276, stats.score(map, 31));
+        stats.observeScoreboardLine(null, "Party > Alice: Cleared: 100% (999)");
+        assertEquals(276, stats.score(map, 31));
+        stats.observeStatLine(null, "Team Score: 280 (S)"); // the final result still wins
+        assertEquals(280, stats.score(map, 31));
+    }
+
+    @Test public void sidebarScoreIsIgnoredWhileBloodOrBossCreditIsStillForecast() {
+        var stats = floorOneRun(19, 95.0, 4, 12.9, 0);
+        stats.observeScoreboardLine(null, "Cleared: 95% (264)"); // counts finished rooms only
+        // Forecast 20/20 rooms: 20+80-5 + 60+17 + 100, not the sidebar's 264.
+        assertEquals(272, stats.score(planWithOpenRooms(0), 31));
+    }
+
+    /** 22 map cells: Start, Blood, {@code open} unfinished ordinary cells and the rest cleared. */
+    private static MatchRenderPlan planWithOpenRooms(int open) {
+        Map<CellKey, String> owners = new HashMap<>();
+        Map<CellKey, RoomType> types = new HashMap<>();
+        Set<CellKey> cleared = new HashSet<>();
+        for (int i = 0; i < 22; i++) {
+            var cell = new CellKey(i % 6, i / 6);
+            owners.put(cell, "room:" + i);
+            types.put(cell, i == 0 ? RoomType.START : i == 1 ? RoomType.BLOOD : RoomType.NORMAL);
+            if (i > 0 && i < 22 - open) cleared.add(cell);
+        }
+        return new MatchRenderPlan(List.of(), List.of(), Set.of(), Set.of(), Map.of(), Map.copyOf(types), Map.copyOf(owners),
+            Map.of(), Set.of(), Map.of(), Set.copyOf(owners.keySet()), Set.copyOf(cleared), Set.of(),
+            Set.of(), null, List.of(), Map.of());
+    }
+
     private static MatchRenderPlan plan(RoomType specialType, boolean specialCleared, boolean specialCompleted) {
         Map<CellKey, String> owners = new HashMap<>();
         Map<CellKey, RoomType> types = new HashMap<>();

@@ -20,6 +20,7 @@ public final class MiscConfig extends ConfigCategory {
     private int frozenBlazeHudX = 6;
     private int frozenBlazeHudY = 210;
     private int frozenBlazeHudScale = 100;
+    private boolean frozenBlazeAlarmEnabled = false;
     private boolean performanceHudEnabled = false;
     private int performanceHudX = 6;
     private int performanceHudY = 120;
@@ -66,6 +67,8 @@ public final class MiscConfig extends ConfigCategory {
     private String[] loadoutKeybinds = defaultLoadoutKeybinds();
     private boolean superpairsHelperEnabled = false;
     private boolean superpairsHelperDebugEnabled = false;
+    /** Full flavor only: the Modrinth jar has no row and no feature reading it. */
+    private boolean skipNpcDialogueEnabled = false;
     private int superpairsHelperX = 6;
     private int superpairsHelperY = 34;
     private int superpairsHelperScale = 75;
@@ -99,6 +102,8 @@ public final class MiscConfig extends ConfigCategory {
     public void setFrozenBlazeHudY(int value) { frozenBlazeHudY = value; save(); }
     public int frozenBlazeHudScale() { return frozenBlazeHudScale; }
     public void setFrozenBlazeHudScale(int value) { frozenBlazeHudScale = Math.clamp(value, 25, 300); save(); }
+    public boolean frozenBlazeAlarmEnabled() { return frozenBlazeAlarmEnabled; }
+    public void setFrozenBlazeAlarmEnabled(boolean value) { frozenBlazeAlarmEnabled = value; save(); }
     public boolean performanceHudEnabled() { return performanceHudEnabled; }
     public void setPerformanceHudEnabled(boolean value) { performanceHudEnabled = value; save(); }
     public int performanceHudX() { return performanceHudX; }
@@ -329,6 +334,8 @@ public final class MiscConfig extends ConfigCategory {
     public void setSuperpairsHelperEnabled(boolean value) { superpairsHelperEnabled = value; save(); }
     public boolean superpairsHelperDebugEnabled() { return superpairsHelperDebugEnabled; }
     public void setSuperpairsHelperDebugEnabled(boolean value) { superpairsHelperDebugEnabled = value; save(); }
+    public boolean skipNpcDialogueEnabled() { return skipNpcDialogueEnabled; }
+    public void setSkipNpcDialogueEnabled(boolean value) { skipNpcDialogueEnabled = value; save(); }
     public int superpairsHelperX() { return superpairsHelperX; }
     public void setSuperpairsHelperX(int value) { superpairsHelperX = value; save(); }
     public int superpairsHelperY() { return superpairsHelperY; }

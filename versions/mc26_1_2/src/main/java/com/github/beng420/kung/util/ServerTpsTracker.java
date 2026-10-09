@@ -15,6 +15,7 @@ public final class ServerTpsTracker {
     private static final long CURRENT_WINDOW_NANOS = 2_000_000_000L;
     private static final int SAMPLE_INTERVALS = 20;
     private static final double MAX_TPS = 20.0;
+    private static final long TICK_NANOS = (long) (1_000_000_000L / MAX_TPS);
 
     private final Deque<Long> tickTimes = new ArrayDeque<>();
     private final ServerTickSequence sequence = new ServerTickSequence();
@@ -25,18 +26,24 @@ public final class ServerTpsTracker {
     private long duplicatePings;
     private long nonTickPings;
     private long largestGapNanos;
+    private volatile long lastArrivalNanos;
 
     private ServerTpsTracker() {
     }
 
     /** Network arrival time keeps local frame stalls out of the TPS sample. */
     public void observePacket(Packet<?> packet) {
+        long now = System.nanoTime();
         if (!(packet instanceof ClientboundPingPacket || packet instanceof ClientboundBundlePacket
-            || packet instanceof ClientboundLoginPacket || packet instanceof ClientboundRespawnPacket)) return;
-        recordPacketAtNanos(packet, System.nanoTime());
+            || packet instanceof ClientboundLoginPacket || packet instanceof ClientboundRespawnPacket)) {
+            lastArrivalNanos = now;
+            return;
+        }
+        recordPacketAtNanos(packet, now);
     }
 
     synchronized void recordPacketAtNanos(Packet<?> packet, long nowNanos) {
+        lastArrivalNanos = nowNanos;
         recordPacketAtNanos(packet, nowNanos, false);
     }
 
@@ -99,7 +106,15 @@ public final class ServerTpsTracker {
     }
 
     public synchronized TpsSnapshot snapshot() {
-        return snapshotAtNanos(System.nanoTime());
+        return deliveredSnapshotAtNanos(System.nanoTime());
+    }
+
+    /**
+     * A silent server and a stalled connection look alike until the next packet. TCP keeps order, so
+     * only silence before the last arrival is proven server lag; a stall after it shows up as ping.
+     */
+    synchronized TpsSnapshot deliveredSnapshotAtNanos(long nowNanos) {
+        return snapshotAtNanos(Math.min(nowNanos, lastArrivalNanos));
     }
 
     synchronized TpsSnapshot snapshotAtNanos(long nowNanos) {
@@ -116,6 +131,9 @@ public final class ServerTpsTracker {
         int intervals = times.length - 1;
         double current = currentTps(times, Math.max(nowNanos, times[intervals]));
         double average = tpsForSpan(times, 0, intervals);
+        // The server does not tick faster than MAX_TPS, so ticks arriving closer together were held
+        // up in the silence before them. Back-date them there: min then shows only gaps no burst filled.
+        for (int i = intervals - 1; i >= 0; i--) times[i] = Math.min(times[i], times[i + 1] - TICK_NANOS);
         double min = current;
         double max = current;
         int sampleSize = Math.min(SAMPLE_INTERVALS, intervals);

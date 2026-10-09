@@ -30,8 +30,9 @@ public final class KungSettingsTest {
 
         assertEquals(List.of("Dungeon", "Garden", "Hunting", "Slayer", "Util", "Debug"),
             categories.stream().map(CategoryEntry::name).toList());
-        // The Modrinth build has no Blood Rush helper.
-        assertEquals(List.of(com.github.beng420.kung.KungBuild.MODRINTH ? 11 : 12, 2, 1, 1, 13, 3),
+        // The Modrinth build has no Blood Rush helper and no Skip NPC Dialogue.
+        boolean modrinth = com.github.beng420.kung.KungBuild.MODRINTH;
+        assertEquals(List.of(modrinth ? 11 : 12, 2, 1, 1, modrinth ? 13 : 14, 3),
             categories.stream().map(category -> category.features().size()).toList());
         for (var category : categories) {
             for (var feature : category.features()) {
@@ -245,9 +246,9 @@ public final class KungSettingsTest {
             assertEquals(developer.get(index).features().stream().map(FeatureEntry::name).toList(),
                 publicCatalog.get(index).features().stream().map(FeatureEntry::name).toList());
         }
-        assertEquals(List.of("Debuff Tracker", "Track", "Spawn Markers", "Marker", "Core Parts", "Aim Point", "Flight Paths", "Path Part", "Line Thickness (%)", "Statue Boxes", "Count Notifications", "Developer Diagnostics"),
+        assertEquals(List.of("Debuff Tracker", "Track", "Dragon Prio", "Mage Split", "Healer Split", "Tank Split", "Prio Unit", "Spawn Markers", "Marker", "Core Parts", "Aim Point", "Flight Paths", "Path Part", "Line Thickness (%)", "Statue Boxes", "Count Notifications", "Developer Diagnostics"),
             feature(developer, "Wither Dragons").settings().stream().map(SettingEntry::label).toList());
-        assertEquals(List.of("Debuff Tracker", "Track", "Spawn Markers", "Marker", "Core Parts", "Flight Paths", "Path Part", "Line Thickness (%)", "Statue Boxes", "Count Notifications"),
+        assertEquals(List.of("Debuff Tracker", "Track", "Dragon Prio", "Mage Split", "Healer Split", "Tank Split", "Prio Unit", "Spawn Markers", "Marker", "Core Parts", "Flight Paths", "Path Part", "Line Thickness (%)", "Statue Boxes", "Count Notifications"),
             feature(publicCatalog, "Wither Dragons").settings().stream().map(SettingEntry::label).toList());
     }
 
@@ -310,7 +311,7 @@ public final class KungSettingsTest {
         KungConfig config = new KungConfig(file);
         var helper = feature(KungSettings.categories(config, () -> { }, true), "Wither Dragons");
         assertFalse(helper.enabled());
-        assertEquals(List.of("Debuff Tracker", "Track", "Spawn Markers", "Marker", "Core Parts", "Aim Point", "Flight Paths", "Path Part", "Line Thickness (%)", "Statue Boxes", "Count Notifications", "Developer Diagnostics"),
+        assertEquals(List.of("Debuff Tracker", "Track", "Dragon Prio", "Mage Split", "Healer Split", "Tank Split", "Prio Unit", "Spawn Markers", "Marker", "Core Parts", "Aim Point", "Flight Paths", "Path Part", "Line Thickness (%)", "Statue Boxes", "Count Notifications", "Developer Diagnostics"),
             helper.settings().stream().map(SettingEntry::label).toList());
         assertFalse(setting(helper, "Developer Diagnostics").booleanSupplier().getAsBoolean());
         // By name, not by index: the list also holds a slider, which has no boolean supplier.

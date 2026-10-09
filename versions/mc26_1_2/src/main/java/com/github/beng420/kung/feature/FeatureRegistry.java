@@ -20,6 +20,7 @@ import com.github.beng420.kung.feature.misc.ChatEmotesFeature;
 import com.github.beng420.kung.feature.misc.CustomSoundsFeature;
 import com.github.beng420.kung.feature.misc.LoadoutsAutoCloseFeature;
 import com.github.beng420.kung.feature.misc.LobbyHopHelperFeature;
+import com.github.beng420.kung.feature.misc.NpcDialogueSkipFeature;
 import com.github.beng420.kung.feature.misc.HitboxesFeature;
 import com.github.beng420.kung.feature.misc.SuperpairsHelperFeature;
 import com.github.beng420.kung.feature.slayer.TarantulaHelperFeature;
@@ -56,6 +57,7 @@ public final class FeatureRegistry {
         register(LobbyHopHelperFeature.INSTANCE);
         register(new HitboxesFeature());
         register(SuperpairsHelperFeature.INSTANCE);
+        if (!KungBuild.MODRINTH) register(NpcDialogueSkipFeature.INSTANCE);
         register(BowDrawIndicatorFeature.INSTANCE);
         register(FrozenBlazeHudFeature.INSTANCE);
         register(PerformanceHudFeature.INSTANCE);

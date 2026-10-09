@@ -129,8 +129,8 @@ public final class ConfigRegressionTest {
     public void invalidValues() {
         KungConfig config = read("""
             {
-              "dungeonMap":{"scale":0,"textScale":900,"unopenedRoomAlpha":900,"roomSyncServerUrl":" localhost/ ",
-                            "roomSyncToken":null,"fiveCryptPartyMessage":null},
+              "dungeonMap":{"scale":0,"textScale":900,"unopenedRoomAlpha":900,"kungServerUrl":" localhost/ ",
+                            "roomSyncToken":"old-shared-secret","fiveCryptPartyMessage":null},
               "bloodRushHelper":{"titleDurationTenths":100},
               "splitsOverlay":{"scale":900},
               "misc":{"loadoutKeybinds":[null,"mouse:4"],"hypixelApiKey":null,
@@ -144,7 +144,7 @@ public final class ConfigRegressionTest {
         equal(200, config.dungeon.textScale(), "map text scale clamped");
         equal(100, config.dungeon.unopenedRoomAlpha(), "alpha clamped");
         equal("http://localhost:8765", config.dungeon.roomSyncServerUrl(), "server normalized");
-        equal("", config.dungeon.roomSyncToken(), "null token normalized");
+        equal("", read("{\"dungeonMap\":{\"kungServerUrl\":\"  \"}}").dungeon.roomSyncServerUrl(), "blank server means none");
         equal(50, config.bloodRush.titleDurationTenths(), "title duration clamped");
         equal(300, config.splits.scale(), "splits scale clamped");
         equal(false, config.misc.directHypixelApiEnabled(), "null API key handled");
@@ -179,8 +179,13 @@ public final class ConfigRegressionTest {
         Path directory = Files.createTempDirectory("kung-config-test-");
         Path file = directory.resolve("kung.json");
         try {
+            // Releases up to 0.5.0 saved a shared Room Sync token; sign-in replaced it.
+            // They also saved the server URL under the old key, often a LAN address.
+            Files.writeString(file, "{\"dungeonMap\":{\"roomSyncToken\":\"old-shared-secret\","
+                + "\"roomSyncServerUrl\":\"http://192.168.178.3:8765\"}}");
             KungConfig config = new KungConfig(file);
             config.load();
+            equal("https://kung.bengcoding.org", config.dungeon.roomSyncServerUrl(), "old saved server URL gives way to the built-in one");
             config.dungeon.setX(77);
             config.dungeon.setScale(250);
             config.dungeon.setTextScale(175);
@@ -236,6 +241,9 @@ public final class ConfigRegressionTest {
             equal(true, roundTrip.misc.chatEmotesEnabled(), "chat emotes switch persists");
             equal("ping.wav, bell.wav", roundTrip.misc.customArrowHitSounds(), "quoted sound paths normalized");
             equal(false, saved.contains("tarantulaHelperDebugMessages"), "duplicate legacy debug key removed");
+            equal(false, saved.contains("roomSyncToken"), "old shared token is dropped on save");
+            equal(false, saved.contains("roomSyncServerUrl"), "old server URL key is dropped on save");
+            equal("https://kung.bengcoding.org", roundTrip.dungeon.roomSyncServerUrl(), "built-in server persists");
             equal(false, saved.contains("onChange"), "save callbacks are not serialized");
             equal(false, saved.contains("explicitConfigFile"), "test path is not serialized");
             config.load();

@@ -15,6 +15,9 @@ public final class HitboxesConfig extends ConfigCategory {
     private boolean dragonOverallBox = true;
     private boolean dragonPartBoxes = true;
     private Map<String, Integer> entities = new LinkedHashMap<>();
+    /** Per entry, in percent; an entry without a value (every one saved before these existed) draws as it always did. */
+    private Map<String, Integer> lineThickness = new LinkedHashMap<>();
+    private Map<String, Integer> boxSize = new LinkedHashMap<>();
 
     public boolean enabled() { return enabled; }
     public void setEnabled(boolean value) { enabled = value; save(); }
@@ -30,7 +33,21 @@ public final class HitboxesConfig extends ConfigCategory {
     }
 
     public void remove(String id) {
+        lineThickness.remove(id);
+        boxSize.remove(id);
         if (entities.remove(id) != null) save();
+    }
+
+    public int lineThickness(String id) { return lineThickness.getOrDefault(id, 100); }
+    public void setLineThickness(String id, int percent) { put(lineThickness, id, Math.clamp(percent, 25, 400)); }
+    public int boxSize(String id) { return boxSize.getOrDefault(id, 100); }
+    public void setBoxSize(String id, int percent) { put(boxSize, id, Math.clamp(percent, 50, 200)); }
+
+    private void put(Map<String, Integer> percents, String id, int percent) {
+        if (entities.containsKey(id)) {
+            percents.put(id, percent);
+            save();
+        }
     }
 
     public void setColor(String id, int color) {
@@ -48,6 +65,16 @@ public final class HitboxesConfig extends ConfigCategory {
             if (key != null && color != null) valid.putIfAbsent(withoutModifiers(key.toString()), color | 0xFF000000);
         });
         entities = valid;
+        lineThickness = percents(lineThickness, 25, 400);
+        boxSize = percents(boxSize, 50, 200);
+    }
+
+    private Map<String, Integer> percents(Map<String, Integer> saved, int min, int max) {
+        Map<String, Integer> valid = new LinkedHashMap<>();
+        if (saved != null) saved.forEach((id, percent) -> {
+            if (percent != null && entities.containsKey(id)) valid.put(id, Math.clamp(percent, min, max));
+        });
+        return valid;
     }
 
     /** "skyblock:healthy_skeleton_master" -> "skyblock:skeleton_master"; other ids stay. */

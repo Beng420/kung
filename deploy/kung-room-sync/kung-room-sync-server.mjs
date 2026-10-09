@@ -2,69 +2,294 @@
 import http from "node:http";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { randomBytes } from "node:crypto";
 
 const port = Number(process.env.PORT || process.env.KUNG_ROOM_SYNC_PORT || 8765);
+// All interfaces for the LAN; 127.0.0.1 once a Cloudflare Tunnel is the only way in.
+const host = process.env.KUNG_ROOM_SYNC_HOST || "0.0.0.0";
 const dataFile = path.resolve(process.env.KUNG_ROOM_DATA_PATH || "room-sync-data/known-rooms.json");
-const token = process.env.KUNG_ROOM_SYNC_TOKEN || "";
 const maxBodyBytes = 512 * 1024;
 const liveRunTtlMillis = Number(process.env.KUNG_LIVE_ROOM_SYNC_TTL_MS || 180_000);
 const liveRuns = new Map();
+const hypixelKey = process.env.HYPIXEL_API_KEY || "";
+const hypixelApiUrl = process.env.KUNG_HYPIXEL_API_URL || "https://api.hypixel.net";
+const profileCacheMillis = Number(process.env.KUNG_PROFILE_CACHE_MS || 120_000);
+// uuid -> { at, result: Promise<{status, body}> }; one Hypixel request per player per cache window.
+const profileCache = new Map();
+
+// Sign-in is the vanilla server-join handshake: we hand out a challenge, the client joins it at
+// Mojang with its own access token, and hasJoined tells us who did. No shared secret in the jar.
+const mojangSessionUrl = process.env.KUNG_MOJANG_SESSION_URL || "https://sessionserver.mojang.com";
+const allowedUuids = new Set(String(process.env.KUNG_ALLOWED_UUIDS || "").split(",")
+  .map((uuid) => uuid.trim().replace(/-/g, "").toLowerCase())
+  .filter(Boolean));
+const challengeTtlMillis = Number(process.env.KUNG_CHALLENGE_TTL_MS || 60_000);
+const sessionTtlMillis = Number(process.env.KUNG_SESSION_TTL_MS || 43_200_000);
+// challenge -> { expiresAt }, token -> { uuid, name, expiresAt }; memory only, a restart signs everyone out.
+const challenges = new Map();
+const sessions = new Map();
+
+// Hard caps: a full map answers 503 instead of letting junk grow the heap.
+const maxLiveRuns = 1000;
+const maxChallenges = 10_000;
+const maxSessions = 10_000;
+const maxTrackedIps = 10_000;
 
 const server = http.createServer(async (request, response) => {
   try {
     if (request.method === "GET" && request.url === "/health") {
       return json(response, 200, { ok: true });
     }
-    if (request.method === "GET" && request.url === "/rooms") {
-      if (!authorized(request)) {
-        return json(response, 401, { error: "unauthorized" });
+    if (request.method === "POST" && (request.url === "/auth/challenge" || request.url === "/auth/login")) {
+      if (!withinLimit(authRequests, authLimit, request)) {
+        return json(response, 429, { error: "too many requests" });
       }
+      if (request.url === "/auth/challenge") {
+        return json(response, 200, issueChallenge());
+      }
+      const [status, result] = await login(await readJson(request));
+      return json(response, status, result);
+    }
+    const session = sessionFor(request);
+    if (!session) {
+      return json(response, 401, { error: "unauthorized" });
+    }
+    if (request.method === "GET" && request.url === "/rooms") {
       return json(response, 200, await readDatabase());
     }
     if (request.method === "POST" && request.url === "/rooms/report") {
-      if (!authorized(request)) {
-        return json(response, 401, { error: "unauthorized" });
-      }
-      const report = JSON.parse(await readBody(request));
+      const report = await readJson(request);
       const result = await mergeRoomReport(report);
       return json(response, 200, result);
     }
     if (request.method === "POST" && request.url === "/runs/live/report") {
-      if (!authorized(request)) {
-        return json(response, 401, { error: "unauthorized" });
-      }
-      const report = JSON.parse(await readBody(request));
-      const result = mergeLiveRunReport(report);
+      // The session says who reports; report.player is ignored so nobody can post as someone else.
+      const report = await readJson(request);
+      const result = mergeLiveRunReport(report, session.name);
       return json(response, 200, result);
     }
     if (request.method === "GET" && request.url.startsWith("/runs/live?")) {
-      if (!authorized(request)) {
-        return json(response, 401, { error: "unauthorized" });
-      }
       const url = new URL(request.url, "http://localhost");
-      return json(response, 200, liveRunSnapshot(
-        String(url.searchParams.get("runKey") || ""),
-        String(url.searchParams.get("player") || "")
-      ));
+      return json(response, 200, liveRunSnapshot(String(url.searchParams.get("runKey") || ""), session.name));
+    }
+    if (request.method === "GET" && request.url.startsWith("/hypixel/profiles?")) {
+      const uuid = String(new URL(request.url, "http://localhost").searchParams.get("uuid") || "")
+        .replace(/-/g, "").toLowerCase();
+      const validUuid = /^[0-9a-f]{32}$/.test(uuid);
+      // One line per lookup for journalctl -f; only a checked uuid, never a token, key or body.
+      let outcome = "error";
+      try {
+        if (!withinLimit(profileRequests, profileLimit, request)) {
+          outcome = "rate limited 429";
+          return json(response, 429, { error: "too many requests" });
+        }
+        if (!validUuid) {
+          outcome = "bad uuid 400";
+          return json(response, 400, { error: "uuid must be 32 hex characters" });
+        }
+        if (!hypixelKey) {
+          outcome = "no key 503";
+          return json(response, 503, { error: "HYPIXEL_API_KEY is not set on the server" });
+        }
+        const result = await cachedProfiles(uuid);
+        outcome = `${result.hit ? "cache hit" : "hypixel"} ${result.status}`;
+        response.writeHead(result.status, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
+        return response.end(result.body);
+      } finally {
+        console.log(`profiles ${validUuid ? uuid : "?"} for ${session.name}: ${outcome}`);
+      }
     }
     return json(response, 404, { error: "not found" });
   } catch (error) {
-    console.error(error);
-    return json(response, 500, { error: error.message || "server error" });
+    // Client errors carry a status and are not logged; nothing here may log a body, token or challenge.
+    if (!error.status) {
+      console.error(error);
+    }
+    return json(response, error.status || 500, { error: error.message || "server error" });
   }
 });
 
-server.listen(port, () => {
-  console.log(`Kung room sync server listening on :${port}`);
+server.listen(port, host, () => {
+  console.log(`Kung room sync server listening on ${host}:${server.address().port}`);
   console.log(`Data file: ${dataFile}`);
-  console.log(token ? "Auth: bearer token required" : "Auth: disabled");
+  console.log(allowedUuids.size ? `Auth: Mojang sign-in, ${allowedUuids.size} on the allowlist` : "Auth: Mojang sign-in, any player");
+  console.log(hypixelKey ? `Hypixel proxy: on, cache ${profileCacheMillis} ms` : "Hypixel proxy: off (no HYPIXEL_API_KEY)");
 });
 
-function authorized(request) {
-  if (!token) {
-    return true;
+// Per client IP, so one person cannot burn the shared Hypixel key or spam Mojang. Behind Cloudflare
+// Tunnel every request comes from cloudflared, the real address is in CF-Connecting-IP.
+const profileLimit = Number(process.env.KUNG_PROFILE_LIMIT_PER_5_MIN || 30);
+const profileRequests = new Map();
+const authLimit = Number(process.env.KUNG_AUTH_LIMIT_PER_5_MIN || 20);
+const authRequests = new Map();
+
+function withinLimit(requests, limit, request) {
+  const now = Date.now();
+  const ip = String(request.headers["cf-connecting-ip"] || request.socket.remoteAddress || "?");
+  for (const [key, window] of requests) {
+    if (now - window.start > 300_000) {
+      requests.delete(key);
+    }
   }
-  return request.headers.authorization === `Bearer ${token}`;
+  if (!requests.has(ip)) {
+    roomFor(requests, maxTrackedIps);
+  }
+  const window = requests.get(ip) || { start: now, count: 0 };
+  window.count += 1;
+  requests.set(ip, window);
+  return window.count <= limit;
+}
+
+function issueChallenge() {
+  pruneExpired(challenges);
+  roomFor(challenges, maxChallenges);
+  const challenge = randomBytes(16).toString("hex");
+  challenges.set(challenge, { expiresAt: Date.now() + challengeTtlMillis });
+  return { challenge, expiresInMs: challengeTtlMillis };
+}
+
+async function login(body) {
+  const challenge = String(body?.challenge || "");
+  const name = String(body?.name || "");
+  const entry = challenges.get(challenge);
+  // Single use even when this attempt fails, so a leaked challenge is worth one try at most.
+  challenges.delete(challenge);
+  if (!entry || entry.expiresAt <= Date.now() || !/^[A-Za-z0-9_]{1,16}$/.test(name)) {
+    return [401, { error: "not verified" }];
+  }
+  let profile;
+  try {
+    const verified = await fetch(`${mojangSessionUrl}/session/minecraft/hasJoined?username=${encodeURIComponent(name)}`
+      + `&serverId=${encodeURIComponent(challenge)}`, { signal: AbortSignal.timeout(10_000) });
+    if (verified.status !== 200) {
+      return [401, { error: "not verified" }];
+    }
+    profile = await verified.json();
+  } catch {
+    return [502, { error: "Mojang session server unreachable" }];
+  }
+  const uuid = String(profile?.id || "").replace(/-/g, "").toLowerCase();
+  if (!/^[0-9a-f]{32}$/.test(uuid)) {
+    return [401, { error: "not verified" }];
+  }
+  if (allowedUuids.size > 0 && !allowedUuids.has(uuid)) {
+    return [403, { error: "not allowed" }];
+  }
+  pruneExpired(sessions);
+  roomFor(sessions, maxSessions);
+  const token = randomBytes(32).toString("hex");
+  const session = { uuid, name: String(profile.name || name), expiresAt: Date.now() + sessionTtlMillis };
+  sessions.set(token, session);
+  console.log(`Signed in ${session.name} (${uuid})`);
+  return [200, { token, expiresAt: session.expiresAt, uuid, name: session.name }];
+}
+
+function sessionFor(request) {
+  const token = /^Bearer ([0-9a-f]{64})$/.exec(request.headers.authorization || "")?.[1];
+  const session = token && sessions.get(token);
+  return session && session.expiresAt > Date.now() ? session : null;
+}
+
+function pruneExpired(map) {
+  const now = Date.now();
+  for (const [key, entry] of map) {
+    if (entry.expiresAt <= now) {
+      map.delete(key);
+    }
+  }
+}
+
+function roomFor(map, max) {
+  if (map.size >= max) {
+    throw httpError(503, "server busy");
+  }
+}
+
+function httpError(status, message) {
+  return Object.assign(new Error(message), { status });
+}
+
+function cachedProfiles(uuid) {
+  const now = Date.now();
+  for (const [key, entry] of profileCache) {
+    if (now - entry.at > profileCacheMillis) {
+      profileCache.delete(key);
+    }
+  }
+  let entry = profileCache.get(uuid);
+  const hit = Boolean(entry);
+  if (!entry) {
+    entry = { at: now, result: fetchProfiles(uuid) };
+    profileCache.set(uuid, entry);
+    // Only successes are cached; a 429 or network error must not stick for the whole window.
+    entry.result.then(
+      (result) => result.status === 200 || profileCache.delete(uuid),
+      () => profileCache.delete(uuid),
+    );
+  }
+  return entry.result.then((result) => ({ ...result, hit }));
+}
+
+async function fetchProfiles(uuid) {
+  const upstream = await fetch(`${hypixelApiUrl}/v2/skyblock/profiles?uuid=${uuid}`, {
+    headers: { "API-Key": hypixelKey, "User-Agent": "Kung-Server" },
+    signal: AbortSignal.timeout(10_000),
+  });
+  const body = await upstream.text();
+  if (upstream.status !== 200) {
+    return { status: upstream.status, body };
+  }
+  return { status: 200, body: `${JSON.stringify(stripProfiles(JSON.parse(body), uuid))}\n` };
+}
+
+// Exactly what HypixelSkyBlockProfileClient.parseProfiles reads, and only the asking player's member:
+// far less traffic, and coop members' data never leaves the server. true copies the value as is;
+// an object keeps those keys, and only when the value is an object (the Java skips non-objects too).
+const floorFields = { best_score: true, milestone_completions: true, fastest_time_s_plus: true, fastest_time_s: true };
+const memberFields = {
+  dungeons: {
+    dungeon_types: { catacombs: { experience: true, ...floorFields }, master_catacombs: floorFields },
+    player_classes: Object.fromEntries(["healer", "mage", "berserk", "archer", "tank"]
+      .map((id) => [id, { experience: true }])),
+    selected_dungeon_class: true,
+    daily_runs: { current_day_stamp: true, completed_runs_count: true },
+    dungeon_journal: { unlocked_journals: true },
+    secrets: true,
+  },
+  player_data: {
+    perks: { toxophilite: true, unbridled_rage: true, heart_of_gold: true, cold_efficiency: true, diamond_in_the_rough: true },
+  },
+  attributes: { stacks: { catacombs_explorer: true } },
+};
+
+function stripProfiles(root, uuid) {
+  const profileFields = { profile_id: true, cute_name: true, selected: true, members: { [uuid]: memberFields } };
+  return {
+    success: root?.success,
+    // null, missing and non-arrays all mean "no profiles" to the Java; null elements are skipped there.
+    profiles: Array.isArray(root?.profiles)
+      ? root.profiles.map((profile) => isObject(profile) ? pick(profile, profileFields) : null)
+      : null,
+  };
+}
+
+function pick(value, fields) {
+  const result = {};
+  for (const [key, field] of Object.entries(fields)) {
+    if (!Object.hasOwn(value, key)) {
+      continue;
+    }
+    if (field === true) {
+      result[key] = value[key];
+    } else if (isObject(value[key])) {
+      result[key] = pick(value[key], field);
+    }
+  }
+  return result;
+}
+
+function isObject(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 function json(response, status, value) {
@@ -81,11 +306,21 @@ async function readBody(request) {
   for await (const chunk of request) {
     bytes += chunk.length;
     if (bytes > maxBodyBytes) {
-      throw new Error("request body too large");
+      throw httpError(413, "request body too large");
     }
     chunks.push(chunk);
   }
   return Buffer.concat(chunks).toString("utf8");
+}
+
+async function readJson(request) {
+  const text = await readBody(request);
+  try {
+    return JSON.parse(text);
+  } catch {
+    // Not the parser's own message: it quotes the body, and a login body carries a challenge.
+    throw httpError(400, "invalid JSON");
+  }
 }
 
 async function readDatabase() {
@@ -137,14 +372,15 @@ async function mergeRoomReport(report) {
   };
 }
 
-function mergeLiveRunReport(report) {
+function mergeLiveRunReport(report, playerName) {
   validateLiveRunReport(report);
   pruneLiveRuns();
 
   const runKey = sourceKey(report.runKey, 120);
-  const player = sourceKey(report.player, 32);
+  const player = sourceKey(playerName, 32);
   let run = liveRuns.get(runKey);
   if (!run) {
+    roomFor(liveRuns, maxLiveRuns);
     run = { runKey, updatedAt: 0, clients: new Map() };
     liveRuns.set(runKey, run);
   }
@@ -179,10 +415,10 @@ function mergeLiveRunReport(report) {
   return { ok: true, runKey, player, rooms: rooms.length, doors: doors.length, players: players.length };
 }
 
-function liveRunSnapshot(runKeyValue, playerValue) {
+function liveRunSnapshot(runKeyValue, requesterName) {
   pruneLiveRuns();
   const runKey = sourceKey(runKeyValue, 120);
-  const requester = sourceKey(playerValue, 32).toLowerCase();
+  const requester = sourceKey(requesterName, 32).toLowerCase();
   const run = liveRuns.get(runKey);
   if (!run) {
     return { schema: 1, runKey, clients: [] };
@@ -209,9 +445,6 @@ function validateLiveRunReport(report) {
   }
   if (!report.runKey || typeof report.runKey !== "string") {
     throw new Error("live report needs a runKey");
-  }
-  if (!report.player || typeof report.player !== "string") {
-    throw new Error("live report needs a player");
   }
   if (report.rooms !== undefined && !Array.isArray(report.rooms)) {
     throw new Error("live report rooms must be an array");
@@ -283,7 +516,8 @@ function livePlayerFromReport(player) {
   }
   return {
     name,
-    secretsFound: boundedInteger(player.secretsFound, 0, 250),
+    secretsFound: player.secretsFound == null ? -1 : boundedInteger(player.secretsFound, -1, 250),
+    secretsSource: ["API_DELTA", "PERSONAL"].includes(player.secretsSource) ? player.secretsSource : "",
     deaths: boundedInteger(player.deaths, 0, 99),
   };
 }

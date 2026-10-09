@@ -1,9 +1,12 @@
 package com.github.beng420.kung.mixin;
 
 import com.github.beng420.kung.feature.dungeon.DungeonServerTickEvents;
+import com.github.beng420.kung.feature.misc.FrozenBlazeHudFeature;
+import com.github.beng420.kung.feature.misc.NpcDialogueTrace;
 import com.github.beng420.kung.util.ServerTickSequence;
 import com.github.beng420.kung.util.ServerTickPacketContext;
 import net.minecraft.client.multiplayer.ClientCommonPacketListenerImpl;
+import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.common.ClientboundPingPacket;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
@@ -23,5 +26,13 @@ public abstract class ClientCommonPacketListenerMixin {
         if (kung$serverTicks.accept(packet.getId(), ServerTickPacketContext.isApplyingBundle())) {
             DungeonServerTickEvents.post();
         }
+    }
+
+    // Log-only. Typed commands, chat-click commands (sendUnattendedCommand skips Fabric's COMMAND event)
+    // and custom dialogue answers all leave through here.
+    @Inject(method = "send", at = @At("HEAD"))
+    private void kung$traceSent(Packet<?> packet, CallbackInfo callbackInfo) {
+        NpcDialogueTrace.sent(packet);
+        FrozenBlazeHudFeature.INSTANCE.observeSent(packet);
     }
 }

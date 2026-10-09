@@ -745,6 +745,10 @@ public final class DungeonStateTracker {
         if (!isInDungeonArea()) {
             return;
         }
+        if (splitTracker.inNecronEndWindow()) {
+            KungDebugRecorder.event("necron-end", "death split=" + splitTracker.currentSplitName() + " " + entity.getType()
+                + " name=\"" + entity.getName().getString() + "\" position=" + entity.position());
+        }
         runStats.observeEntityDeath(Minecraft.getInstance(), entity);
     }
 
@@ -835,8 +839,20 @@ public final class DungeonStateTracker {
             var floor = HypixelDungeonFloor.fromLine(text);
             splitTracker.configureKnownFloor(floor.floor(), floor.masterMode());
         }
+        if (!overlay) traceNecronEnd(text);
         splitTracker.observeMessage(text, dungeonTick);
         observeRunFinishedSignal(text);
+    }
+
+    /** Hypixel changed the Necron-death dialogue: until the first dragon, keep every line that could mark it. */
+    private void traceNecronEnd(String text) {
+        if (!splitTracker.inNecronEndWindow()) return;
+        String clean = DungeonLifecycleSignals.clean(text);
+        String lower = clean.toLowerCase(java.util.Locale.ROOT);
+        if (lower.contains("necron") || lower.contains("relic")
+            || clean.startsWith("[BOSS] Wither King:") || clean.startsWith("[BOSS] The Wither King:")) {
+            KungDebugRecorder.event("necron-end", "chat split=" + splitTracker.currentSplitName() + " text=\"" + clean + "\"");
+        }
     }
 
     public LearnRoomTypeResult learnCurrentRoomType(Minecraft client, RoomType roomType) {

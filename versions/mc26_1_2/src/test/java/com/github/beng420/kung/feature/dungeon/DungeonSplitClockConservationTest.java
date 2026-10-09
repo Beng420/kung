@@ -120,8 +120,7 @@ public final class DungeonSplitClockConservationTest {
             case "Terminals" -> "The Core entrance is opening!";
             case "Goldor" -> "[BOSS] Necron: You went further than any human before, congratulations.";
             case "Necron" -> "[BOSS] Necron: All this, for nothing...";
-            case "Relics" -> "[BOSS] Wither King: You... again?";
-            case "Wither King" -> "[BOSS] Wither King: We will decide it all, here, now.";
+            case "Relics" -> "[BOSS] Wither King: We will decide it all, here, now.";
             case "Dragons" -> "[BOSS] Wither King: Incredible. You did what I couldn't do myself.";
             case "Completion wait" -> "Defeated Maxor, Storm, Goldor, and Necron in 07m 52s";
             default -> throw new AssertionError(phase);

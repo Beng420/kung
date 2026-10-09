@@ -18,6 +18,8 @@ import net.minecraft.sounds.SoundEvents;
 public final class LobbyHopHelperFeature extends ConfigurableFeature<MiscConfig> {
     public static final LobbyHopHelperFeature INSTANCE = new LobbyHopHelperFeature();
     private static final int MAX_HISTORY_SIZE = 128;
+    /** Hypixel recycles server ids, so a lobby left longer ago than this is treated as unknown. */
+    private static final long LOBBY_MEMORY_MILLIS = Duration.ofHours(2).toMillis();
     private static final DateTimeFormatter CLOCK = DateTimeFormatter.ofPattern("HH:mm:ss");
 
     private static final LinkedHashMap<String, Visit> visits = new LinkedHashMap<>();
@@ -79,6 +81,9 @@ public final class LobbyHopHelperFeature extends ConfigurableFeature<MiscConfig>
     static Visit recordVisit(String lobbyId, long nowMillis) {
         if (lobbyId.isBlank()) return null;
         boolean arrived = !lobbyId.equals(currentLobbyId);
+        if (arrived) {
+            visits.values().removeIf(visit -> nowMillis - visit.lastSeenMillis() > LOBBY_MEMORY_MILLIS);
+        }
         // Refresh while present so a long stay does not count toward time spent away.
         Visit previous = visits.get(lobbyId);
         visits.put(lobbyId, new Visit(arrived || previous == null ? nowMillis : previous.arrivedMillis(), nowMillis));

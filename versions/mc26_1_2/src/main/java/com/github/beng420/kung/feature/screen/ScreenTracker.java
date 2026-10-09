@@ -4,6 +4,7 @@ import com.github.beng420.kung.compat.McCompat;
 import com.github.beng420.kung.config.KungConfig;
 
 import com.github.beng420.kung.feature.misc.LoadoutsAutoCloseFeature;
+import com.github.beng420.kung.feature.misc.NpcDialogueTrace;
 import com.github.beng420.kung.message.KungMessages;
 import com.github.beng420.kung.util.KungDebugRecorder;
 import java.util.Locale;
@@ -44,6 +45,7 @@ public final class ScreenTracker {
     }
 
     private static void tick(Minecraft client) {
+        NpcDialogueTrace.screen(McCompat.screen(client));
         OpenScreen nextScreen = openScreen(McCompat.screen(client));
         String nextKey = nextScreen == null ? "" : nextScreen.key();
         if (nextKey.equals(lastScreenKey)) {

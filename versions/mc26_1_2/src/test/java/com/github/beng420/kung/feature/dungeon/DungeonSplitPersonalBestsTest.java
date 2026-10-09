@@ -105,7 +105,7 @@ public final class DungeonSplitPersonalBestsTest {
     @Test public void liveStormUsesOnlyTerminalsGoldorNecronAndTheAdditionalMasterSevenPhases() {
         config.recordPersonalBests(7, false, Map.of("Terminals", 20_000L, "Goldor", 5_000L, "Necron", 10_000L));
         config.recordPersonalBests(7, true, Map.of("Terminals", 30_000L, "Goldor", 6_000L, "Necron", 15_000L,
-            "Relics", 3_000L, "Wither King", 1_000L, "Dragons", 20_000L));
+            "Relics", 3_000L, "Wither King", 1_000L, "Dragons", 20_000L)); // Stale "Wither King" key is ignored.
         config.setPredictionMode(SplitsConfig.PredictionMode.LIVE);
         tracker.startRun(0L, 7, false);
         event(150_000L, "[BOSS] Storm: Pathetic Maxor, just like expected.");
@@ -114,7 +114,7 @@ public final class DungeonSplitPersonalBestsTest {
         clock.set(165_000L);
         assertEquals(200_000L, tracker.predictedFinishMillis());
         tracker.configureKnownFloor(7, true);
-        assertEquals(240_000L, tracker.predictedFinishMillis());
+        assertEquals(239_000L, tracker.predictedFinishMillis());
         config.setPredictionMode(SplitsConfig.PredictionMode.PHASE_END);
         assertEquals(-1L, tracker.predictedFinishMillis()); // No Storm PB for the boundary-based mode.
     }
@@ -157,9 +157,9 @@ public final class DungeonSplitPersonalBestsTest {
         tracker.configureKnownFloor(7, false);
         assertEquals(155_000L, tracker.predictedFinishMillis());
         tracker.configureKnownFloor(7, true);
-        assertEquals(315_000L, tracker.predictedFinishMillis());
+        assertEquals(285_000L, tracker.predictedFinishMillis());
         tracker.configureForFloor(7, false);
-        assertEquals(315_000L, tracker.predictedFinishMillis());
+        assertEquals(285_000L, tracker.predictedFinishMillis());
         tracker.stopRun();
         tracker.startRun(0L, 6, false);
         assertEquals(60_000L, tracker.predictedFinishMillis());
@@ -282,9 +282,9 @@ public final class DungeonSplitPersonalBestsTest {
         clock.set(120_000L);
         assertEquals(115_000L, tracker.predictedFinishMillis());
         tracker.configureKnownFloor(7, true);
-        assertEquals(175_000L, tracker.predictedFinishMillis());
-        event(125_000L, "[BOSS] Wither King: You... again?");
-        assertEquals(165_000L, tracker.predictedFinishMillis());
+        assertEquals(155_000L, tracker.predictedFinishMillis());
+        event(125_000L, "[BOSS] Wither King: You... again?"); // Dialogue inside Relics, not a boundary.
+        assertEquals(155_000L, tracker.predictedFinishMillis());
         event(135_000L, "[BOSS] Wither King: We will decide it all, here, now.");
         assertEquals(155_000L, tracker.predictedFinishMillis());
         event(160_000L, "[BOSS] Wither King: Incredible. You did what I couldn't do myself.");

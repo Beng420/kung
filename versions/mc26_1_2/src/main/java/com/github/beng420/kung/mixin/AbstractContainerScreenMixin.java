@@ -51,9 +51,8 @@ public abstract class AbstractContainerScreenMixin {
         boolean doubleClick,
         CallbackInfoReturnable<Boolean> callbackInfo
     ) {
-        var screen = (AbstractContainerScreen<?>) (Object) this;
-        if (LoadoutsAutoCloseFeature.handleLoadoutMouseHotkey(screen, event)
-            || SackTrackerFeature.handleMouse(screen, hoveredSlot, event)) {
+        // Loadout mouse binds are claimed earlier, in MouseHandlerMixin.
+        if (SackTrackerFeature.handleMouse((AbstractContainerScreen<?>) (Object) this, hoveredSlot, event)) {
             callbackInfo.setReturnValue(true);
         }
     }

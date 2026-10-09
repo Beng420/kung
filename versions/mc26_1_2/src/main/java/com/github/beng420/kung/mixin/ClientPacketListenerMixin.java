@@ -3,6 +3,7 @@ package com.github.beng420.kung.mixin;
 import com.github.beng420.kung.feature.dungeon.DungeonEventRouter;
 import com.github.beng420.kung.feature.dungeon.DungeonDebuffFeature;
 import com.github.beng420.kung.feature.dungeon.M7DragonFeature;
+import com.github.beng420.kung.feature.misc.FrozenBlazeHudFeature;
 import com.github.beng420.kung.feature.misc.PerformanceHudFeature;
 import net.minecraft.network.protocol.ping.ClientboundPongResponsePacket;
 import com.github.beng420.kung.feature.garden.FeastOverlayFeature;
@@ -47,6 +48,7 @@ public abstract class ClientPacketListenerMixin {
     private void kung$onSound(ClientboundSoundPacket packet, CallbackInfo callbackInfo) {
         CustomSoundsFeature.observeSoundEvent(packet.getSound().value());
         DungeonDebuffFeature.INSTANCE.observeSound(packet);
+        FrozenBlazeHudFeature.INSTANCE.observeSound(packet);
     }
 
     @Inject(method = "handleSoundEntityEvent", at = @At("TAIL"))
@@ -78,8 +80,9 @@ public abstract class ClientPacketListenerMixin {
     }
 
     @Inject(method = "handleParticleEvent", at = @At("TAIL"))
-    private void kung$onDragonParticles(ClientboundLevelParticlesPacket packet, CallbackInfo callbackInfo) {
+    private void kung$onParticles(ClientboundLevelParticlesPacket packet, CallbackInfo callbackInfo) {
         M7DragonFeature.INSTANCE.observeParticles(packet);
+        FrozenBlazeHudFeature.INSTANCE.observeParticles(packet);
     }
 
     @Inject(method = "handleContainerSetSlot", at = @At("TAIL"))

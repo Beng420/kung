@@ -74,6 +74,27 @@ public final class CatacombsCalculatorTest {
     }
 
     @Test
+    public void serverStrippedProfilesParseExactlyLikeTheFullHypixelResponse() {
+        var full = parse(fixture());
+        var stripped = parse(fixture("salty-whale-profiles-stripped.json"));
+        assertTrue(full.error(), full.success());
+        assertEquals(2, stripped.player().profiles().size());
+        for (int i = 0; i < 2; i++) {
+            ProfileData a = full.player().profiles().get(i);
+            ProfileData b = stripped.player().profiles().get(i);
+            assertEquals(a.cataXp(), b.cataXp(), 0.0);
+            assertEquals(a.classXp(), b.classXp());
+            assertEquals(a.classPerks(), b.classPerks());
+            assertEquals(a.stats(), b.stats());
+        }
+        assertEquals(full, stripped);
+        ProfileData a = full.player().selectedProfile();
+        ProfileData b = stripped.player().selectedProfile();
+        assertEquals(CatacombsAverageCalculator.calculateBreakdown(a.classXp(), selectedXp(a.classPerks(), 1)),
+            CatacombsAverageCalculator.calculateBreakdown(b.classXp(), selectedXp(b.classPerks(), 1)));
+    }
+
+    @Test
     public void derpyReducesRealProfileTo1026RunsAndIncludesPassiveClassXp() {
         ProfileData profile = parse(fixture()).player().selectedProfile();
         var xp = selectedXp(profile.classPerks(), 1.5);
@@ -238,7 +259,11 @@ public final class CatacombsCalculatorTest {
     }
 
     private static JsonObject fixture() {
-        try (var stream = CatacombsCalculatorTest.class.getResourceAsStream("/catacombs/salty-whale-profiles.json");
+        return fixture("salty-whale-profiles.json");
+    }
+
+    private static JsonObject fixture(String name) {
+        try (var stream = CatacombsCalculatorTest.class.getResourceAsStream("/catacombs/" + name);
              var reader = new InputStreamReader(stream, StandardCharsets.UTF_8)) {
             return JsonParser.parseReader(reader).getAsJsonObject();
         } catch (Exception exception) {

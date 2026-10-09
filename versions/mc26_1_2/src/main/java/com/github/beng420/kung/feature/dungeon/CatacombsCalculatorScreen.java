@@ -623,16 +623,24 @@ public final class CatacombsCalculatorScreen extends Screen {
                 }
                 if (!result.success()) {
                     loadState = LoadState.ERROR;
-                    statusMessage = result.error();
+                    statusMessage = HypixelSkyBlockProfileClient.lastError(result.error());
                     return;
                 }
                 loadedPlayer = result.player();
                 selectedProfileIndex = Math.max(0, loadedPlayer.selectedIndex());
                 applyProfilePerks();
                 loadState = LoadState.LOADED;
-                statusMessage = "Loaded " + loadedPlayer.name() + " on " + selectedProfileName() + "."
+                statusMessage = (result.local()
+                    ? "Loaded " + selectedProfileName() + " from local data (updated " + age(result.localUpdatedMillis()) + ")."
+                    : "Loaded " + loadedPlayer.name() + " on " + selectedProfileName() + ".")
                     + (loadedPlayer.selectedProfile().stats().available() ? "" : " No Dungeon stats on this profile.");
             }));
+    }
+
+    private static String age(long updatedMillis) {
+        long minutes = Math.max(0L, System.currentTimeMillis() - updatedMillis) / 60_000L;
+        return minutes < 1 ? "just now" : minutes < 60 ? minutes + "m ago"
+            : minutes < 2_880 ? minutes / 60 + "h ago" : minutes / 1_440 + "d ago";
     }
 
     private void applyProfilePerks() {

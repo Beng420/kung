@@ -58,6 +58,9 @@ public final class KungDebugRecorderTest {
         for (int event = 0; event < 2600; event++) KungDebugRecorder.event("test-traffic", "event=" + event);
         KungDebugRecorder.event("dungeon-splits", "run-finished fixture-end");
         String dump = KungDebugRecorder.dump();
+        // 1000-line ring: the last 999 traffic lines plus fixture-end, the oldest traffic evicted.
+        assertFalse(dump.contains("event=1600\n"));
+        assertTrue(dump.contains("event=1601\n"));
         assertTrue(dump.contains("fixture-start"));
         assertEquals(dump.indexOf("fixture-end"), dump.lastIndexOf("fixture-end"));
         assertTrue(dump.indexOf("fixture-start") < dump.indexOf("fixture-end"));
@@ -75,6 +78,20 @@ public final class KungDebugRecorderTest {
         assertFalse(dump.contains("boundary-id=0;"));
         assertTrue(dump.contains("boundary-id=1;"));
         assertTrue(dump.contains("boundary-id=128;"));
+    }
+
+    @Test
+    public void necronEndLinesAreNeverThrottledAndSurviveGeneralTraffic() {
+        KungDebugRecorder.clear();
+        for (int line = 0; line < 200; line++) {
+            KungDebugRecorder.event("necron-end", "chat split=Relics text=\"Relic line " + line + "\"");
+        }
+        for (int event = 0; event < 2600; event++) KungDebugRecorder.event("test-traffic", "event=" + event);
+        String dump = KungDebugRecorder.dump();
+        assertTrue(dump.contains("necron-end seen=200 kept=200"));
+        // The reserved ring keeps the newest 128 although the general ring has long since rolled over.
+        assertEquals(128L, dump.lines().filter(line -> line.contains("[necron-end]")).count());
+        assertTrue(dump.contains("Relic line 199\""));
     }
 
     @Test

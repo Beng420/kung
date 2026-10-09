@@ -165,8 +165,10 @@ public enum KungUpdater {
                     result = checkForUpdates();
                 } catch (Exception exception) {
                     KungMod.LOGGER.warn("Kung update check failed.", exception);
-                    KungDebugRecorder.event("update-check", "failed retainingAvailable=" + (previous.status() == Status.UPDATE_AVAILABLE));
-                    result = previous.status() == Status.UPDATE_AVAILABLE ? previous : new State(
+                    // A failed refresh (e.g. GitHub's rate limit) keeps the last answer; only a first check reports FAILED.
+                    KungDebugRecorder.event("update-check", "failed reason=" + exception.getMessage()
+                        + " retaining=" + previous.status());
+                    result = previous.status() != Status.CHECKING ? previous : new State(
                         Status.FAILED, currentVersion(), "", "Update check failed", null);
                 }
                 boolean applied = state.compareAndSet(previous, result);

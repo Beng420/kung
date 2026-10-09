@@ -15,7 +15,8 @@ record DungeonWorkload(boolean rooms, boolean mapData, boolean players, boolean 
         boolean players = rooms || config.splits.enabled() || dungeon.playerTrackingEnabled()
             || dungeon.deathMessagesEnabled() || dungeon.fiveCryptPartyMessageEnabled()
             || dungeon.extraScoreMessagesEnabled()
-            || dungeon.cryptProgressPartyMessageEnabled() || dungeon.fiveCryptTitleEnabled();
+            || dungeon.cryptProgressPartyMessageEnabled() || dungeon.fiveCryptTitleEnabled()
+            || dungeon.witherDragonsEnabled() && dungeon.dragonPrioEnabled();
         return new DungeonWorkload(rooms, rooms, players, sync);
     }
 }

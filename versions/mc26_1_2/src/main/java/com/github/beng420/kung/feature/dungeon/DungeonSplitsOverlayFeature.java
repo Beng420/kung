@@ -227,7 +227,7 @@ public final class DungeonSplitsOverlayFeature extends ConfigurableFeature<Split
             case "Blood Clear" -> 0xFF55FFFF;
             case "Portal Entry" -> 0xFFFF55FF;
             case "Maxor", "Relics" -> 0xFFBB66FF;
-            case "Storm", "Wither King" -> 0xFF55BBBB;
+            case "Storm" -> 0xFF55BBBB;
             case "Terminals", "Dragons" -> 0xFFFFAA00;
             case "Goldor" -> 0xFFAAAAAA;
             case "Necron", "Bonzo Phase 1", "Scarf's Minions", "Guardians", "Terracottas" -> 0xFFFF5555;

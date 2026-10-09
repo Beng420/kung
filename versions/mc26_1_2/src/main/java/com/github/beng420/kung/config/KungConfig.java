@@ -18,13 +18,11 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.google.gson.annotations.SerializedName;
 import java.io.IOException;
-import java.io.InputStream;
 import java.io.Reader;
 import java.io.Writer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Properties;
 import net.fabricmc.loader.api.FabricLoader;
 
 public final class KungConfig {
@@ -94,7 +92,6 @@ public final class KungConfig {
             }
             bindCategories();
             normalize();
-            applyBundledDefaults();
         } catch (IOException | RuntimeException exception) {
             KungMod.LOGGER.warn("Failed to load kung config.", exception);
         } finally {
@@ -176,7 +173,6 @@ public final class KungConfig {
         dungeon.setUnopenedRoomAlpha(dungeon.unopenedRoomAlpha());
         dungeon.setFiveCryptPartyMessage(dungeon.fiveCryptPartyMessage());
         dungeon.setRoomSyncServerUrl(dungeon.roomSyncServerUrl());
-        dungeon.setRoomSyncToken(dungeon.roomSyncToken());
         bloodRush.setTitleDurationTenths(bloodRush.titleDurationTenths());
         splits.setScale(splits.scale());
         safari.setScale(safari.scale());
@@ -194,21 +190,6 @@ public final class KungConfig {
         misc.setCustomWitherShieldExpirePitchHundredths(misc.customWitherShieldExpirePitchHundredths());
         misc.normalize();
         hitboxes.normalize();
-    }
-
-    private void applyBundledDefaults() {
-        Properties defaults = new Properties();
-        try (InputStream stream = KungConfig.class.getResourceAsStream("/kung-defaults.properties")) {
-            if (stream != null) defaults.load(stream);
-        } catch (IOException exception) {
-            KungMod.LOGGER.warn("Failed to load bundled kung defaults.", exception);
-        }
-        if (dungeon.roomSyncServerUrl().isBlank()) {
-            dungeon.setRoomSyncServerUrl(defaults.getProperty("roomSync.serverUrl", ""));
-        }
-        if (dungeon.roomSyncToken().isBlank()) {
-            dungeon.setRoomSyncToken(defaults.getProperty("roomSync.token", ""));
-        }
     }
 
     private static JsonObject object(JsonObject parent, String name) {

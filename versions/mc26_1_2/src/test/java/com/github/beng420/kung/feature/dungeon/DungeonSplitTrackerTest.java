@@ -5,6 +5,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
+import com.github.beng420.kung.config.category.SplitsConfig;
 import com.github.beng420.kung.util.ServerTickSequence;
 import java.util.Arrays;
 import java.util.ArrayList;
@@ -456,7 +457,6 @@ public final class DungeonSplitTrackerTest {
             {"The Core entrance is opening!", "Goldor"},
             {"[BOSS] Necron: You went further than any human before, congratulations.", "Necron"},
             {"[BOSS] Necron: All this, for nothing...", "Relics"},
-            {"[BOSS] Wither King: You... again?", "Wither King"},
             {"[BOSS] Wither King: We will decide it all, here, now.", "Dragons"}
         };
         for (String[] event : messages) {
@@ -473,21 +473,21 @@ public final class DungeonSplitTrackerTest {
         assertFalse(tracker.hasCurrentSplit());
         assertTrue(tracker.running());
         assertEquals("Dragons", tracker.completedSplits().getLast().name());
-        assertEquals(22_000L, tracker.completedSplits().getLast().totalDurationMillis());
+        assertEquals(20_000L, tracker.completedSplits().getLast().totalDurationMillis());
         assertFalse(tracker.observeMessage("[BOSS] Wither King: Incredible. You did what I couldn't do myself.", 0L));
         clock.addAndGet(2_000L);
         assertTrue(tracker.observeMessage("\u00a7r\u00a7c☠ Defeated The Wither King in 06m 42s (NEW RECORD!)", 0L));
         assertFalse(tracker.running());
-        assertEquals(11, tracker.completedSplits().size());
-        assertEquals(24_000L, tracker.currentTotalDurationMillis());
-        assertEquals(550L, tracker.currentTotalServerDurationMillis());
+        assertEquals(10, tracker.completedSplits().size());
+        assertEquals(22_000L, tracker.currentTotalDurationMillis());
+        assertEquals(500L, tracker.currentTotalServerDurationMillis());
         for (DungeonSplitTracker.CompletedSplit split : tracker.completedSplits()) {
             assertEquals(2_000L, split.splitDurationMillis());
         }
         clock.addAndGet(30_000L);
         tracker.serverTick(clock.get());
-        assertEquals(24_000L, tracker.currentTotalDurationMillis());
-        assertEquals(550L, tracker.currentTotalServerDurationMillis());
+        assertEquals(22_000L, tracker.currentTotalDurationMillis());
+        assertEquals(500L, tracker.currentTotalServerDurationMillis());
     }
 
     @Test
@@ -517,16 +517,19 @@ public final class DungeonSplitTrackerTest {
         tracker.observeMessage("[BOSS] Necron: All this, for nothing...", 2L);
         assertFalse(tracker.hasCurrentSplit());
         clock.set(8_000L);
-        assertTrue(tracker.observeMessage("[BOSS] Wither King: You... again?", 3L));
-        assertEquals("Wither King", tracker.currentSplitName());
+        // Wither King dialogue only reveals Master mode; Relics already began at Necron's death.
+        assertFalse(tracker.observeMessage("[BOSS] Wither King: You... again?", 3L));
+        assertEquals("Relics", tracker.currentSplitName());
         assertTrue(tracker.hasCurrentSplit());
-        assertTrue(tracker.completedSplits().stream().anyMatch(split -> split.name().equals("Relics")));
+        clock.set(11_000L);
+        assertTrue(tracker.observeMessage("[BOSS] Wither King: We will decide it all, here, now.", 4L));
+        assertEquals("Dragons", tracker.currentSplitName());
         assertEquals("Relics", tracker.completedSplits().getLast().name());
-        assertEquals(3_000L, tracker.completedSplits().getLast().splitDurationMillis());
+        assertEquals(6_000L, tracker.completedSplits().getLast().splitDurationMillis());
         tracker.configureForFloor(0, false);
         tracker.configureForFloor(7, false);
         assertTrue(Arrays.asList(tracker.splitNames()).contains("Dragons"));
-        assertEquals("Wither King", tracker.currentSplitName());
+        assertEquals("Dragons", tracker.currentSplitName());
     }
 
     @Test
@@ -587,6 +590,161 @@ public final class DungeonSplitTrackerTest {
         assertEquals(2_000L, tracker.currentSplitDurationMillis());
         assertFalse(tracker.observeMessage("[BOSS] Necron: All this, for nothing...", 2L));
         assertEquals(2, tracker.completedSplits().size());
+    }
+
+    private static final String RELIC_PICKUP = "Tdogminifig picked the Corrupted Orange Relic!";
+    private static final String NECRON_DEATH = "[BOSS] Necron: All this, for nothing...";
+    private static final String KING_AGAIN = "[BOSS] Wither King: You... again?";
+    private static final String KING_DECIDES = "[BOSS] Wither King: We will decide it all, here, now.";
+
+    /** Master Seven in Necron; Necron began at 5s and the clock is at 5s. */
+    private static DungeonSplitTracker necronTracker(AtomicLong clock, SplitsConfig config) {
+        DungeonSplitTracker tracker = new DungeonSplitTracker(clock::get, ignored -> { }, config);
+        tracker.startRun(0L, 7, true);
+        for (String message : new String[] {
+            "[BOSS] Maxor: WELL! WELL! WELL! LOOK WHO'S HERE!", "[BOSS] Storm: Pathetic Maxor, just like expected.",
+            "[BOSS] Goldor: Who dares trespass into my domain?", "The Core entrance is opening!",
+            "[BOSS] Necron: You went further than any human before, congratulations."}) {
+            clock.addAndGet(1_000L);
+            tracker.observeMessage(message, 0L);
+        }
+        assertEquals("Necron", tracker.currentSplitName());
+        return tracker;
+    }
+
+    /** The last two completed splits are Necron then Relics, both measured (never -1). */
+    private static void assertNecronAndRelics(DungeonSplitTracker tracker, long necron, long relics) {
+        var completed = tracker.completedSplits();
+        var necronSplit = completed.get(completed.size() - 2);
+        var relicsSplit = completed.getLast();
+        assertEquals("Necron", necronSplit.name());
+        assertEquals(necron, necronSplit.splitDurationMillis());
+        assertEquals("Relics", relicsSplit.name());
+        assertEquals(relics, relicsSplit.splitDurationMillis());
+    }
+
+    @Test
+    public void relicPickupStartsRelicsAndLaterPickupsChangeNothing() {
+        AtomicLong clock = new AtomicLong();
+        DungeonSplitTracker tracker = necronTracker(clock, new SplitsConfig());
+        clock.addAndGet(4_000L);
+        assertTrue(tracker.observeMessage(RELIC_PICKUP, 0L));
+        assertEquals("Relics", tracker.currentSplitName());
+        assertEquals("Necron", tracker.completedSplits().getLast().name());
+        assertEquals(4_000L, tracker.completedSplits().getLast().splitDurationMillis());
+        clock.addAndGet(1_000L);
+        assertFalse(tracker.observeMessage("[MVP+] Ben picked the Corrupted Red Relic!", 0L));
+        assertFalse(tracker.observeMessage("Party > Ben: x picked the Corrupted Red Relic!", 0L));
+        assertEquals("Relics", tracker.currentSplitName());
+        clock.addAndGet(2_000L);
+        tracker.dragonSpawned();
+        assertEquals("Dragons", tracker.currentSplitName());
+        assertEquals(3_000L, tracker.completedSplits().getLast().splitDurationMillis());
+    }
+
+    @Test
+    public void relicPickupCannotMoveANormalSevenRun() {
+        AtomicLong clock = new AtomicLong();
+        DungeonSplitTracker tracker = new DungeonSplitTracker(clock::get);
+        tracker.startRun(0L, 7, false);
+        tracker.observeMessage("[BOSS] Necron: You went further than any human before, congratulations.", 0L);
+        assertFalse(tracker.observeMessage(RELIC_PICKUP, 0L));
+        assertEquals("Necron", tracker.currentSplitName());
+    }
+
+    @Test
+    public void everyRelicsStartBoundaryLeavesNecronAndRelicsMeasured() {
+        for (String start : new String[] {NECRON_DEATH, RELIC_PICKUP, KING_AGAIN}) {
+            AtomicLong clock = new AtomicLong();
+            DungeonSplitTracker tracker = necronTracker(clock, new SplitsConfig());
+            clock.addAndGet(4_000L);
+            assertTrue(start, tracker.observeMessage(start, 0L));
+            assertEquals(start, "Relics", tracker.currentSplitName());
+            clock.addAndGet(6_000L);
+            assertTrue(start, tracker.observeMessage(KING_DECIDES, 0L));
+            assertEquals(start, "Dragons", tracker.currentSplitName());
+            assertNecronAndRelics(tracker, 4_000L, 6_000L);
+            // Later Wither King lines are plain dialogue, never a boundary.
+            assertFalse(tracker.observeMessage(KING_AGAIN, 0L));
+            assertFalse(tracker.observeMessage(
+                "[BOSS] Wither King: I no longer wish to fight, but I know that will not stop you.", 0L));
+            assertEquals("Dragons", tracker.currentSplitName());
+        }
+    }
+
+    @Test
+    public void firstDragonSpawnStartsDragonsFromRelicsWithoutMarkingTheRunManual() {
+        SplitsConfig config = new SplitsConfig();
+        config.setEnabled(true);
+        AtomicLong clock = new AtomicLong();
+        DungeonSplitTracker tracker = necronTracker(clock, config);
+        clock.addAndGet(4_000L);
+        tracker.observeMessage(RELIC_PICKUP, 0L);
+        clock.addAndGet(3_000L);
+        tracker.dragonSpawned();
+        assertEquals("Dragons", tracker.currentSplitName());
+        assertNecronAndRelics(tracker, 4_000L, 3_000L);
+        int completed = tracker.completedSplits().size();
+        clock.addAndGet(1_400L);
+        // The chat line trails the spawn and the other dragons spawn later: all of that is a no-op now.
+        assertFalse(tracker.observeMessage(KING_DECIDES, 0L));
+        tracker.dragonSpawned();
+        assertEquals(completed, tracker.completedSplits().size());
+        clock.addAndGet(18_600L);
+        tracker.observeMessage("[BOSS] Wither King: Incredible. You did what I couldn't do myself.", 0L);
+        clock.addAndGet(2_000L);
+        tracker.observeMessage("Team Score: 300 (S+)", 0L);
+        // mark()/markIfCurrent() would have made this a manual run, which never saves personal bests.
+        assertEquals(4_000L, config.personalBestMillis(7, true, "Necron"));
+        assertEquals(3_000L, config.personalBestMillis(7, true, "Relics"));
+        assertEquals(20_000L, config.personalBestMillis(7, true, "Dragons"));
+    }
+
+    @Test
+    public void dragonSpawnIsNoOpOutsideRelicsAndNecron() {
+        AtomicLong clock = new AtomicLong();
+        DungeonSplitTracker idle = new DungeonSplitTracker(clock::get);
+        idle.dragonSpawned();
+        assertFalse(idle.started());
+        DungeonSplitTracker tracker = new DungeonSplitTracker(clock::get);
+        tracker.startRun(0L, 7, true);
+        tracker.dragonSpawned();
+        assertEquals("Blood Open", tracker.currentSplitName());
+        tracker.observeMessage("[BOSS] Maxor: WELL! WELL! WELL! LOOK WHO'S HERE!", 0L);
+        tracker.dragonSpawned();
+        assertEquals("Maxor", tracker.currentSplitName());
+        DungeonSplitTracker normal = new DungeonSplitTracker(clock::get);
+        normal.startRun(0L, 7, false);
+        normal.observeMessage("[BOSS] Necron: You went further than any human before, congratulations.", 0L);
+        normal.dragonSpawned();
+        assertEquals("Necron", normal.currentSplitName());
+    }
+
+    @Test
+    public void dragonsNeverFollowNecronWithAnUnknownRelicsSpan() {
+        for (boolean spawn : new boolean[] {false, true}) {
+            AtomicLong clock = new AtomicLong();
+            DungeonSplitTracker tracker = necronTracker(clock, new SplitsConfig());
+            clock.addAndGet(9_000L);
+            if (spawn) tracker.dragonSpawned();
+            else assertTrue(tracker.observeMessage(KING_DECIDES, 0L));
+            assertEquals("Dragons", tracker.currentSplitName());
+            assertNecronAndRelics(tracker, 9_000L, 0L);
+        }
+    }
+
+    @Test
+    public void necronEndWindowCoversNecronAndRelicsOnly() {
+        AtomicLong clock = new AtomicLong();
+        DungeonSplitTracker tracker = necronTracker(clock, new SplitsConfig());
+        assertTrue(tracker.inNecronEndWindow());
+        tracker.observeMessage(RELIC_PICKUP, 0L);
+        assertTrue(tracker.inNecronEndWindow());
+        tracker.dragonSpawned();
+        assertFalse(tracker.inNecronEndWindow());
+        DungeonSplitTracker earlier = new DungeonSplitTracker(clock::get);
+        earlier.startRun(0L, 7, true);
+        assertFalse(earlier.inNecronEndWindow());
     }
 
     @Test

@@ -11,6 +11,8 @@ runs/
 # Without it gradlew.bat cannot run on a fresh clone.
 !gradle/wrapper/gradle-wrapper.jar
 *.zip
+# Server secrets (sync token, Hypixel key) never go into the public repo.
+.env
 
 .idea/
 *.iml

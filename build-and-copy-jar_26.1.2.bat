@@ -14,7 +14,9 @@ set "SOURCE_JAR=%ROOT%versions\mc26_1_2\build\libs\kung-%MINECRAFT_VERSION%-%MOD
 set "SOURCE_JAR_26_2=%ROOT%versions\mc26_2\build\libs\kung-26.2-%MOD_VERSION%.jar"
 set "DEFAULT_PROFILE=Dungeons 26.1.2"
 set "SECONDARY_PROFILE=Here We Go Again (2)"
-rem The 26.2 pack gets the 26.2 jar. Profiles passed as arguments get the 26.1.2 jar only.
+rem The "Dungeons 26.1.2" folder is now the 26.2 pack (only its folder name is old), so with no
+rem arguments it and "test" get the 26.2 jar and "Here We Go Again (2)" gets the 26.1.2 jar.
+rem Profiles passed as arguments get the 26.1.2 jar only.
 set "PROFILE_26_2=test"
 set "PROFILE_NAME=%~1"
 if "%PROFILE_NAME%"=="" set "PROFILE_NAME=%DEFAULT_PROFILE%"
@@ -60,7 +62,7 @@ if exist "!RESOURCE_SCAN_DIR!\known-rooms.json" (
 :after_room_sync
 echo Building kung jars for 26.1.2 and 26.2...
 pushd "!ROOT!" >nul
-call "!ROOT!gradlew.bat" :versions:mc26_1_2:build :versions:mc26_2:build -PkungPrivateRoomSyncDefaults=true
+call "!ROOT!gradlew.bat" :versions:mc26_1_2:build :versions:mc26_2:build
 set "BUILD_RESULT=%ERRORLEVEL%"
 popd >nul
 
@@ -91,7 +93,7 @@ if not errorlevel 1 (
 
 echo.
 if "%~1"=="" (
-    call :copyProfile "%PROFILE_NAME%" "%MINECRAFT_VERSION%" "!SOURCE_JAR!"
+    call :copyProfile "%DEFAULT_PROFILE%" "26.2" "!SOURCE_JAR_26_2!"
     if errorlevel 1 exit /b 1
     call :copyProfile "%SECONDARY_PROFILE%" "%MINECRAFT_VERSION%" "!SOURCE_JAR!"
     if errorlevel 1 exit /b 1

@@ -33,8 +33,11 @@ public final class DungeonSplitTracker {
         {"Maxor", "Storm", "Terminals", "Goldor", "Necron"}
     };
     private static final String[] MASTER_7_BOSS_SPLITS = {
-        "Maxor", "Storm", "Terminals", "Goldor", "Necron", "Relics", "Wither King", "Dragons"
+        "Maxor", "Storm", "Terminals", "Goldor", "Necron", "Relics", "Dragons"
     };
+    private static final String WITHER_KING_DEATH = "[BOSS] Wither King: Incredible. You did what I couldn't do myself.";
+    /** Hypixel dropped most Necron/Wither King dialogue; a relic pickup is the surviving Relics start. */
+    private static final Pattern RELIC_PICKUP = Pattern.compile("^(?:\\[[^\\]]+] )?\\w{1,16} picked the Corrupted \\w+ Relic!$");
     private static final Pattern BLOOD_OPEN = Pattern.compile(
         "^\\[BOSS] The Watcher: (Congratulations, you made it through the Entrance\\.|Ah, you've finally arrived\\.|Ah, we meet again\\.\\.\\.|So you made it this far\\.\\.\\. interesting\\.|You've managed to scratch and claw your way here, eh\\?|I'm starting to get tired of seeing you around here\\.\\.\\.|Oh\\.\\. hello\\?|Things feel a little more roomy now, eh\\?)$|^The BLOOD DOOR has been opened!$"
     );
@@ -286,7 +289,7 @@ public final class DungeonSplitTracker {
             configureFloor(7, masterMode, false);
             if (!masterMode) return completeBoss("Necron", clean);
         }
-        if (clean.equals("[BOSS] Wither King: Incredible. You did what I couldn't do myself.")) {
+        if (clean.equals(WITHER_KING_DEATH)) {
             return completeBoss("Dragons", clean);
         }
         if (!hasCurrentSplit()) return false;
@@ -303,8 +306,21 @@ public final class DungeonSplitTracker {
         if (nextIndex <= currentIndex || nextIndex < 0) return false;
         // Missing phase messages leave an unknown boundary. Preserve total time,
         // but do not label the entire elapsed span as an accurate single phase.
-        completeCurrentAndStart(next, nextIndex == currentIndex + 1, clean);
+        advanceTo(next, clean);
         return true;
+    }
+
+    /** First M7 dragon spawn starts Dragons. Not a manual mark, so personal bests stay on. */
+    public void dragonSpawned() {
+        if (hasCurrentSplit() && indexOf("Dragons") >= 0
+            && (currentSplitName.equals("Relics") || currentSplitName.equals("Necron"))) {
+            advanceTo("Dragons", "dragon-spawn");
+        }
+    }
+
+    /** M7 from Necron's start until the first dragon: where a changed Necron-death line would show up. */
+    public boolean inNecronEndWindow() {
+        return masterMode && hasCurrentSplit() && (currentSplitName.equals("Necron") || currentSplitName.equals("Relics"));
     }
 
     public boolean running() { return running; }
@@ -362,6 +378,12 @@ public final class DungeonSplitTracker {
             pendingVictory = new PendingVictory(pendingVictory.split(), false, pendingVictory.scoreAtMillis());
         }
         if (running) refreshPrediction();
+    }
+
+    /** Necron never jumps straight to Dragons: pass through Relics at the same instant instead of an unknown span. */
+    private void advanceTo(String next, String boundary) {
+        if (next.equals("Dragons") && currentSplitName.equals("Necron")) completeCurrentAndStart("Relics", true, boundary);
+        completeCurrentAndStart(next, indexOf(next) == indexOf(currentSplitName) + 1, boundary);
     }
 
     private void completeCurrentAndStart(String next, boolean timingKnown, String boundary) {
@@ -499,7 +521,9 @@ public final class DungeonSplitTracker {
             pendingVictory = null;
             return false;
         }
-        if (!DungeonLifecycleSignals.isVictoryForFloor(message, floor, masterMode)) return false;
+        // M7 now prints the Wither King's death line after the score: it only exists on a kill, so it confirms too.
+        if (!DungeonLifecycleSignals.isVictoryForFloor(message, floor, masterMode)
+            && !(message.equals(WITHER_KING_DEATH) && pending.split().name().equals("Dragons"))) return false;
         pendingVictory = null;
         PhaseMessage notice = phaseMessage(pending.split());
         if (pending.bestEligible()) {
@@ -594,6 +618,7 @@ public final class DungeonSplitTracker {
 
     private String nextSplitFromMessage(String message) {
         if (BLOOD_OPEN.matcher(message).matches()) return "Blood Clear";
+        if (RELIC_PICKUP.matcher(message).matches()) return "Relics";
         return switch (message) {
             case "[BOSS] The Watcher: You have proven yourself. You may pass." -> "Portal Entry";
             case "[BOSS] Bonzo: Gratz for making it this far, but I'm basically unbeatable.",
@@ -613,9 +638,8 @@ public final class DungeonSplitTracker {
             case "[BOSS] Goldor: Who dares trespass into my domain?" -> "Terminals";
             case "The Core entrance is opening!" -> "Goldor";
             case "[BOSS] Necron: You went further than any human before, congratulations." -> "Necron";
-            case "[BOSS] Necron: All this, for nothing..." -> "Relics";
-            case "[BOSS] Wither King: You... again?",
-                "[BOSS] Wither King: I no longer wish to fight, but I know that will not stop you." -> "Wither King";
+            // "You... again?" is only the last-resort Relics start; it never moves a run that is already in Relics.
+            case "[BOSS] Necron: All this, for nothing...", "[BOSS] Wither King: You... again?" -> "Relics";
             case "[BOSS] Wither King: We will decide it all, here, now." -> "Dragons";
             default -> null;
         };

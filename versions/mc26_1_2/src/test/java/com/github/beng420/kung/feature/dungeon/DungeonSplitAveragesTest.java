@@ -89,7 +89,7 @@ public final class DungeonSplitAveragesTest {
         after(10_000L, "[BOSS] Necron: You went further than any human before, congratulations.");
         after(10_000L, "[BOSS] Necron: All this, for nothing...");
         tracker.configureKnownFloor(7, true);
-        after(2_000L, "[BOSS] Wither King: You... again?");
+        after(2_000L, "[BOSS] Wither King: You... again?"); // Late Master mode: dialogue is not a boundary.
         after(3_000L, "[BOSS] Wither King: We will decide it all, here, now.");
         after(15_000L, "[BOSS] Wither King: Incredible. You did what I couldn't do myself.");
         assertEquals(0, config.recentRunCount(7, true));
@@ -99,7 +99,7 @@ public final class DungeonSplitAveragesTest {
         assertEquals(0, config.recentRunCount(7, false));
         assertEquals(10_000L, config.averageMillis(7, true, "Blood Open"));
         assertEquals(-1L, config.averageMillis(7, true, "Blood Clear"));
-        assertEquals(2_000L, config.averageMillis(7, true, "Relics"));
+        assertEquals(5_000L, config.averageMillis(7, true, "Relics"));
         assertEquals(15_000L, config.averageMillis(7, true, "Dragons"));
         assertEquals(52_000L, tracker.predictedFinishMillis());
     }

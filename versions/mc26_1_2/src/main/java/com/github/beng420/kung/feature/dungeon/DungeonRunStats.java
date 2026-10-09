@@ -44,7 +44,8 @@ public final class DungeonRunStats {
     private static final long ROOM_CLEAR_PLAYER_STALE_TICKS = 40;
     private static final long RUN_SECRET_FINAL_TIMEOUT_TICKS = 60;
     private static final long SCORE_CALC_LOG_INTERVAL_MILLIS = 1_000L;
-    private static final Pattern CLEARED_PATTERN = Pattern.compile("^Cleared:\\s*(\\d+(?:\\.\\d+)?)%(?:\\s*\\(\\d+\\))?\\s*$", Pattern.CASE_INSENSITIVE);
+    // The parenthesized number is Hypixel's own running dungeon score (wiki: "to the right of 'Cleared:'").
+    private static final Pattern CLEARED_PATTERN = Pattern.compile("^Cleared:\\s*(\\d+(?:\\.\\d+)?)%(?:\\s*\\((\\d+)\\))?\\s*$", Pattern.CASE_INSENSITIVE);
     private static final Pattern FLOOR_NAME_PATTERN = Pattern.compile(
         "^\\[BOSS] (The Professor|Bonzo|Scarf|Thorn|Livid|Sadan|Maxor|Storm|Goldor|Necron):",
         Pattern.CASE_INSENSITIVE
@@ -107,6 +108,8 @@ public final class DungeonRunStats {
     private int cryptsAvailable = -1;
     private int serverScore = -1;
     private String serverScoreSource = "";
+    private int sidebarScore = -1;
+    private String lastLoggedClearedLine = "";
     private int estimatedScore = -1;
     private int floor;
     private boolean masterMode;
@@ -189,6 +192,8 @@ public final class DungeonRunStats {
         cryptsAvailable = -1;
         serverScore = -1;
         serverScoreSource = "";
+        sidebarScore = -1;
+        lastLoggedClearedLine = "";
         estimatedScore = -1;
         if (!keepPreparation) {
             floor = 0;
@@ -337,11 +342,27 @@ public final class DungeonRunStats {
     }
 
     public int score() {
-        return serverScore >= 0 ? serverScore : estimatedScore;
+        int observed = observedScore();
+        return observed >= 0 ? observed : estimatedScore;
     }
 
     public int score(DungeonLiveMapWriter.MatchRenderPlan renderPlan, int estimatedSecretsAvailable) {
-        return serverScore >= 0 ? serverScore : estimatedScore(renderPlan, estimatedSecretsAvailable);
+        int observed = observedScore();
+        return observed >= 0 ? observed : estimatedScore(renderPlan, estimatedSecretsAvailable);
+    }
+
+    /**
+     * Hypixel's final Team Score, else its sidebar score once every room is credited. Before that the
+     * sidebar counts only finished rooms, so the estimate's Blood/boss forecast stays the better number.
+     */
+    private int observedScore() {
+        if (serverScore >= 0) return serverScore;
+        int totalRooms = scoreRoomCellTotal(null);
+        return totalRooms > 0 && completedRooms >= totalRooms ? sidebarScore : -1;
+    }
+
+    private String observedScoreSource() {
+        return serverScore >= 0 ? serverScoreSource : observedScore() >= 0 ? "sidebar" : "";
     }
 
     public int estimatedScore() {
@@ -434,9 +455,10 @@ public final class DungeonRunStats {
             + " totalSource=" + secretsTotalSource(totalSecrets, estimatedSecretsAvailable)
             + " percent=" + secretsPercent
             + " score=" + score(renderPlan, totalSecrets)
-            + " scoreSource=" + (serverScore >= 0 ? serverScoreSource : "estimate")
-            + " observedHypixelScore=" + serverScore
-            + " observedHypixelScoreSource=" + (serverScoreSource.isBlank() ? "none" : serverScoreSource)
+            + " scoreSource=" + (observedScore() >= 0 ? observedScoreSource() : "estimate")
+            + " observedHypixelScore=" + observedScore()
+            + " observedHypixelScoreSource=" + blank(observedScoreSource())
+            + " sidebarScore=" + sidebarScore
             + " estimatedScore=" + rawEstimate
             + " skill=" + skill
             + "(room=" + skillRoomScore
@@ -1043,7 +1065,16 @@ public final class DungeonRunStats {
         Matcher crypts = CRYPTS_TAB_PATTERN.matcher(line);
         if (crypts.matches()) updateCryptsOpened(client, Integer.parseInt(crypts.group(1)));
         Matcher cleared = CLEARED_PATTERN.matcher(line);
-        if (cleared.matches()) clearedPercent = Double.parseDouble(cleared.group(1));
+        boolean clearedMatched = cleared.matches();
+        if (clearedMatched) {
+            clearedPercent = Double.parseDouble(cleared.group(1));
+            if (cleared.group(2) != null) sidebarScore = Integer.parseInt(cleared.group(2));
+        }
+        if (line.regionMatches(true, 0, "Cleared:", 0, 8) && !line.equals(lastLoggedClearedLine)) {
+            // Proves the live sidebar format in the next trace, matched or not.
+            lastLoggedClearedLine = line;
+            KungDebugRecorder.event("score-calc", "sidebar-cleared matched=" + clearedMatched + " line=\"" + line + "\"");
+        }
         if (line.startsWith("Time: ")) {
             long elapsed = parseElapsedSeconds(line);
             if (elapsed >= 0) elapsedSeconds = elapsed;
@@ -1966,9 +1997,10 @@ public final class DungeonRunStats {
         if (!bloodRoomCompleted) {
             projected++;
         }
-        // Blood/boss credit cannot pay for an unfinished clear room elsewhere on the map.
+        // Blood/boss credit cannot pay for an unfinished clear room elsewhere on the map, but the map
+        // can never take back rooms the tab already counted as completed (completedRooms <= totalCells).
         int cappedTotal = Math.max(0, totalCells - unfinishedClearRoomCells(renderPlan));
-        return Math.clamp(projected, 0, cappedTotal);
+        return Math.clamp(projected, 0, Math.max(cappedTotal, completedRooms));
     }
 
     private static boolean scoreCellCleared(DungeonLiveMapWriter.MatchRenderPlan plan, DungeonLiveMapWriter.CellKey cell) {

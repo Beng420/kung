@@ -33,6 +33,16 @@ public final class DungeonConfig extends ConfigCategory {
     private int dragonDebuffX = 8;
     private int dragonDebuffY = 230;
     private int dragonDebuffScale = 85;
+    private boolean dragonPrioEnabled = false;
+    // Archer is always Arch and Berserker always Bers; the other three classes pick a split.
+    private DragonPrioSplit dragonPrioMage = DragonPrioSplit.BERS;
+    private DragonPrioSplit dragonPrioHealer = DragonPrioSplit.ARCH;
+    private DragonPrioSplit dragonPrioTank = DragonPrioSplit.ARCH;
+    private DragonPrioUnit dragonPrioUnit = DragonPrioUnit.TICKS;
+    private boolean dragonPrioHudEnabled = true;
+    private int dragonPrioX = 232;
+    private int dragonPrioY = 150;
+    private int dragonPrioScale = 200;
     /** Pre-merge master of M7 Dragon Helper; only read to seed witherDragonsEnabled. */
     private boolean m7DragonHelperEnabled = false;
     /** Null until toggled, so a config from before the merge keeps whichever dragon feature it had on. */
@@ -80,8 +90,10 @@ public final class DungeonConfig extends ConfigCategory {
     // Room Sync Settings
     private boolean roomSyncEnabled = false;
     private boolean roomSyncUploadEnabled = false;
-    private String roomSyncServerUrl = "";
-    private String roomSyncToken = "";
+    // New key when the built-in server arrived: every config had "" or a LAN address written out.
+    // Blank still means no server; the old key is dropped on the next save.
+    @SerializedName("kungServerUrl")
+    private String roomSyncServerUrl = "https://kung.bengcoding.org";
 
     public boolean enabled() { return enabled; }
     public void setEnabled(boolean value) { enabled = value; save(); }
@@ -142,6 +154,32 @@ public final class DungeonConfig extends ConfigCategory {
     public void setDragonDebuffX(int value) { dragonDebuffX = value; save(); }
     public void setDragonDebuffY(int value) { dragonDebuffY = value; save(); }
     public void setDragonDebuffScale(int value) { dragonDebuffScale = Math.clamp(value, 25, 300); save(); }
+    public boolean dragonPrioEnabled() { return dragonPrioEnabled; }
+    public void setDragonPrioEnabled(boolean value) { dragonPrioEnabled = value; save(); }
+    public DragonPrioSplit dragonPrioMage() { return dragonPrioMage == null ? DragonPrioSplit.BERS : dragonPrioMage; }
+    public void setDragonPrioMage(DragonPrioSplit value) { dragonPrioMage = value == null ? DragonPrioSplit.BERS : value; save(); }
+    public DragonPrioSplit dragonPrioHealer() { return dragonPrioHealer == null ? DragonPrioSplit.ARCH : dragonPrioHealer; }
+    public void setDragonPrioHealer(DragonPrioSplit value) { dragonPrioHealer = value == null ? DragonPrioSplit.ARCH : value; save(); }
+    public DragonPrioSplit dragonPrioTank() { return dragonPrioTank == null ? DragonPrioSplit.ARCH : dragonPrioTank; }
+    public void setDragonPrioTank(DragonPrioSplit value) { dragonPrioTank = value == null ? DragonPrioSplit.ARCH : value; save(); }
+    public DragonPrioUnit dragonPrioUnit() { return dragonPrioUnit == null ? DragonPrioUnit.TICKS : dragonPrioUnit; }
+    public void setDragonPrioUnit(DragonPrioUnit value) { dragonPrioUnit = value == null ? DragonPrioUnit.TICKS : value; save(); }
+    public boolean dragonPrioHudShown() { return witherDragonsEnabled() && dragonPrioEnabled && dragonPrioHudEnabled; }
+    /** The HUD editor's switch: turning the countdown on also turns Dragon Prio and the master on, or nothing would show. */
+    public void setDragonPrioHudShown(boolean value) {
+        dragonPrioHudEnabled = value;
+        if (value) {
+            dragonPrioEnabled = true;
+            witherDragonsEnabled = true;
+        }
+        save();
+    }
+    public int dragonPrioX() { return dragonPrioX; }
+    public int dragonPrioY() { return dragonPrioY; }
+    public int dragonPrioScale() { return Math.clamp(dragonPrioScale, 25, 300); }
+    public void setDragonPrioX(int value) { dragonPrioX = value; save(); }
+    public void setDragonPrioY(int value) { dragonPrioY = value; save(); }
+    public void setDragonPrioScale(int value) { dragonPrioScale = Math.clamp(value, 25, 300); save(); }
     /** The helper has no switch of its own any more; Wither Dragons turns it on. */
     public boolean m7DragonHelperEnabled() { return witherDragonsEnabled(); }
     public boolean dragonFlightPathsEnabled() { return dragonFlightPathsEnabled; }
@@ -232,7 +270,6 @@ public final class DungeonConfig extends ConfigCategory {
     public boolean roomSyncUploadEnabled() { return roomSyncUploadEnabled; }
     public void setRoomSyncUploadEnabled(boolean value) { roomSyncUploadEnabled = value; save(); }
     public String roomSyncServerUrl() { return roomSyncServerUrl == null ? "" : roomSyncServerUrl; }
-    public String roomSyncToken() { return roomSyncToken == null ? "" : roomSyncToken; }
 
     public void setScale(int scale) {
         this.scale = Math.clamp(scale, 25, 300);
@@ -266,11 +303,6 @@ public final class DungeonConfig extends ConfigCategory {
 
     public void setRoomSyncServerUrl(String serverUrl) {
         this.roomSyncServerUrl = normalizeRoomSyncServerUrl(serverUrl);
-        save();
-    }
-
-    public void setRoomSyncToken(String token) {
-        this.roomSyncToken = token == null ? "" : token.trim();
         save();
     }
 
@@ -321,6 +353,24 @@ public final class DungeonConfig extends ConfigCategory {
 
         private final String label;
         DragonDebuffScope(String label) { this.label = label; }
+        public String label() { return label; }
+    }
+
+    /** Dragon Prio: the Bers split (Berserker + Mage) takes the first dragon, the Arch split (Archer + Healer + Tank) the second. */
+    public enum DragonPrioSplit {
+        BERS("Bers"), ARCH("Arch");
+
+        private final String label;
+        DragonPrioSplit(String label) { this.label = label; }
+        public String label() { return label; }
+    }
+
+    /** Dragon Prio: the countdown is shown in server ticks or in milliseconds (50 per tick). */
+    public enum DragonPrioUnit {
+        TICKS("Ticks"), MILLISECONDS("Milliseconds");
+
+        private final String label;
+        DragonPrioUnit(String label) { this.label = label; }
         public String label() { return label; }
     }
 

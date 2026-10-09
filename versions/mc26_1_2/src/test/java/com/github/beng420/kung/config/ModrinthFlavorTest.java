@@ -17,6 +17,7 @@ public final class ModrinthFlavorTest {
         var catalog = KungSettings.categories(config, () -> { }, true);
         var features = catalog.stream().flatMap(category -> category.features().stream()).toList();
         assertEquals(!KungBuild.MODRINTH, features.stream().anyMatch(feature -> feature.name().equals("Blood rush helper")));
+        assertEquals(!KungBuild.MODRINTH, features.stream().anyMatch(feature -> feature.name().equals("Skip NPC Dialogue")));
 
         FeatureEntry map = features.stream().filter(feature -> feature.name().equals("Dungeon Map")).findFirst().orElseThrow();
         var mapSettings = map.settings().stream().map(SettingEntry::label).toList();

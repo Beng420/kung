@@ -3,11 +3,16 @@ package com.github.beng420.kung.mixin;
 import com.github.beng420.kung.feature.misc.LoadoutsAutoCloseFeature;
 import com.github.beng420.kung.feature.garden.VisitorAlarmFeature;
 import com.github.beng420.kung.feature.garden.FeastOverlayFeature;
+import com.github.beng420.kung.feature.misc.NpcDialogueTrace;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.client.multiplayer.MultiPlayerGameMode;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.ContainerInput;
+import net.minecraft.world.phys.EntityHitResult;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -46,5 +51,23 @@ public abstract class MultiPlayerGameModeMixin {
         // Read the button before local inventory prediction can change its stack.
         VisitorAlarmFeature.observeContainerInput(containerId, slotId, button, input);
         FeastOverlayFeature.observeContainerInput(containerId, slotId, button, input);
+        NpcDialogueTrace.containerInput(containerId, slotId, button, input);
+    }
+
+    // Log-only: never cancels or changes the interaction.
+    @Inject(method = "interact", at = @At("HEAD"))
+    private void kung$traceInteract(
+        Player player,
+        Entity entity,
+        EntityHitResult hitResult,
+        InteractionHand hand,
+        CallbackInfoReturnable<InteractionResult> callbackInfo
+    ) {
+        NpcDialogueTrace.entity("use", player, entity, hand);
+    }
+
+    @Inject(method = "attack", at = @At("HEAD"))
+    private void kung$traceAttack(Player player, Entity entity, CallbackInfo callbackInfo) {
+        NpcDialogueTrace.entity("attack", player, entity, InteractionHand.MAIN_HAND);
     }
 }

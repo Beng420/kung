@@ -2,6 +2,7 @@ package com.github.beng420.kung.skyblock;
 
 import com.github.beng420.kung.config.KungConfig;
 import com.github.beng420.kung.feature.dungeon.DungeonEventRouter;
+import com.github.beng420.kung.feature.misc.NpcDialogueTrace;
 import com.github.beng420.kung.message.KungMessages;
 import com.github.beng420.kung.util.KungDebugRecorder;
 import java.util.ArrayList;
@@ -38,9 +39,9 @@ public final class HypixelInstanceTracker {
     public static void initializeClient() {
         ClientTickEvents.END_CLIENT_TICK.register(INSTANCE::tick);
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> INSTANCE.disconnect(client));
-        ClientReceiveMessageEvents.GAME.register((message, overlay) -> recordMessage(message));
+        ClientReceiveMessageEvents.GAME.register(HypixelInstanceTracker::recordMessage);
         registerFloorEntryObserver(message -> INSTANCE.dungeonFloor.entryMessage(message, System.currentTimeMillis()));
-        ClientReceiveMessageEvents.CHAT.register((message, signed, sender, params, received) -> recordMessage(message));
+        ClientReceiveMessageEvents.CHAT.register((message, signed, sender, params, received) -> recordMessage(message, false));
     }
 
     static void registerFloorEntryObserver(Consumer<String> observer) {
@@ -55,6 +56,7 @@ public final class HypixelInstanceTracker {
     public boolean dungeonHub() { return state.location().kind() == HypixelLocation.Kind.DUNGEON_HUB; }
     public boolean catacombs() { return tracking() && state.catacombs(); }
     public boolean dungeonRunContext() { return catacombs(); }
+    public HypixelLocation location() { return state.location(); }
     public String instanceLine() { return state.location().name(); }
     public String serverId() { return state.serverId(); }
     public long instanceEpoch() { return state.epoch(); }
@@ -202,8 +204,11 @@ public final class HypixelInstanceTracker {
         if (component != null) lines.addAll(List.of(component.getString().split("\\R")));
     }
 
-    private static void recordMessage(Component message) {
+    private static void recordMessage(Component message, boolean overlay) {
         String text = message.getString();
-        if (!HypixelLocation.clean(text).startsWith("[Kung")) KungDebugRecorder.event("message", text);
+        if (HypixelLocation.clean(text).startsWith("[Kung")) return;
+        // The action bar repeats every second; its own area keeps it from spending the chat budget.
+        KungDebugRecorder.event(overlay ? "actionbar" : "message", text);
+        if (!overlay) NpcDialogueTrace.message(message);
     }
 }

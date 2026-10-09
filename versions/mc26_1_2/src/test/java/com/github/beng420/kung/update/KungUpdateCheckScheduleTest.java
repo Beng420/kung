@@ -5,34 +5,38 @@ import static org.junit.Assert.*;
 import org.junit.Test;
 
 public final class KungUpdateCheckScheduleTest {
-    @Test public void checksImmediatelyAndThenEveryThirtySecondsWithoutMenuOrConnectionEvents() {
+    private static final long INTERVAL = KungUpdateCheckSchedule.INTERVAL_MILLIS;
+
+    @Test public void checksImmediatelyAndThenStaysWithinGithubsHourlyLimit() {
+        // 60 unauthenticated requests per hour are shared with release notes; keep polling to a couple.
+        assertTrue(INTERVAL >= 30 * 60_000L);
         var schedule = new KungUpdateCheckSchedule();
         assertTrue(schedule.due(100));
         schedule.started(100);
         assertFalse(schedule.due(101));
-        assertFalse(schedule.due(30_099));
-        assertTrue(schedule.due(30_100));
-        schedule.started(30_100);
-        assertFalse(schedule.due(60_099));
-        assertTrue(schedule.due(60_100));
+        assertFalse(schedule.due(100 + INTERVAL - 1));
+        assertTrue(schedule.due(100 + INTERVAL));
+        schedule.started(100 + INTERVAL);
+        assertFalse(schedule.due(100 + 2 * INTERVAL - 1));
+        assertTrue(schedule.due(100 + 2 * INTERVAL));
     }
 
     @Test public void repeatedMenuOrJoinChecksCannotPostponeAnOverduePoll() {
         var schedule = new KungUpdateCheckSchedule();
         schedule.started(0);
-        for (long now = 1; now < 30_000; now += 50) assertFalse(schedule.due(now));
-        assertTrue(schedule.due(30_000));
-        assertTrue(schedule.due(90_000)); // Busy worker: do not consume the interval until a check starts.
-        schedule.started(90_000);
-        assertFalse(schedule.due(90_001));
-        assertTrue(schedule.due(120_000));
+        for (long now = 1; now < INTERVAL; now += INTERVAL / 600) assertFalse(schedule.due(now));
+        assertTrue(schedule.due(INTERVAL));
+        assertTrue(schedule.due(3 * INTERVAL)); // Busy worker: do not consume the interval until a check starts.
+        schedule.started(3 * INTERVAL);
+        assertFalse(schedule.due(3 * INTERVAL + 1));
+        assertTrue(schedule.due(4 * INTERVAL));
     }
 
     @Test public void monotonicClockDoesNotRequireAPositiveEpoch() {
         var schedule = new KungUpdateCheckSchedule();
-        assertTrue(schedule.due(-60_000));
-        schedule.started(-60_000);
-        assertFalse(schedule.due(-30_001));
-        assertTrue(schedule.due(-30_000));
+        assertTrue(schedule.due(-2 * INTERVAL));
+        schedule.started(-2 * INTERVAL);
+        assertFalse(schedule.due(-INTERVAL - 1));
+        assertTrue(schedule.due(-INTERVAL));
     }
 }

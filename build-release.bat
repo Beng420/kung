@@ -4,7 +4,6 @@ setlocal EnableExtensions EnableDelayedExpansion
 rem Builds and tests every release jar, then collects them in release\<mod_version>:
 rem   github\    kung-26.1.2 and kung-26.2 - attach both to the GitHub release
 rem   modrinth\  kung-modrinth-26.1.2 and -26.2 - one Modrinth version each, never on GitHub
-rem Neither flavor carries your Room Sync server or token.
 rem Then it installs both flavors into the test packs below. Whichever Kung a pack runs stays
 rem active (the Modrinth or the GitHub jar); the other one is added as .disabled.
 

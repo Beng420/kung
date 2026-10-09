@@ -15,6 +15,7 @@ import com.github.beng420.kung.feature.dungeon.DungeonRoomClassifier;
 import com.github.beng420.kung.feature.dungeon.DungeonRoomProject;
 import com.github.beng420.kung.feature.dungeon.DungeonScanUtils;
 import com.github.beng420.kung.feature.dungeon.DungeonSplitTracker;
+import com.github.beng420.kung.feature.dungeon.KungServerSession;
 import com.github.beng420.kung.feature.dungeon.room.RoomType;
 import com.github.beng420.kung.feature.garden.VisitorAlarmFeature;
 import com.github.beng420.kung.skyblock.HypixelInstanceTracker;
@@ -326,8 +327,8 @@ final class KungCommandActions {
             "Room Sync: enabled=" + config.dungeon.roomSyncEnabled()
                 + " upload=" + config.dungeon.roomSyncUploadEnabled()
                 + " server=" + url
-                + " token=" + (!config.dungeon.roomSyncToken().isBlank())
                 + " status=" + DungeonRoomDataSyncClient.INSTANCE.statusMessage()
+                + " sign-in=" + KungServerSession.INSTANCE.status()
         ));
         return 1;
     }
@@ -358,23 +359,6 @@ final class KungCommandActions {
         }
         KungConfig.get().dungeon.setRoomSyncServerUrl(url);
         context.getSource().sendFeedback(commandMessage("Room Sync server saved."));
-        return 1;
-    }
-
-    static int setRoomSyncToken(CommandContext<FabricClientCommandSource> context) {
-        String token = StringArgumentType.getString(context, "token").trim();
-        if (token.isEmpty()) {
-            context.getSource().sendFeedback(commandMessage("Room Sync token cannot be empty."));
-            return 0;
-        }
-        KungConfig.get().dungeon.setRoomSyncToken(token);
-        context.getSource().sendFeedback(commandMessage("Room Sync token saved."));
-        return 1;
-    }
-
-    static int clearRoomSyncToken(CommandContext<FabricClientCommandSource> context) {
-        KungConfig.get().dungeon.setRoomSyncToken("");
-        context.getSource().sendFeedback(commandMessage("Room Sync token cleared."));
         return 1;
     }
 

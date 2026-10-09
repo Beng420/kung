@@ -3,6 +3,7 @@ package com.github.beng420.kung.config;
 import com.github.beng420.kung.feature.dungeon.DungeonSplitsOverlayFeature;
 import com.github.beng420.kung.feature.dungeon.DragonDebuffHud;
 import com.github.beng420.kung.feature.dungeon.DungeonStateTracker;
+import com.github.beng420.kung.feature.dungeon.M7DragonFeature;
 import com.github.beng420.kung.feature.garden.FeastOverlayFeature;
 import com.github.beng420.kung.feature.safari.SafariOverlayFeature;
 import com.github.beng420.kung.feature.misc.BowDrawIndicatorFeature;
@@ -27,6 +28,7 @@ public final class KungHudPreviews {
             case "feast_progress" -> FeastOverlayFeature.drawPreview(graphics, config.feast);
             case "safari_uniques" -> SafariOverlayFeature.drawPreview(graphics, config.safari);
             case "dragon_debuff" -> DragonDebuffHud.drawPreview(graphics, config.dungeon);
+            case "dragon_prio" -> M7DragonFeature.drawPrioPreview(graphics, config.dungeon);
             case "bow_draw_indicator" -> BowDrawIndicatorFeature.drawPreview(graphics, config.misc);
             case "frozen_blaze_hud" -> FrozenBlazeHudFeature.drawPreview(graphics, config.misc);
             case "egg_sac_countdown" -> TarantulaHelperFeature.drawCountdownPreview(graphics, config.slayer);

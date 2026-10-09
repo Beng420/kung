@@ -6,6 +6,7 @@ import static net.fabricmc.fabric.api.client.command.v2.ClientCommands.literal;
 import com.github.beng420.kung.KungBuild;
 import com.github.beng420.kung.feature.dungeon.DungeonSplitTracker;
 import com.github.beng420.kung.feature.dungeon.DungeonStateTracker;
+import com.github.beng420.kung.util.KungDebugRecorder;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
@@ -30,11 +31,12 @@ final class DungeonDebugCommandGroup {
                 .executes(context -> KungCommandActions.copyUltraDebug(context, tracker))))
             .then(literal("instance").executes(KungCommandActions::debugInstanceContext))
             .then(literal("log")
-                .executes(context -> KungCommandActions.copyDebugLog(context, 5000))
-                .then(literal("copy").executes(context -> KungCommandActions.copyDebugLog(context, 5000)))
+                // Copy takes the whole stored trace, the same lines save writes.
+                .executes(context -> KungCommandActions.copyDebugLog(context, KungDebugRecorder.MAX_STORED_LINES))
+                .then(literal("copy").executes(context -> KungCommandActions.copyDebugLog(context, KungDebugRecorder.MAX_STORED_LINES)))
                 .then(literal("tail")
                     .executes(context -> KungCommandActions.copyDebugLog(context, 200))
-                    .then(argument("lines", IntegerArgumentType.integer(1, 5000))
+                    .then(argument("lines", IntegerArgumentType.integer(1, KungDebugRecorder.MAX_STORED_LINES))
                         .executes(context -> KungCommandActions.copyDebugLog(
                             context,
                             IntegerArgumentType.getInteger(context, "lines")

@@ -311,4 +311,16 @@ public final class SuperpairsBoardTest {
         }
         return board;
     }
+
+    @Test
+    public void panelOnTheRightHalfKeepsItsTextAndOnlyMovesLeftWhenItWouldLeaveTheScreen() {
+        // Reported layout: x=495 at 75% on a 960-wide GUI. Lines were cut to 80 px there.
+        int width = SuperpairsHelperFeature.maxTextWidth(960, 0.75F);
+        assertTrue(width >= 150);
+        assertEquals(495, SuperpairsHelperFeature.panelX(495, 960, 150, 0.75F));
+        // Too far right for its text: it moves left until the border meets the screen edge.
+        int x = SuperpairsHelperFeature.panelX(900, 960, 150, 0.75F);
+        assertEquals(960, x + Math.round((150 + 6) * 0.75F));
+        assertEquals(Math.round(6 * 0.75F), SuperpairsHelperFeature.panelX(-50, 960, 150, 0.75F));
+    }
 }

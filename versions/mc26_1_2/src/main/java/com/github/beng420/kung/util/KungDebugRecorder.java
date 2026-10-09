@@ -18,10 +18,13 @@ import java.util.TreeMap;
 import net.minecraft.client.Minecraft;
 
 public final class KungDebugRecorder {
-    private static final int MAX_EVENTS = 2500;
+    /** General ring: once full, each new line evicts the oldest. */
+    private static final int MAX_EVENTS = 1000;
     private static final int MAX_SPLIT_EVENTS = 128;
     private static final int MAX_SCORE_EVENTS = 256;
     private static final int MAX_ROOM_EVENTS = 128;
+    /** Everything the rings can hold at once, so asking for more lines than this changes nothing. */
+    public static final int MAX_STORED_LINES = MAX_EVENTS + MAX_SPLIT_EVENTS + MAX_SCORE_EVENTS + MAX_ROOM_EVENTS;
     private static final int MAX_EVENT_LENGTH = 900;
     private static final long DEFAULT_DEDUPE_MILLIS = 15_000L;
     private static final DateTimeFormatter CLOCK_FORMAT =
@@ -83,7 +86,7 @@ public final class KungDebugRecorder {
                 cleanMessage
             );
             EVENTS.addLast(line);
-            if (cleanArea.equals("dungeon-splits")) {
+            if (cleanArea.equals("dungeon-splits") || cleanArea.equals("necron-end")) {
                 SPLIT_EVENTS.addLast(line);
                 while (SPLIT_EVENTS.size() > MAX_SPLIT_EVENTS) SPLIT_EVENTS.removeFirst();
             }
@@ -118,7 +121,7 @@ public final class KungDebugRecorder {
     }
 
     public static String dump() {
-        return dump(MAX_EVENTS + MAX_SPLIT_EVENTS + MAX_SCORE_EVENTS + MAX_ROOM_EVENTS);
+        return dump(MAX_STORED_LINES);
     }
 
     public static String dump(int maxLines) {
@@ -146,7 +149,7 @@ public final class KungDebugRecorder {
         builder.append("reservedScoreLimit=").append(MAX_SCORE_EVENTS).append('\n');
         builder.append("reservedRoomLimit=").append(MAX_ROOM_EVENTS).append('\n');
         builder.append("suppressed=").append(suppressedTotal).append('\n');
-        builder.append("focus=door-title,map-change,map-check,map-discovery,map-topology,mimic-esp,player-markers,player-slots,dungeon-state,context-state\n");
+        builder.append("focus=door-title,map-change,map-check,map-discovery,map-topology,mimic-esp,player-markers,player-slots,dungeon-state,context-state,npc-dialogue\n");
         appendAreaSummary(builder);
         builder.append('\n');
         for (String line : snapshot) builder.append(line).append('\n');
@@ -245,10 +248,19 @@ public final class KungDebugRecorder {
         return switch (area) {
             case "packet" -> new AreaPolicy(12, 60_000L, DEFAULT_DEDUPE_MILLIS, true, important);
             case "message" -> new AreaPolicy(20, 60_000L, DEFAULT_DEDUPE_MILLIS, false, important);
+            case "actionbar" -> new AreaPolicy(6, 60_000L, DEFAULT_DEDUPE_MILLIS, true, important);
+            // No dedupe: repeated NPC reminders and re-sent answers are the timing evidence.
+            case "npc-dialogue" -> new AreaPolicy(120, 60_000L, 0L, false, important);
+            // Low-volume M7 Necron-to-dragons evidence: never rate-limited or deduped, kept in the split ring.
+            case "necron-end" -> new AreaPolicy(0, 60_000L, 0L, false, important);
             case "screen" -> new AreaPolicy(12, 60_000L, DEFAULT_DEDUPE_MILLIS, true, important);
             case "chat-filter", "chat-command", "chat-name" ->
                 new AreaPolicy(20, 60_000L, DEFAULT_DEDUPE_MILLIS, false, important);
             case "loadouts-auto-close" -> new AreaPolicy(40, 60_000L, DEFAULT_DEDUPE_MILLIS, true, important);
+            // One state line per second; digits are normalised so only changes in which signals exist (and one sample per 15 s) are kept.
+            case "frozen-blaze" -> new AreaPolicy(0, 60_000L, DEFAULT_DEDUPE_MILLIS, true, important);
+            // Stand scans repeat every half second: digits are normalised, so one sample per 15 s and at most 40 a minute.
+            case "nametag", "hitbox" -> new AreaPolicy(40, 60_000L, DEFAULT_DEDUPE_MILLIS, true, important);
             case "bow-draw" -> new AreaPolicy(80, 60_000L, 0L, false, false);
             case "map-change" -> new AreaPolicy(120, 60_000L, 3_000L, false, important);
             case "map-check" -> new AreaPolicy(30, 60_000L, DEFAULT_DEDUPE_MILLIS, false, important);

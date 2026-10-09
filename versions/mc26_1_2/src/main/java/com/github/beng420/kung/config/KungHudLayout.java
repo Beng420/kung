@@ -4,6 +4,7 @@ import com.github.beng420.kung.feature.dungeon.DungeonMapFeature;
 import com.github.beng420.kung.feature.dungeon.DragonDebuffHud;
 import com.github.beng420.kung.feature.dungeon.DungeonSplitsOverlayFeature;
 import com.github.beng420.kung.feature.dungeon.DungeonStateTracker;
+import com.github.beng420.kung.feature.dungeon.M7DragonFeature;
 import com.github.beng420.kung.feature.garden.FeastOverlayFeature;
 import com.github.beng420.kung.feature.misc.SuperpairsHelperFeature;
 import com.github.beng420.kung.feature.misc.BowDrawIndicatorFeature;
@@ -60,6 +61,11 @@ public final class KungHudLayout {
                 config.dungeon::setDragonDebuffX, config.dungeon::setDragonDebuffY,
                 config.dungeon::dragonDebuffScale, config.dungeon::setDragonDebuffScale,
                 config.dungeon::dragonDebuffHudShown, config.dungeon::setDragonDebuffHudShown),
+            new Entry("dragon_prio", "Dragon Prio", () -> M7DragonFeature.overlayBounds(config.dungeon),
+                config.dungeon::dragonPrioX, config.dungeon::dragonPrioY,
+                config.dungeon::setDragonPrioX, config.dungeon::setDragonPrioY,
+                config.dungeon::dragonPrioScale, config.dungeon::setDragonPrioScale,
+                config.dungeon::dragonPrioHudShown, config.dungeon::setDragonPrioHudShown),
             new Entry("bow_draw_indicator", "Bow Draw Indicator", () -> BowDrawIndicatorFeature.overlayBounds(config.misc),
                 config.misc::bowDrawIndicatorX, config.misc::bowDrawIndicatorY,
                 config.misc::setBowDrawIndicatorX, config.misc::setBowDrawIndicatorY,

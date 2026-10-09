@@ -1,0 +1,90 @@
+{
+  "attribution": "Option labels and choices derived from the Hypixel SkyBlock Wiki (https://hypixelskyblock.minecraft.wiki), CC BY-NC-SA 3.0. Only option labels are stored, no dialogue text.",
+  "choices": [
+    {
+      "npc": "Lumber Jack",
+      "options": ["[Sure]", "[Nah, I'm good]"],
+      "choose": "[Sure]"
+    },
+    {
+      "npc": "Kelly",
+      "options": ["[Yeah]", "[Never heard of him]"],
+      "choose": "[Never heard of him]"
+    },
+    {
+      "npcId": "molbert",
+      "options": ["[Sure...]", "[You look like a mole yourself]"],
+      "choose": "[Sure...]"
+    },
+    {
+      "npc": "Susan",
+      "options": ["[Absolutely!]", "[Tell me more about the Safety Squad.]", "[Not right now.]"],
+      "choose": "[Absolutely!]"
+    },
+    {
+      "npc": "Susan",
+      "options": ["[Sounds good with me!]", "[Give me a moment.]"],
+      "choose": "[Sounds good with me!]"
+    },
+    {
+      "npc": "Susan",
+      "options": ["[Absolutely!]", "[Let me think about it a bit more.]"],
+      "choose": "[Absolutely!]"
+    },
+    {
+      "npc": "Susan",
+      "options": ["[I'm good to go!]", "[Give me a moment.]"],
+      "choose": "[I'm good to go!]"
+    },
+    {
+      "npc": "Swoop",
+      "options": ["[Yes]", "[No]"],
+      "choose": "[Yes]"
+    },
+    {
+      "npc": "Loras",
+      "options": ["[Yes]", "[Later, maybe]"],
+      "choose": "[Yes]"
+    },
+    {
+      "npc": "Honey",
+      "options": ["[Yes]", "[No]"],
+      "choose": "[No]"
+    },
+    {
+      "npc": "Sanger",
+      "options": ["[Yep!]", "[Can you give me an example?]"],
+      "choose": "[Yep!]"
+    },
+    {
+      "npc": "Sanger",
+      "options": ["[Yep!]", "[Can you give me another example]"],
+      "choose": "[Yep!]"
+    },
+    {
+      "npc": "Sanger",
+      "options": ["[Yep!]", "[Can you give me one last example?]"],
+      "choose": "[Yep!]"
+    },
+    {
+      "npc": "Miria",
+      "options": ["[Let's do it!]", "[Maybe later]"],
+      "choose": "[Let's do it!]"
+    },
+    {
+      "npc": "Miria",
+      "options": ["[I sure am!]", "[I'll come back later]"],
+      "choose": "[I sure am!]"
+    },
+    {
+      "npc": "Archie",
+      "options": ["[Yes]", "[No]"],
+      "choose": "[Yes]"
+    },
+    {
+      "npc": "\"Hunter\" Tobias",
+      "options": ["[Nice!]", "[Suuuuuure...]"],
+      "choose": "[Nice!]"
+    }
+  ]
+}

@@ -8,7 +8,6 @@ import java.util.Locale;
 import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.input.KeyEvent;
-import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -148,18 +147,18 @@ public final class LoadoutsAutoCloseFeature extends ConfigurableFeature<MiscConf
         return activateLoadoutHotkey(screen, loadoutIndex, "key");
     }
 
-    public static boolean handleLoadoutMouseHotkey(AbstractContainerScreen<?> screen, MouseButtonEvent event) {
+    /** Called from MouseHandler.onButton with the raw GLFW button; see MouseHandlerMixin for why not mouseClicked. */
+    public static boolean handleLoadoutMouseHotkey(AbstractContainerScreen<?> screen, int button) {
         Minecraft client = Minecraft.getInstance();
         if (!INSTANCE.isEnabled()
             || client.player == null
             || client.gameMode == null
             || screen == null
-            || event == null
             || !isLoadoutsScreen(screen)) {
             return false;
         }
 
-        int loadoutIndex = matchingMouseKeybindIndex(event.button());
+        int loadoutIndex = matchingMouseKeybindIndex(button);
         if (loadoutIndex < 0) {
             return false;
         }
@@ -205,7 +204,7 @@ public final class LoadoutsAutoCloseFeature extends ConfigurableFeature<MiscConf
         int slotId = LOADOUT_HOTKEY_SLOTS[loadoutIndex];
         AbstractContainerMenu menu = screen.getMenu();
         ItemStack stack = slotStack(menu, slotId);
-        if (!isLoadoutSelectionStack(stack)) {
+        if (!isLoadoutSelectionStack(slotId, stack)) {
             KungDebugRecorder.event("loadouts-auto-close", "hotkey ignored index="
                 + (loadoutIndex + 1)
                 + " slot="
@@ -257,7 +256,7 @@ public final class LoadoutsAutoCloseFeature extends ConfigurableFeature<MiscConf
         }
 
         int loadoutIndex = slotIdToLoadoutIndex(slot.index);
-        if (loadoutIndex < 0 || !isLoadoutSelectionStack(slot.getItem())) {
+        if (loadoutIndex < 0 || !isLoadoutSelectionStack(slot.index, slot.getItem())) {
             return null;
         }
 
@@ -716,7 +715,7 @@ public final class LoadoutsAutoCloseFeature extends ConfigurableFeature<MiscConf
         if (isLoadoutSelectionSlot(slotId) && (stack == null || stack.isEmpty())) {
             return null;
         }
-        if (!isLoadoutSelectionStack(stack)) {
+        if (!isLoadoutSelectionStack(slotId, stack)) {
             return "not-selection-item";
         }
 
@@ -739,7 +738,7 @@ public final class LoadoutsAutoCloseFeature extends ConfigurableFeature<MiscConf
         return slotIdToLoadoutIndex(slotId) >= 0;
     }
 
-    private static int topSlotCount(AbstractContainerMenu menu) {
+    static int topSlotCount(AbstractContainerMenu menu) {
         if (menu == null) {
             return 0;
         }
@@ -747,7 +746,7 @@ public final class LoadoutsAutoCloseFeature extends ConfigurableFeature<MiscConf
         return Math.max(0, menu.slots.size() - PLAYER_INVENTORY_SLOT_COUNT);
     }
 
-    private static ItemStack slotStack(AbstractContainerMenu menu, int slotId) {
+    static ItemStack slotStack(AbstractContainerMenu menu, int slotId) {
         if (menu == null || slotId < 0 || slotId >= menu.slots.size()) {
             return ItemStack.EMPTY;
         }
@@ -756,33 +755,41 @@ public final class LoadoutsAutoCloseFeature extends ConfigurableFeature<MiscConf
         return slot == null ? ItemStack.EMPTY : slot.getItem();
     }
 
-    private static boolean isLoadoutSelectionStack(ItemStack stack) {
+    private static boolean isLoadoutSelectionStack(int slotId, ItemStack stack) {
         if (stack == null || stack.isEmpty()) {
             return false;
         }
 
         String itemPath = BuiltInRegistries.ITEM.getKey(stack.getItem()).getPath();
-        String name = stack.getHoverName().getString().replaceAll("\\s+", " ").trim().toLowerCase(Locale.ROOT);
         if (itemPath.contains("stained_glass")
             || itemPath.equals("barrier")
             || itemPath.equals("arrow")
-            || name.contains("close")
+            || itemPath.equals("gray_dye")
+            || itemPath.equals("red_dye")) {
+            return false;
+        }
+
+        return nameAllowsSelection(slotId, stack.getHoverName().getString());
+    }
+
+    /** Loadout names are player-chosen ("Kuudra Clear"), so button words are only checked off the loadout grid. */
+    static boolean nameAllowsSelection(int slotId, String hoverName) {
+        if (isLoadoutSelectionSlot(slotId)) {
+            return true;
+        }
+
+        String name = hoverName.replaceAll("\\s+", " ").trim().toLowerCase(Locale.ROOT);
+        return !(name.contains("close")
             || name.contains("go back")
             || name.contains("previous")
             || name.contains("next")
             || name.contains("cancel")
             || name.contains("delete")
             || name.contains("clear")
-            || itemPath.equals("gray_dye")
-            || itemPath.equals("red_dye")
             || name.contains("settings")
             || name.contains("info")
             || name.contains("help")
-            || name.contains("manage")) {
-            return false;
-        }
-
-        return true;
+            || name.contains("manage"));
     }
 
     private static int loadoutItemCount(AbstractContainerMenu menu) {
@@ -809,7 +816,7 @@ public final class LoadoutsAutoCloseFeature extends ConfigurableFeature<MiscConf
         return stack.getHoverName().getString().toLowerCase(Locale.ROOT).contains("loadout");
     }
 
-    private static String itemDebug(ItemStack stack) {
+    static String itemDebug(ItemStack stack) {
         if (stack == null || stack.isEmpty()) {
             return "empty";
         }

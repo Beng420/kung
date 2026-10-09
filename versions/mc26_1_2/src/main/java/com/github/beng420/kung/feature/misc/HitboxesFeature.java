@@ -3,6 +3,7 @@ package com.github.beng420.kung.feature.misc;
 import com.github.beng420.kung.compat.McCompat;
 import com.github.beng420.kung.config.category.HitboxesConfig;
 import com.github.beng420.kung.feature.ConfigurableFeature;
+import com.github.beng420.kung.util.KungDebugRecorder;
 import com.github.beng420.kung.util.LineBoxes;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -52,11 +53,11 @@ public final class HitboxesFeature extends ConfigurableFeature<HitboxesConfig> {
     private static final List<Box> heldItemBoxes = new ArrayList<>();
     /** The selection, resolved once per change instead of per entity per frame. */
     private static Map<String, Integer> resolvedFor = Map.of();
-    private static Map<EntityType<?>, Integer> byType = Map.of();
-    private static Map<String, Integer> byItem = Map.of();
+    private static Map<EntityType<?>, String> byType = Map.of();
+    private static Set<String> byItem = Set.of();
     private static boolean anySkyBlock;
-    /** Mob entity id -> color, from the last scan of named armor stands. */
-    private static Map<Integer, Integer> skyBlockMobs = Map.of();
+    /** Mob entity id -> entry id, from the last scan of named armor stands. */
+    private static Map<Integer, String> skyBlockMobs = Map.of();
     /** Id -> last seen: what stood around the player lately, still addable after it left or despawned. */
     private static final Map<String, Long> recent = new HashMap<>();
     private static int ticksUntilScan;
@@ -67,7 +68,10 @@ public final class HitboxesFeature extends ConfigurableFeature<HitboxesConfig> {
     protected void onInitialize() {
         ClientTickEvents.END_CLIENT_TICK.register(this::scan);
         LevelRenderEvents.END_EXTRACTION.register(this::extract);
-        LevelRenderEvents.END_MAIN.register(HitboxesFeature::render);
+        // Before water, like vanilla's block outline: water writes depth, so lines drawn after it vanish behind
+        // its surface. Drawn first, water blends over them while solid blocks still hide them. 26.2 only queues
+        // them here; its translucent feature pass draws them, also before translucent terrain.
+        LevelRenderEvents.BEFORE_TRANSLUCENT_TERRAIN.register(HitboxesFeature::render);
     }
 
     @Override
@@ -77,23 +81,22 @@ public final class HitboxesFeature extends ConfigurableFeature<HitboxesConfig> {
         var selected = config().entities();
         if (selected.equals(resolvedFor)) return;
         resolvedFor = Map.copyOf(selected);
-        Map<EntityType<?>, Integer> types = new HashMap<>();
-        Map<String, Integer> items = new HashMap<>();
+        Map<EntityType<?>, String> types = new HashMap<>();
+        Set<String> items = new HashSet<>();
         boolean skyBlock = false;
-        for (var entry : resolvedFor.entrySet()) {
-            String id = entry.getKey();
+        for (String id : resolvedFor.keySet()) {
             if (id.startsWith(SKYBLOCK)) skyBlock = true;
-            else if (id.startsWith(ITEM)) items.put(id, entry.getValue());
+            else if (id.startsWith(ITEM)) items.add(id);
             else {
                 // Entity types default to pig; an unknown id must stay unmatched instead.
                 var key = Identifier.tryParse(id);
                 if (key != null && BuiltInRegistries.ENTITY_TYPE.containsKey(key)) {
-                    types.put(BuiltInRegistries.ENTITY_TYPE.getValue(key), entry.getValue());
+                    types.put(BuiltInRegistries.ENTITY_TYPE.getValue(key), id);
                 }
             }
         }
         byType = Map.copyOf(types);
-        byItem = Map.copyOf(items);
+        byItem = Set.copyOf(items);
         anySkyBlock = skyBlock;
     }
 
@@ -115,7 +118,7 @@ public final class HitboxesFeature extends ConfigurableFeature<HitboxesConfig> {
         if (match) resolve();
         match &= anySkyBlock;
         Set<EntityType<?>> types = new HashSet<>();
-        Map<Integer, Integer> mobs = new HashMap<>();
+        Map<Integer, String> mobs = new HashMap<>();
         for (Entity entity : client.level.entitiesForRendering()) {
             types.add(entity.getType());
             if (!(entity instanceof ArmorStand stand)) continue;
@@ -123,15 +126,18 @@ public final class HitboxesFeature extends ConfigurableFeature<HitboxesConfig> {
             for (ItemStack held : List.of(stand.getMainHandItem(), stand.getOffhandItem())) {
                 if (!held.isEmpty()) recent.put(itemId(held), now);
             }
+            traceNameTag(stand, client.player);
             if (!stand.hasCustomName()) continue;
             String nametag = stand.getCustomName().getString();
             String id = skyBlockId(nametag);
             if (id != null && id.length() > SKYBLOCK.length() + 2) recent.put(id, now);
-            Integer color = match ? skyBlockColor(resolvedFor, nametag) : null;
-            if (color == null) continue;
+            String entry = match ? skyBlockEntry(resolvedFor.keySet(), nametag) : null;
+            if (entry == null) continue;
             // A name without a mob under it is the thing itself, such as an egg sac's SHOOT ME! stand.
             Entity mob = mobBelow(stand);
-            mobs.put((mob == null ? stand : mob).getId(), color);
+            if (mob == null) KungDebugRecorder.event("hitbox", "name without mob id=" + stand.getId()
+                + " y=" + (int) stand.getY() + " name=\"" + KungDebugRecorder.compact(nametag) + "\"");
+            mobs.put((mob == null ? stand : mob).getId(), entry);
         }
         for (EntityType<?> type : types) recent.put(BuiltInRegistries.ENTITY_TYPE.getKey(type).toString(), now);
         skyBlockMobs = Map.copyOf(mobs);
@@ -146,17 +152,17 @@ public final class HitboxesFeature extends ConfigurableFeature<HitboxesConfig> {
             float partialTick = camera.getCameraEntityPartialTicks(context.deltaTracker());
             for (var mob : skyBlockMobs.entrySet()) {
                 Entity entity = context.level().getEntity(mob.getKey());
-                if (entity != null && !entity.isRemoved()) boxes.add(new Box(interpolatedBounds(entity, partialTick), mob.getValue()));
+                if (entity != null && !entity.isRemoved()) boxes.add(box(mob.getValue(), interpolatedBounds(entity, partialTick)));
             }
             if (!byType.isEmpty()) for (Entity entity : context.level().entitiesForRendering()) {
-                Integer color = byType.get(entity.getType());
-                if (color == null || entity.isRemoved() || !entity.shouldRender(position.x, position.y, position.z)
+                String id = byType.get(entity.getType());
+                if (id == null || entity.isRemoved() || !entity.shouldRender(position.x, position.y, position.z)
                     || entity == camera.entity() && !camera.isDetached()) continue;
                 if (!(entity instanceof EnderDragon) || config().dragonOverallBox()) {
-                    boxes.add(new Box(interpolatedBounds(entity, partialTick), color));
+                    boxes.add(box(id, interpolatedBounds(entity, partialTick)));
                 }
                 if (entity instanceof EnderDragon dragon && config().dragonPartBoxes()) {
-                    for (var part : dragon.getSubEntities()) boxes.add(new Box(interpolatedBounds(part, partialTick), color));
+                    for (var part : dragon.getSubEntities()) boxes.add(box(id, interpolatedBounds(part, partialTick)));
                 }
             }
         }
@@ -167,18 +173,39 @@ public final class HitboxesFeature extends ConfigurableFeature<HitboxesConfig> {
     /** Nearest living, non-stand entity just below the name; a stand sits at most a few blocks over its mob. */
     private static Entity mobBelow(ArmorStand stand) {
         Entity nearest = null;
+        Entity self = Minecraft.getInstance().player;
         for (Entity candidate : stand.level().getEntities(stand, stand.getBoundingBox().inflate(1.5, 4, 1.5),
-            entity -> entity instanceof LivingEntity && !(entity instanceof ArmorStand) && entity.getY() <= stand.getY() + 0.5)) {
+            entity -> mobCandidate(entity, stand, self))) {
             if (nearest == null || candidate.distanceToSqr(stand) < nearest.distanceToSqr(stand)) nearest = candidate;
         }
         return nearest;
     }
 
-    static Integer skyBlockColor(Map<String, Integer> selected, String nametag) {
+    /** Never the local player: a mob in melee range leaves the player nearer to its name than the mob, or the only one once it is gone. */
+    static boolean mobCandidate(Entity entity, Entity stand, Entity self) {
+        return entity instanceof LivingEntity && !(entity instanceof ArmorStand) && entity != self && entity.getY() <= stand.getY() + 0.5;
+    }
+
+    /** Vanilla prints the type name, "Armor Stand", for a stand flagged to show a name it never got. */
+    public static boolean drawsTypeName(ArmorStand stand) {
+        return stand.isCustomNameVisible() && !stand.hasCustomName();
+    }
+
+    /** Trace only, the nametag is vanilla's: catches a stand showing "Armor Stand" or one whose name is flagged hidden. */
+    private static void traceNameTag(ArmorStand stand, Entity player) {
+        String problem = drawsTypeName(stand) ? "type-name" : stand.hasCustomName() && !stand.isCustomNameVisible() ? "name-hidden" : null;
+        if (problem == null || player == null) return;
+        var name = stand.getCustomName();
+        KungDebugRecorder.event("nametag", problem + " id=" + stand.getId() + " age=" + stand.tickCount
+            + " dist=" + (int) stand.distanceTo(player) + " dy=" + (int) (stand.getY() - player.getY())
+            + " invisible=" + stand.isInvisible() + " marker=" + stand.isMarker()
+            + " name=\"" + (name == null ? "" : KungDebugRecorder.compact(name.getString())) + "\"");
+    }
+
+    static String skyBlockEntry(Set<String> selected, String nametag) {
         String words = "_" + path(nametag) + "_";
-        for (var entry : selected.entrySet()) {
-            if (entry.getKey().startsWith(SKYBLOCK)
-                && words.contains("_" + entry.getKey().substring(SKYBLOCK.length()) + "_")) return entry.getValue();
+        for (String id : selected) {
+            if (id.startsWith(SKYBLOCK) && words.contains("_" + id.substring(SKYBLOCK.length()) + "_")) return id;
         }
         return null;
     }
@@ -219,13 +246,27 @@ public final class HitboxesFeature extends ConfigurableFeature<HitboxesConfig> {
     public static void observeHeldItem(EntityType<?> holder, ItemStack stack, Matrix4f pose) {
         if (holder != McCompat.ARMOR_STAND || byItem.isEmpty() || stack.isEmpty() || heldItemBoxes.size() >= 256
             || !KungConfig.get().hitboxes.enabled()) return;
-        Integer color = byItem.get(itemId(stack));
-        if (color == null) return;
+        String id = itemId(stack);
+        if (!byItem.contains(id)) return;
         // Handheld items are drawn around (0, 4, 0.5)/16 from the hand anchor (item/handheld display).
         Vector3f center = pose.transformPosition(new Vector3f(0, 0.25F, 1 / 32F));
         float half = 0.3F * pose.transformDirection(new Vector3f(1, 0, 0)).length();
         Vec3 world = McCompat.camera(Minecraft.getInstance()).position().add(center.x, center.y, center.z);
-        heldItemBoxes.add(new Box(new AABB(world, world).inflate(half), color));
+        heldItemBoxes.add(box(id, new AABB(world, world).inflate(half)));
+    }
+
+    /** Only the drawn copy is styled; nothing reads it but the renderer. */
+    private static Box box(String id, AABB bounds) {
+        HitboxesConfig config = KungConfig.get().hitboxes;
+        return new Box(scaled(bounds, config.boxSize(id)), config.entities().getOrDefault(id, HitboxesConfig.DEFAULT_COLOR),
+            2.0F * config.lineThickness(id) / 100F);
+    }
+
+    /** Around the center, like Ice Spray's Box Size: no entry draws anything tied to the feet. */
+    static AABB scaled(AABB bounds, int percent) {
+        if (percent == 100) return bounds;
+        double scale = percent / 100.0;
+        return AABB.ofSize(bounds.getCenter(), bounds.getXsize() * scale, bounds.getYsize() * scale, bounds.getZsize() * scale);
     }
 
     /** "minecraft:bone" -> "item:bone", the id an item entry is stored under. */
@@ -241,9 +282,10 @@ public final class HitboxesFeature extends ConfigurableFeature<HitboxesConfig> {
         if (boxes.isEmpty()) return;
         Vec3 camera = context.levelState().cameraRenderState.pos;
         McCompat.draw(context, RenderTypes.lines(), (pose, vertices) -> {
-            for (Box box : boxes) LineBoxes.box(vertices, pose, box.bounds(), camera.x, camera.y, camera.z, box.color(), 2.0F);
+            for (Box box : boxes) LineBoxes.box(vertices, pose, box.bounds(), camera.x, camera.y, camera.z, box.color(), box.width());
         });
     }
 
-    private record Box(AABB bounds, int color) { }
+    /** Width in screen pixels: the lines vertex format carries it per vertex. */
+    private record Box(AABB bounds, int color, float width) { }
 }

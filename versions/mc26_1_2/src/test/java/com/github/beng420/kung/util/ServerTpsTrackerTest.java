@@ -98,6 +98,28 @@ public final class ServerTpsTrackerTest {
     }
 
     @Test
+    public void aConnectionStallIsNotServerLagOnceItsBurstDeliversTheMissedTicks() {
+        ServerTpsTracker tracker = ServerTpsTracker.INSTANCE;
+        tracker.reset();
+        int id = 0;
+        for (int tick = 0; tick <= 100; tick++) {
+            tracker.recordPacketAtNanos(new ClientboundPingPacket(--id), tick * 50_000_000L);
+        }
+        // 1.5 s without a single packet can be the connection as much as the server.
+        assertEquals(20.0, tracker.deliveredSnapshotAtNanos(6_500_000_000L).current(), 0.0001);
+        // At 7 s the connection recovers: the 40 ticks the server ran meanwhile arrive at once.
+        for (int tick = 0; tick < 40; tick++) {
+            tracker.recordPacketAtNanos(new ClientboundPingPacket(--id), 7_000_000_000L);
+        }
+        for (int tick = 1; tick <= 20; tick++) {
+            tracker.recordPacketAtNanos(new ClientboundPingPacket(--id), 7_000_000_000L + tick * 50_000_000L);
+        }
+        assertEquals("Current: 20.0 (max/min/avg) 20.0/20.0/20.0",
+            tracker.deliveredSnapshotAtNanos(8_000_000_000L).message());
+        assertEquals(161, tracker.ticks());
+    }
+
+    @Test
     public void reportsUnavailableBeforeTwoTicks() {
         ServerTpsTracker tracker = ServerTpsTracker.INSTANCE;
         tracker.reset();

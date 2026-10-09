@@ -229,13 +229,13 @@ public final class SuperpairsHelperFeature extends ConfigurableFeature<MiscConfi
 
         int screenWidth = client.getWindow().getGuiScaledWidth();
         float scale = config.superpairsHelperScale() / 100.0F;
-        int maxPanelWidth = Math.round((screenWidth - config.superpairsHelperX() * 2) / scale);
-        textWidth = Math.min(textWidth, Math.max(80, maxPanelWidth - PADDING_X * 2));
+        textWidth = Math.min(textWidth, maxTextWidth(screenWidth, scale));
         int panelHeight = PADDING_Y * 2 + lines.size() * ROW_HEIGHT;
 
         graphics.pose().pushMatrix();
         try {
-            graphics.pose().translate(config.superpairsHelperX(), config.superpairsHelperY());
+            graphics.pose().translate(panelX(config.superpairsHelperX(), screenWidth, textWidth, scale),
+                config.superpairsHelperY());
             graphics.pose().scale(scale, scale);
             graphics.fill(-PADDING_X - 1, -PADDING_Y - 1, textWidth + PADDING_X + 1, panelHeight + 1, BORDER);
             graphics.fill(-PADDING_X, -PADDING_Y, textWidth + PADDING_X, panelHeight, PANEL);
@@ -246,6 +246,17 @@ public final class SuperpairsHelperFeature extends ConfigurableFeature<MiscConfi
         } finally {
             graphics.pose().popMatrix();
         }
+    }
+
+    /** Lines are only cut when they are wider than the whole screen at this scale. */
+    static int maxTextWidth(int screenWidth, float scale) {
+        return Math.max(40, Math.round(screenWidth / scale) - 2 * (PADDING_X + 1));
+    }
+
+    /** Moved left instead of cut short when the panel would run past the right edge. */
+    static int panelX(int configX, int screenWidth, int textWidth, float scale) {
+        int rightmost = screenWidth - Math.round((textWidth + PADDING_X + 1) * scale);
+        return Math.max(Math.round((PADDING_X + 1) * scale), Math.min(configX, rightmost));
     }
 
     private static String trimToWidth(Minecraft client, String value, int maxWidth) {

@@ -14,7 +14,6 @@ import java.io.IOException;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URLEncoder;
-import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
@@ -22,15 +21,13 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.function.Consumer;
 import net.minecraft.client.Minecraft;
 
 public final class DungeonRoomDataSyncClient {
     public static final DungeonRoomDataSyncClient INSTANCE = new DungeonRoomDataSyncClient();
 
-    private final HttpClient httpClient = HttpClient.newBuilder()
-        .connectTimeout(Duration.ofSeconds(10))
-        .build();
     private volatile String statusMessage = "Idle";
     private volatile boolean liveSyncInFlight;
 
@@ -48,9 +45,13 @@ public final class DungeonRoomDataSyncClient {
         if (!configured()) {
             return "Not connected: no server";
         }
+        String signIn = KungServerSession.INSTANCE.status();
+        if (signIn.equals(KungServerSession.NOT_ALLOWED) || signIn.startsWith("Sign-in failed")) {
+            return "Not connected: " + signIn;
+        }
         String status = statusMessage == null ? "" : statusMessage;
         String lower = status.toLowerCase(java.util.Locale.ROOT);
-        if (lower.contains("failed") || lower.contains("unauthorized")) {
+        if (lower.contains("failed")) {
             return "Not connected: " + status;
         }
         if (lower.contains("pinging") || lower.contains("pulling") || lower.contains("pushing")) {
@@ -59,10 +60,7 @@ public final class DungeonRoomDataSyncClient {
         if (lower.startsWith("live rooms")) {
             return "Ready: " + status;
         }
-        if (lower.contains("ping ok") || lower.contains("pulled") || lower.contains("pushed")) {
-            return "Ready";
-        }
-        return "Ready";
+        return "Ready (" + signIn + ")";
     }
 
     public boolean configured() {
@@ -83,11 +81,9 @@ public final class DungeonRoomDataSyncClient {
         statusMessage = "Pulling...";
         CompletableFuture.runAsync(() -> {
             try {
-                HttpRequest request = requestBuilder(endpoint("rooms"))
+                HttpResponse<String> response = exchange(requestBuilder(endpoint("rooms"))
                     .header("Accept", "application/json")
-                    .GET()
-                    .build();
-                HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+                    .GET());
                 ensureSuccess(response, "Pull");
                 DungeonKnownRoomCatalog.RemoteCacheResult result =
                     DungeonKnownRoomCatalog.updateRemoteCache(response.body());
@@ -148,12 +144,10 @@ public final class DungeonRoomDataSyncClient {
     }
 
     private PushResult pushRoomReport(String roomReportJson) throws IOException, InterruptedException {
-        HttpRequest request = requestBuilder(endpoint("rooms/report"))
+        HttpResponse<String> response = exchange(requestBuilder(endpoint("rooms/report"))
             .header("Accept", "application/json")
             .header("Content-Type", "application/json")
-            .POST(HttpRequest.BodyPublishers.ofString(roomReportJson))
-            .build();
-        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            .POST(HttpRequest.BodyPublishers.ofString(roomReportJson)));
         ensureSuccess(response, "Push");
         return new PushResult(response.body().isBlank() ? "gesendet" : response.body());
     }
@@ -173,18 +167,10 @@ public final class DungeonRoomDataSyncClient {
                     : "ping";
                 String query = "runs/live?runKey=ping&player="
                     + URLEncoder.encode(playerName, StandardCharsets.UTF_8);
-                HttpRequest request = requestBuilder(endpoint(query))
+                HttpResponse<String> response = exchange(requestBuilder(endpoint(query))
                     .header("Accept", "application/json")
-                    .GET()
-                    .build();
-                HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+                    .GET());
                 long durationMillis = Math.max(1L, (System.nanoTime() - startedAt) / 1_000_000L);
-                if (response.statusCode() == 401 || response.statusCode() == 403) {
-                    statusMessage = "Ping unauthorized";
-                    send(client, KungMessages.Type.ERROR, "Ping failed: token is wrong or missing (HTTP "
-                        + response.statusCode() + ", " + durationMillis + "ms).");
-                    return;
-                }
                 ensureSuccess(response, "Ping");
                 int liveClientCount = liveClientCount(response.body());
                 statusMessage = "Ping ok";
@@ -194,8 +180,8 @@ public final class DungeonRoomDataSyncClient {
                     + durationMillis
                     + "ms, liveClients="
                     + liveClientCount
-                    + ", token="
-                    + (!KungConfig.get().dungeon.roomSyncToken().isBlank())
+                    + ", "
+                    + KungServerSession.INSTANCE.status()
                     + ".");
             } catch (IOException | InterruptedException | RuntimeException exception) {
                 if (exception instanceof InterruptedException) {
@@ -363,12 +349,10 @@ public final class DungeonRoomDataSyncClient {
         }
         body.add("players", playerArray);
 
-        HttpRequest request = requestBuilder(endpoint("runs/live/report"))
+        HttpResponse<String> response = exchange(requestBuilder(endpoint("runs/live/report"))
             .header("Accept", "application/json")
             .header("Content-Type", "application/json")
-            .POST(HttpRequest.BodyPublishers.ofString(body.toString()))
-            .build();
-        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            .POST(HttpRequest.BodyPublishers.ofString(body.toString())));
         ensureSuccess(response, "Live push");
     }
 
@@ -380,24 +364,28 @@ public final class DungeonRoomDataSyncClient {
             + URLEncoder.encode(runKey, StandardCharsets.UTF_8)
             + "&player="
             + URLEncoder.encode(playerName, StandardCharsets.UTF_8);
-        HttpRequest request = requestBuilder(endpoint(query))
+        HttpResponse<String> response = exchange(requestBuilder(endpoint(query))
             .header("Accept", "application/json")
-            .GET()
-            .build();
-        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            .GET());
         ensureSuccess(response, "Live pull");
         return parseLiveSnapshot(response.body());
     }
 
-    private HttpRequest.Builder requestBuilder(URI uri) {
-        HttpRequest.Builder builder = HttpRequest.newBuilder(uri)
+    private static HttpRequest.Builder requestBuilder(URI uri) {
+        return HttpRequest.newBuilder(uri)
             .timeout(Duration.ofSeconds(20))
             .header("User-Agent", "Kung-RoomSync");
-        String token = KungConfig.get().dungeon.roomSyncToken();
-        if (!token.isBlank()) {
-            builder.header("Authorization", "Bearer " + token);
+    }
+
+    /** Callers already run off the render thread, so waiting for sign-in and the reply is fine here. */
+    private static HttpResponse<String> exchange(HttpRequest.Builder request) throws IOException, InterruptedException {
+        try {
+            return KungServerSession.INSTANCE.send(request).get();
+        } catch (ExecutionException exception) {
+            // Sign-in failures carry their status as the message, e.g. "Not allowed on this server".
+            Throwable cause = exception.getCause();
+            throw cause instanceof IOException io ? io : new IOException(cause.getMessage(), cause);
         }
-        return builder;
     }
 
     private static void ensureSuccess(HttpResponse<?> response, String operation) throws IOException {
@@ -406,7 +394,7 @@ public final class DungeonRoomDataSyncClient {
         }
     }
 
-    private static URI endpoint(String path) {
+    public static URI endpoint(String path) {
         String base = KungConfig.get().dungeon.roomSyncServerUrl();
         while (base.endsWith("/")) {
             base = base.substring(0, base.length() - 1);

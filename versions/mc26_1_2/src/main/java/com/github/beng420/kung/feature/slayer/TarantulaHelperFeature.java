@@ -148,7 +148,9 @@ public final class TarantulaHelperFeature extends ConfigurableFeature<SlayerConf
         ClientReceiveMessageEvents.CHAT.register((message, signedMessage, sender, params, receptionTimestamp) ->
             observeMessage(Minecraft.getInstance(), message.getString())
         );
-        LevelRenderEvents.END_MAIN.register(this::render);
+        // Before water, like vanilla's block outline: water writes depth, so boxes and grid drawn after it vanish
+        // behind its surface. The grid is nearly opaque, so its own depth barely shows against water behind it.
+        LevelRenderEvents.BEFORE_TRANSLUCENT_TERRAIN.register(this::render);
         HudElementRegistry.attachElementBefore(VanillaHudElements.PLAYER_LIST,
             Identifier.fromNamespaceAndPath(KungMod.MOD_ID, "egg_sac_countdown"), (graphics, delta) -> renderCountdown(graphics));
     }

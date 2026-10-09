@@ -1,7 +1,12 @@
 package com.github.beng420.kung.feature.dungeon;
 
 import com.github.beng420.kung.compat.McCompat;
+import com.github.beng420.kung.config.KungHudEditorScreen;
+import com.github.beng420.kung.config.KungHudEditorState;
+import com.github.beng420.kung.config.KungHudLayout;
 import com.github.beng420.kung.config.category.DungeonConfig;
+import com.github.beng420.kung.config.category.DungeonConfig.DragonPrioSplit;
+import com.github.beng420.kung.config.category.DungeonConfig.DragonPrioUnit;
 import java.util.List;
 import com.github.beng420.kung.feature.ConfigurableFeature;
 import com.github.beng420.kung.feature.dungeon.M7DragonTracker.Statue;
@@ -29,12 +34,16 @@ import java.util.regex.Pattern;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
+import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
+import net.fabricmc.fabric.api.client.rendering.v1.hud.VanillaHudElements;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.core.particles.ParticleType;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.network.protocol.game.ClientboundLevelParticlesPacket;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.boss.enderdragon.EnderDragon;
 import net.minecraft.world.phys.AABB;
@@ -51,6 +60,12 @@ public final class M7DragonFeature extends ConfigurableFeature<DungeonConfig> {
     private final Map<Statue, M7DragonTracker.Outcome> pendingTitles = new EnumMap<>(Statue.class);
     /** Tick of the last pre-spawn particle burst seen at each anchor. */
     private final Map<Statue, Long> spawnHints = new EnumMap<>(Statue.class);
+    /**
+     * Dragon Prio: which hint of the run each dragon still waiting to spawn is (1 = Bers split,
+     * 2 = Arch split, later = both). A dragon leaves the map the moment it spawns.
+     */
+    private final Map<Statue, Integer> prioNumbers = new EnumMap<>(Statue.class);
+    private int hintCount;
     /** Server tick each dragon was first seen, and its per-tick part positions while being recorded. */
     private final Map<UUID, Long> spawnTicks = new java.util.HashMap<>();
     private final Map<UUID, List<double[]>> timelineRows = new java.util.HashMap<>();
@@ -94,6 +109,8 @@ public final class M7DragonFeature extends ConfigurableFeature<DungeonConfig> {
     @Override protected void onInitialize() {
         M7DragonRenderer.initialize();
         ClientTickEvents.END_CLIENT_TICK.register(this::tick);
+        HudElementRegistry.attachElementBefore(VanillaHudElements.PLAYER_LIST,
+            Identifier.fromNamespaceAndPath("kung", "dragon_prio"), (graphics, delta) -> renderPrioHud(graphics));
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> onReset());
         DungeonServerTickEvents.register(() -> { if (ready()) publish(tracker.advance()); });
         ClientReceiveMessageEvents.ALLOW_GAME.register((message, overlay) -> {
@@ -112,6 +129,8 @@ public final class M7DragonFeature extends ConfigurableFeature<DungeonConfig> {
 
     private void clearObservations() {
         spawnHints.clear();
+        prioNumbers.clear();
+        hintCount = 0;
         hitboxesRecorded.clear();
         trails.clear();
         trailsClosed.clear();
@@ -185,10 +204,15 @@ public final class M7DragonFeature extends ConfigurableFeature<DungeonConfig> {
             sample("unidentified-spawn id=" + entity.getId() + " position=" + entity.position());
             return;
         }
+        // Handler time, not next tick: the Dragon Prio number and line end with the very frame the dragon exists.
+        if (previous == null) prioNumbers.remove(statue);
         publish(tracker.spawn(entity.getUUID(), statue, entity.position()));
         if (tracker.attempt(entity.getUUID()) == null) return;
         entities.put(entity.getUUID(), dragon);
-        if (previous == null) spawnTicks.put(entity.getUUID(), tracker.tick());
+        if (previous == null) {
+            spawnTicks.put(entity.getUUID(), tracker.tick());
+            services().dungeonStateTracker().splitTracker().dragonSpawned();
+        }
         // A re-sent entity (chunk reload, re-track) is a position update, not a spawn: logging it
         // as "spawn" made mid-flight coordinates look like imprecise spawn anchors.
         trace((previous == null ? "spawn " : "reobserve ") + statue.label()
@@ -975,6 +999,88 @@ public final class M7DragonFeature extends ConfigurableFeature<DungeonConfig> {
         return attempt == null || attempt.dead() || entities.get(attempt.uuid()) == null;
     }
 
+    /**
+     * Dragon Prio: the Bers split (Berserker, Mage) takes spawn hint 1, the Arch split (Archer,
+     * Healer, Tank) hint 2, and both take every later one. Mage, Healer and Tank pick their split;
+     * a class that is not known yet sees everything rather than nothing.
+     */
+    static boolean prioShown(int hint, DungeonRunStats.DungeonClass self,
+                             DragonPrioSplit mage, DragonPrioSplit healer, DragonPrioSplit tank) {
+        if (hint >= 3) return true;
+        DragonPrioSplit split = switch (self) {
+            case ARCHER -> DragonPrioSplit.ARCH;
+            case BERSERKER -> DragonPrioSplit.BERS;
+            case MAGE -> mage;
+            case HEALER -> healer;
+            case TANK -> tank;
+            case UNKNOWN -> null;
+        };
+        return split == null || split == (hint == 1 ? DragonPrioSplit.BERS : DragonPrioSplit.ARCH);
+    }
+
+    /** Dragons you prio whose burst is running and which have not spawned yet. */
+    private List<Statue> prioStatues() {
+        if (!ready() || !config().dragonPrioEnabled()) return List.of();
+        var self = services().dungeonStateTracker().runStats().selfDungeonClass();
+        List<Statue> mine = new ArrayList<>();
+        for (var entry : prioNumbers.entrySet()) {
+            if (ticksSinceSpawn(entry.getKey()) != null && prioShown(entry.getValue(), self,
+                config().dragonPrioMage(), config().dragonPrioHealer(), config().dragonPrioTank())) mine.add(entry.getKey());
+        }
+        return mine;
+    }
+
+    /** Statues to draw a line to this frame; the renderer extracts only these, never a start point. */
+    List<Statue> prioLines() {
+        return McCompat.hudHidden(Minecraft.getInstance()) ? List.of() : prioStatues();
+    }
+
+    /** Asked again by the renderer when it draws, so a dragon that spawned since extraction costs no frame. */
+    boolean prioPending(Statue statue) { return prioNumbers.containsKey(statue); }
+
+    private void renderPrioHud(GuiGraphicsExtractor graphics) {
+        Minecraft client = Minecraft.getInstance();
+        if (!ready() || !config().dragonPrioHudShown() || client.player == null || McCompat.hudHidden(client)
+            || McCompat.screen(client) instanceof KungHudEditorScreen || KungHudEditorState.externalEditing()) return;
+        MutableComponent text = Component.empty();
+        for (Statue statue : prioStatues()) {
+            Double since = ticksSinceSpawn(statue);
+            // The number ends at 0; the line goes on until the dragon is actually there.
+            if (since == null || since > 0) continue;
+            if (!text.getSiblings().isEmpty()) text.append(" ");
+            text.append(Component.literal(prioText((long) -since, config().dragonPrioUnit())).withColor(statue.color() & 0xFFFFFF));
+        }
+        if (!text.getSiblings().isEmpty()) drawPrio(graphics, config(), text);
+    }
+
+    private static void drawPrio(GuiGraphicsExtractor graphics, DungeonConfig config, Component text) {
+        graphics.pose().pushMatrix();
+        try {
+            graphics.pose().translate(config.dragonPrioX(), config.dragonPrioY());
+            float scale = config.dragonPrioScale() / 100F;
+            graphics.pose().scale(scale, scale);
+            graphics.text(Minecraft.getInstance().font, text, 4, 4, 0xFFFFFFFF, true);
+        } finally {
+            graphics.pose().popMatrix();
+        }
+    }
+
+    /** The countdown number: server ticks as they are, or milliseconds (50 per tick). */
+    static String prioText(long ticks, DragonPrioUnit unit) {
+        return Long.toString(unit == DragonPrioUnit.MILLISECONDS ? ticks * 50L : ticks);
+    }
+
+    public static void drawPrioPreview(GuiGraphicsExtractor graphics, DungeonConfig config) {
+        drawPrio(graphics, config, Component.literal(prioText(67, config.dragonPrioUnit())).withColor(Statue.BLUE.color() & 0xFFFFFF));
+    }
+
+    public static KungHudLayout.Bounds overlayBounds(DungeonConfig config) {
+        float scale = config.dragonPrioScale() / 100F;
+        int width = config.dragonPrioUnit() == DragonPrioUnit.MILLISECONDS ? 60 : 36;
+        return new KungHudLayout.Bounds(config.dragonPrioX(), config.dragonPrioY(),
+            Math.round(width * scale), Math.round(16 * scale));
+    }
+
     /** A wireframe needs a little more size than the old filled dot to stay readable across the arena. */
     private static M7DragonRenderer.Marker point(Vec3 center, int color) {
         return point(center, color, false);
@@ -1121,7 +1227,8 @@ public final class M7DragonFeature extends ConfigurableFeature<DungeonConfig> {
                 Long first = spawnHints.get(statue);
                 if (first == null || tracker.tick() - first > M7DragonAim.HINT_TO_SPAWN_TICKS + 20) {
                     spawnHints.put(statue, tracker.tick());
-                    trace("spawn-hint " + statue.label() + " tick=" + tracker.tick());
+                    prioNumbers.put(statue, ++hintCount);
+                    trace("spawn-hint " + statue.label() + " tick=" + tracker.tick() + " number=" + hintCount);
                 }
                 return;
             }

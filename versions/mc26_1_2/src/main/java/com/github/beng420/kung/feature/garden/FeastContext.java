@@ -113,7 +113,7 @@ public final class FeastContext {
         }
     }
 
-    static String profileId(String message) {
+    public static String profileId(String message) {
         var match = PROFILE_ID.matcher(HypixelLocation.clean(message));
         if (!match.matches()) return null;
         try { return java.util.UUID.fromString(match.group(1)).toString(); }

@@ -25,7 +25,6 @@ sourceSets {
     // src/version/java is the project's own McCompat: API that differs between Minecraft versions.
     java.srcDirs = [new File(sharedSrc, "main/java"), new File(sharedSrc, "${flavor}/java"), file("src/version/java")]
     resources.srcDirs = [new File(sharedSrc, "main/resources")]
-    resources.srcDir(layout.buildDirectory.dir("generated/kung-defaults"))
   }
 }
 
@@ -80,74 +79,6 @@ def localDungeonScanDir = kungProfileDir.map { profileDir ->
   File current = file("${profileDir}/config/kung/dungeon-data")
   current.isDirectory() ? current : file("${profileDir}/kung-dungeon-scans")
 }
-def kungPrivateRoomSyncDefaults = providers.gradleProperty("kungPrivateRoomSyncDefaults")
-  .orElse(providers.environmentVariable("KUNG_PRIVATE_ROOM_SYNC_DEFAULTS"))
-  .orElse("false")
-def kungRoomSyncProfileDefault = { String key ->
-  providers.provider {
-    if (!kungPrivateRoomSyncDefaults.get().toBoolean()) {
-      return null
-    }
-    File configFile = file("${kungProfileDir.get()}/config/kung/kung.json")
-    if (!configFile.exists()) configFile = file("${kungProfileDir.get()}/config/kung.json")
-    if (!configFile.exists()) {
-      return null
-    }
-    try {
-      def parsed = new groovy.json.JsonSlurper().parse(configFile)
-      def value = parsed?.dungeonMap?.get(key)
-      String text = value == null ? "" : value.toString().trim()
-      return text.isEmpty() ? null : text
-    } catch (Exception exception) {
-      logger.info("Could not read Kung room sync default ${key} from ${configFile}: ${exception.message}")
-      return null
-    }
-  }
-}
-def kungRoomSyncDefaultServerUrl = providers.gradleProperty("kungRoomSyncServerUrl")
-  .orElse(providers.environmentVariable("KUNG_DEFAULT_ROOM_SYNC_SERVER_URL"))
-  .orElse(kungRoomSyncProfileDefault("roomSyncServerUrl"))
-  .orElse("")
-def kungRoomSyncDefaultToken = providers.gradleProperty("kungRoomSyncToken")
-  .orElse(providers.environmentVariable("KUNG_DEFAULT_ROOM_SYNC_TOKEN"))
-  .orElse(kungRoomSyncProfileDefault("roomSyncToken"))
-  .orElse("")
-def kungRoomSyncDefaultEnabled = providers.gradleProperty("kungRoomSyncEnabled")
-  .orElse(providers.environmentVariable("KUNG_DEFAULT_ROOM_SYNC_ENABLED"))
-  .orElse("false")
-def kungRoomSyncDefaultUpload = providers.gradleProperty("kungRoomSyncUpload")
-  .orElse(providers.environmentVariable("KUNG_DEFAULT_ROOM_SYNC_UPLOAD"))
-  .orElse("false")
-
-tasks.register("generateKungDefaults") {
-  group = "kung"
-  description = "Generates optional bundled Kung runtime defaults for private jars."
-
-  def outputFile = layout.buildDirectory.file("generated/kung-defaults/kung-defaults.properties")
-  inputs.property("roomSyncServerUrl", kungRoomSyncDefaultServerUrl)
-  inputs.property("roomSyncToken", kungRoomSyncDefaultToken)
-  inputs.property("roomSyncEnabled", kungRoomSyncDefaultEnabled)
-  inputs.property("roomSyncUpload", kungRoomSyncDefaultUpload)
-  inputs.property("flavor", flavor)
-  outputs.file(outputFile)
-
-  doLast {
-    // The Modrinth jar is public: it never carries a room sync server or token.
-    boolean publicJar = flavor == "modrinth"
-    Properties properties = new Properties()
-    properties.setProperty("roomSync.serverUrl", publicJar ? "" : kungRoomSyncDefaultServerUrl.get())
-    properties.setProperty("roomSync.token", publicJar ? "" : kungRoomSyncDefaultToken.get())
-    properties.setProperty("roomSync.enabled", publicJar ? "false" : kungRoomSyncDefaultEnabled.get())
-    properties.setProperty("roomSync.upload", publicJar ? "false" : kungRoomSyncDefaultUpload.get())
-
-    File target = outputFile.get().asFile
-    target.parentFile.mkdirs()
-    target.withOutputStream { stream ->
-      properties.store(stream, "Kung bundled runtime defaults")
-    }
-  }
-}
-
 tasks.register("syncLocalDungeonRoomData") {
   group = "kung"
   description = "Copies locally learned dungeon room data from the active Modrinth profile into bundled jar resources."
@@ -206,8 +137,6 @@ tasks.register("syncLocalDungeonRoomData") {
 }
 
 processResources {
-  dependsOn tasks.named("generateKungDefaults")
-
   inputs.property "version", project.version
   inputs.property "minecraft_version", minecraftVersion
   inputs.property "loader_version", fabric_loader_version
@@ -226,10 +155,6 @@ processResources {
   }
 }
 
-tasks.named("sourcesJar") {
-  dependsOn tasks.named("generateKungDefaults")
-}
-
 tasks.named("test") {
   workingDir = layout.buildDirectory.dir("test-run").get().asFile
   doFirst {
@@ -237,16 +162,17 @@ tasks.named("test") {
   }
 }
 
-// Blood Rush and Mimic ESP are not in the Modrinth jar. Every use of these classes sits in
+// Blood Rush, Mimic ESP and Skip NPC Dialogue are not in the Modrinth jar. Every use of these classes sits in
 // if (!KungBuild.MODRINTH), which javac drops; the check fails the build if one slips through.
 def modrinthCut = [
   "feature/dungeon/BloodRushHelperFeature", "feature/dungeon/BloodRushDoorEstimate",
   "feature/dungeon/DungeonMimicEspFeature", "feature/dungeon/DungeonMimicChestScanner",
   "feature/dungeon/DungeonMimicStaticChests", "feature/dungeon/DungeonMimicChestMemory",
   "feature/dungeon/DungeonStaticChestCatalog", "feature/dungeon/DungeonStaticChestPattern",
+  "feature/misc/NpcDialogueSkipFeature",
   "command/MimicCommandGroup"
 ].collect { "com/github/beng420/kung/${it}" }
-def modrinthCutResources = ["kung-dungeon-scans/static-trapped-chests.json"]
+def modrinthCutResources = ["kung-dungeon-scans/static-trapped-chests.json", "kung-npc-dialogue-choices.json"]
 
 if (flavor == "modrinth") {
   tasks.named("jar") {

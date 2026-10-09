@@ -30,20 +30,28 @@ final class HitboxSettings implements Supplier<List<SettingEntry>> {
         List<SettingEntry> next = new ArrayList<>();
         next.add(SettingEntry.button("Add Hitbox", "+", () -> open(null)));
         for (String id : ids) {
-            var row = SettingEntry.colorRemove(name(id), () -> config.entities().getOrDefault(id, HitboxesConfig.DEFAULT_COLOR),
-                () -> open(id), () -> config.remove(id)).withTooltip(id, "Click the color to edit; click - to remove.");
+            List<SettingEntry> children = new ArrayList<>();
+            String expand = "Expand for line thickness and box size.";
             if (id.equals("minecraft:ender_dragon")) {
-                row = row.withChildren(List.of(
-                    SettingEntry.toggle("Overall Box", config::dragonOverallBox,
+                children.add(SettingEntry.toggle("Overall Box", config::dragonOverallBox,
                         () -> config.setDragonOverallBox(!config.dragonOverallBox()))
-                        .withTooltip("Show the dragon's large overall bounding box."),
-                    SettingEntry.toggle("Body Part Boxes", config::dragonPartBoxes,
+                    .withTooltip("Show the dragon's large overall bounding box."));
+                children.add(SettingEntry.toggle("Body Part Boxes", config::dragonPartBoxes,
                         () -> config.setDragonPartBoxes(!config.dragonPartBoxes()))
-                        .withTooltip("Show the smaller boxes for the head, body, wings and tail.")
-                )).withTooltip(id, "Expand for independent overall and body-part boxes.",
-                    "Click the color to edit; click - to remove.");
+                    .withTooltip("Show the smaller boxes for the head, body, wings and tail."));
+                expand = "Expand for independent overall and body-part boxes, line thickness and box size.";
             }
-            next.add(row);
+            children.add(SettingEntry.slider("Line Thickness (%)", () -> config.lineThickness(id),
+                    percent -> config.setLineThickness(id, percent), 25, 400, 25)
+                .withTooltip("100% = the normal outline; 400% = four times as thick.",
+                    "Thicker lines stay visible through water and at a distance."));
+            children.add(SettingEntry.slider("Box Size (%)", () -> config.boxSize(id),
+                    percent -> config.setBoxSize(id, percent), 50, 200, 10)
+                .withTooltip("50% = x0.5, 100% = normal, 200% = x2.0, around the box's center.",
+                    "Only the drawn outline changes; the real hitbox stays the same."));
+            next.add(SettingEntry.colorRemove(name(id), () -> config.entities().getOrDefault(id, HitboxesConfig.DEFAULT_COLOR),
+                    () -> open(id), () -> config.remove(id))
+                .withChildren(children).withTooltip(id, expand, "Click the color to edit; click - to remove."));
         }
         return rows = List.copyOf(next);
     }

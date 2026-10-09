@@ -52,6 +52,16 @@ public final class LobbyHopHelperFeatureTest {
     }
 
     @Test
+    public void lobbiesLeftMoreThanTwoHoursAgoCountAsUnknown() {
+        long minute = 60_000L;
+        visit("mini123", 0L);
+        visit("mini456", 0L);
+        visit("mini789", 0L);
+        assertEquals(119 * minute, visit("mini123", 119 * minute));
+        assertEquals(-1L, visit("mini456", 121 * minute));
+    }
+
+    @Test
     public void elapsedTimeUsesCompactMinutesAndWholeSeconds() {
         assertEquals("0s ago", LobbyHopHelperFeature.formatAgo(999L));
         assertEquals("31s ago", LobbyHopHelperFeature.formatAgo(31_999L));

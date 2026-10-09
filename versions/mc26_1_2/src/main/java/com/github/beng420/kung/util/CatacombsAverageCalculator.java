@@ -1,5 +1,6 @@
 package com.github.beng420.kung.util;
 
+import com.github.beng420.kung.feature.dungeon.KungServerSession;
 import com.github.beng420.kung.skyblock.SkyBlockMayorTracker;
 import java.time.Instant;
 import java.util.EnumMap;
@@ -32,50 +33,56 @@ public final class CatacombsAverageCalculator {
         return calculateAsync(username, goal, true);
     }
 
-    public CompletableFuture<Result> calculateAsync(String username, Goal goal, boolean useLocalObservedXp) {
+    /**
+     * Your own XP comes from the loader, merged with or answered from your saved data either way.
+     * {@code useLastRunXp} additionally swaps the preset class XP per run for your last run's; chat replies
+     * keep the M7 max-bonus preset so they don't depend on whichever floor you ran last.
+     */
+    public CompletableFuture<Result> calculateAsync(String username, Goal goal, boolean useLastRunXp) {
         String normalized = username == null ? "" : username.trim();
         if (!validUsername(normalized)) {
             return CompletableFuture.completedFuture(Result.error("invalid username"));
         }
 
         return HypixelSkyBlockProfileClient.INSTANCE.loadCalculatorPlayer(normalized)
-            .thenApply(result -> result.success()
-                ? calculate(result.player(), "source=" + result.source() + " secrets=" + result.secretsFound(),
-                    normalized, goal, useLocalObservedXp)
-                : Result.error(externalProfileError(result.error()), "profileError=" + result.error()));
+            .thenApply(result -> {
+                if (!result.success()) {
+                    return Result.error(externalProfileError(result.error()), "profileError=" + result.error());
+                }
+                Result calculated = calculate(result.player(), "source=" + result.source() + " secrets=" + result.secretsFound(),
+                    normalized, goal, useLastRunXp);
+                return result.local() && calculated.success()
+                    ? Result.ok(calculated.message() + " (local)", calculated.debugDetails())
+                    : calculated;
+            });
     }
 
     public Result calculate(PlayerData player) {
         return calculate(player, "", "", Goal.CLASS_AVERAGE_50, true);
     }
 
-    private Result calculate(PlayerData player, String requestDebug, String requestedName, Goal goal, boolean useLocalObservedXp) {
+    private Result calculate(PlayerData player, String requestDebug, String requestedName, Goal goal, boolean useLastRunXp) {
         if (player == null || player.profiles().isEmpty()) {
             return Result.error("no SkyBlock profile found");
         }
-        CatacombsRecentXpTracker.AdjustedPlayer adjusted = useLocalObservedXp
-            ? CatacombsRecentXpTracker.INSTANCE.applyToLocalPlayer(requestedName, player)
-            : new CatacombsRecentXpTracker.AdjustedPlayer(player, "localXp=disabled", Map.of());
-        player = adjusted.player();
         ProfileData profile = player.selectedProfile();
         if (!profile.stats().available() && profile.totalDungeonXp() <= 0) {
             return Result.error("selected profile has no Dungeon stats", requestDebug
                 + " profile=" + profile.cuteName());
         }
         EnumMap<DungeonClass, Double> classXpPerRun = classXpPerRun(profile.classPerks());
-        for (Map.Entry<DungeonClass, Double> entry : adjusted.classXpPerRun().entrySet()) {
-            if (entry.getValue() != null && entry.getValue() > 0.0) {
-                classXpPerRun.put(entry.getKey(), entry.getValue());
-            }
-        }
+        Map<DungeonClass, Double> lastRunXp = useLastRunXp
+            ? CatacombsRecentXpTracker.INSTANCE.localClassXpPerRun(requestedName)
+            : Map.of();
+        classXpPerRun.putAll(lastRunXp);
         Breakdown breakdown = calculateBreakdown(profile.classXp(), classXpPerRun);
         long cataXpPerRun = catacombsXpPerRun();
         long cataRuns = runsToCatacombs(profile.cataXp(), 50, cataXpPerRun);
         String message = goal == Goal.CATACOMBS_50
             ? catacombsSummaryLine(player.name(), "M7", 50, cataRuns)
             : classAverageSummaryLine(player.name(), "M7", breakdown);
-        return Result.ok(message,
-            resultDebug(player, profile, breakdown, cataRuns, cataXpPerRun, classXpPerRun, requestDebug, adjusted.debugDetails(), goal));
+        return Result.ok(message, resultDebug(player, profile, breakdown, cataRuns, cataXpPerRun, classXpPerRun,
+            requestDebug, useLastRunXp ? "lastRunXp=" + lastRunXp : "lastRunXp=disabled", goal));
     }
 
     private EnumMap<DungeonClass, Double> classXpPerRun(Map<DungeonClass, Integer> classPerks) {
@@ -340,7 +347,15 @@ public final class CatacombsAverageCalculator {
         return value != null && value.matches("[A-Za-z0-9_]{3,16}");
     }
 
-    private static String externalProfileError(String error) {
+    static String externalProfileError(String rawError) {
+        // A failed own key plus a failed server is one combined trace error; the chat message follows the server's part.
+        String error = HypixelSkyBlockProfileClient.lastError(rawError);
+        if (HypixelSkyBlockProfileClient.NO_SOURCE.equals(error)) {
+            return error;
+        }
+        if (KungServerSession.NOT_ALLOWED.equals(error)) {
+            return "not allowed on the Kung server; set your own Hypixel API key";
+        }
         String lower = error == null ? "" : error.toLowerCase(Locale.ROOT);
         if (lower.contains("http 403")) {
             return "CA data service blocked the request";

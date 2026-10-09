@@ -41,13 +41,35 @@ public final class HitboxesTest {
     }
 
     @Test
+    public void entriesSavedWithoutLineAndSizeKeepTodaysLookAndOutOfRangeValuesClamp() {
+        var old = read("{\"hitboxes\":{\"entities\":{\"minecraft:zombie\":1},\"lineThickness\":null}}").hitboxes;
+        assertEquals(100, old.lineThickness("minecraft:zombie"));
+        assertEquals(100, old.boxSize("minecraft:zombie"));
+        var config = read("""
+            {"hitboxes":{"entities":{"minecraft:zombie":1,"minecraft:arrow":2},
+             "lineThickness":{"minecraft:arrow":9000},"boxSize":{"minecraft:arrow":0,"minecraft:pig":150}}}
+            """).hitboxes;
+        assertEquals(100, config.lineThickness("minecraft:zombie"));
+        assertEquals(400, config.lineThickness("minecraft:arrow"));
+        assertEquals(50, config.boxSize("minecraft:arrow"));
+        assertEquals(100, config.boxSize("minecraft:pig"));
+        var row = new HitboxSettings(old).get().get(1);
+        assertEquals(List.of("Line Thickness (%)", "Box Size (%)"), row.children().stream().map(SettingEntry::label).toList());
+        row.children().get(0).intConsumer().accept(1);
+        row.children().get(1).intConsumer().accept(999);
+        assertEquals(25, old.lineThickness("minecraft:zombie"));
+        assertEquals(200, old.boxSize("minecraft:zombie"));
+    }
+
+    @Test
     public void dragonOverallAndPartBoxesToggleIndependentlyAndPersistWhenReadded() {
         var path = temporary.getRoot().toPath().resolve("dragon-boxes.json");
         var config = new KungConfig(path);
         config.hitboxes.add("minecraft:ender_dragon");
         var settings = new HitboxSettings(config.hitboxes);
         var row = settings.get().get(1);
-        assertEquals(List.of("Overall Box", "Body Part Boxes"), row.children().stream().map(SettingEntry::label).toList());
+        assertEquals(List.of("Overall Box", "Body Part Boxes", "Line Thickness (%)", "Box Size (%)"),
+            row.children().stream().map(SettingEntry::label).toList());
         var overall = row.children().get(0);
         var parts = row.children().get(1);
         overall.toggle().run();

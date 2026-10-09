@@ -94,6 +94,47 @@ public final class DungeonSplitCompletionOrderTest {
         assertEquals(1, events.stream().filter(line -> line.startsWith("run-victory-confirmed")).count());
     }
 
+    @Test public void masterSevenKingDeathLineAfterTheScoreConfirmsTheDragonsBest() {
+        String decides = "[BOSS] Wither King: We will decide it all, here, now.";
+        String incredible = "[BOSS] Wither King: Incredible. You did what I couldn't do myself.";
+        var config = new SplitsConfig();
+        config.setEnabled(true);
+        var phases = new ArrayList<DungeonSplitTracker.PhaseMessage>();
+        AtomicLong clock = new AtomicLong();
+        var tracker = new DungeonSplitTracker(clock::get, ignored -> { }, config, phases::add);
+        tracker.startRun(0L, 7, true);
+        clock.set(10_000L);
+        tracker.observeMessage(decides, 0L);
+        clock.set(30_000L);
+        tracker.observeMessage("Team Score: 303 (S+)", 0L);
+        assertEquals(-1L, config.personalBestMillis(7, true, "Dragons"));
+        assertEquals(-1L, tracker.predictedFinishMillis());
+        // Hypixel now sends the king's death line after the score, 2.6s later in the supplied trace.
+        clock.set(32_600L);
+        assertTrue(tracker.observeMessage(incredible, 0L));
+        assertEquals(20_000L, config.personalBestMillis(7, true, "Dragons"));
+        assertEquals("Dragons", phases.getLast().phase());
+        assertTrue(phases.getLast().personalBest());
+        assertEquals(1, config.recentRunCount(7, true));
+        assertEquals(30_000L, tracker.predictedFinishMillis());
+        assertEquals(30_000L, tracker.currentTotalDurationMillis());
+        assertFalse(tracker.observeMessage(incredible, 0L));
+
+        // A wipe prints the same score but never the king's death line; a stray one outside the window is ignored.
+        var wipeConfig = new SplitsConfig();
+        wipeConfig.setEnabled(true);
+        var wipe = new DungeonSplitTracker(clock::get, ignored -> { }, wipeConfig);
+        wipe.startRun(0L, 7, true);
+        clock.set(40_000L);
+        wipe.observeMessage(decides, 0L);
+        clock.set(60_000L);
+        wipe.observeMessage("Team Score: 100 (D)", 0L);
+        clock.set(65_001L);
+        assertFalse(wipe.observeMessage(incredible, 0L));
+        assertEquals(-1L, wipeConfig.personalBestMillis(7, true, "Dragons"));
+        assertEquals(0, wipeConfig.recentRunCount(7, true));
+    }
+
     @Test public void scoreOnlyWipesAndUnrelatedMessagesCannotConfirmAFinalBest() {
         var config = new SplitsConfig();
         config.setEnabled(true);

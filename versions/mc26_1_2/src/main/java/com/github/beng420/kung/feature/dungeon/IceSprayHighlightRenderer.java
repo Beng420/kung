@@ -54,6 +54,17 @@ final class IceSprayHighlightRenderer {
             }
             context.levelState().setData(BOXES, List.copyOf(boxes));
         });
+        // Outlines before water, like vanilla's block outline: water writes depth, so lines drawn after it vanish
+        // behind its surface. The faint fill stays after water: drawn first, its depth would cut a hole into water
+        // behind the box. 26.2 queues both into its feature pass, which runs before translucent terrain anyway.
+        LevelRenderEvents.BEFORE_TRANSLUCENT_TERRAIN.register(context -> {
+            List<AABB> boxes = context.levelState().getDataOrDefault(BOXES, List.of());
+            if (boxes.isEmpty()) return;
+            Vec3 camera = context.levelState().cameraRenderState.pos;
+            McCompat.draw(context, RenderTypes.lines(), (pose, lines) -> {
+                for (AABB box : boxes) LineBoxes.box(lines, pose, box, camera.x, camera.y, camera.z, OUTLINE, 2.0F);
+            });
+        });
         LevelRenderEvents.END_MAIN.register(context -> {
             List<AABB> boxes = context.levelState().getDataOrDefault(BOXES, List.of());
             if (boxes.size() != lastDrawnCount) {
@@ -74,9 +85,6 @@ final class IceSprayHighlightRenderer {
                         }
                     }
                 }
-            });
-            McCompat.draw(context, RenderTypes.lines(), (pose, lines) -> {
-                for (AABB box : boxes) LineBoxes.box(lines, pose, box, camera.x, camera.y, camera.z, OUTLINE, 2.0F);
             });
         });
     }
